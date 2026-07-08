@@ -1,5 +1,7 @@
 # Local development Postgres. Matches the default WNBA_ENGINE_DATABASE_URL
 # in wnba_engine/config.py (port 5434 to avoid clashing with a system 5432).
+# db/init/ also creates wnba_engine_test on first boot, a separate database
+# so integration tests never run against (and truncate) real dev data.
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,6 +13,7 @@ services:
       - "5434:5432"
     volumes:
       - wnba_pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wnba -d wnba_engine"]
       interval: 5s
