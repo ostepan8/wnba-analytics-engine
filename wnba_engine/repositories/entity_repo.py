@@ -7,6 +7,8 @@ and the mapping in one transaction-scoped step and return the internal id.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from psycopg import Connection
 
 from wnba_engine.models.box_scores import PlayerRef
@@ -119,3 +121,48 @@ def upsert_game(
     game_id = int(row[0])
     _insert_mapping(conn, provider, ENTITY_GAME, game.external_id, game_id)
     return game_id
+
+
+_FIND_GAME_BY_TEAMS_SQL = """
+SELECT g.id
+FROM games g
+JOIN teams th ON th.id = g.home_team_id
+JOIN teams ta ON ta.id = g.away_team_id
+WHERE (
+    (th.name ILIKE %s AND ta.name ILIKE %s)
+    OR (th.name ILIKE %s AND ta.name ILIKE %s)
+)
+AND g.start_time BETWEEN %s AND %s
+ORDER BY ABS(EXTRACT(EPOCH FROM (g.start_time - %s)))
+LIMIT 1
+"""
+
+
+def find_game_id_by_teams(
+    conn: Connection,
+    team_a_name: str,
+    team_b_name: str,
+    near: datetime,
+    *,
+    window: timedelta,
+) -> int | None:
+    """Best-effort match: two teams (matched as a case-insensitive prefix
+    against the canonical team name, e.g. 'Phoenix' matches 'Phoenix
+    Mercury') playing each other within `window` of `near`, in either
+    home/away order. Used to link prediction-market snapshots -- which name
+    teams and a rough date, not a canonical game id -- to a canonical game.
+    """
+    pattern_a, pattern_b = f"{team_a_name}%", f"{team_b_name}%"
+    row = conn.execute(
+        _FIND_GAME_BY_TEAMS_SQL,
+        (
+            pattern_a,
+            pattern_b,
+            pattern_b,
+            pattern_a,
+            near - window,
+            near + window,
+            near,
+        ),
+    ).fetchone()
+    return int(row[0]) if row else None
