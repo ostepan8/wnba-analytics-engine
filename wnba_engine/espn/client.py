@@ -27,6 +27,14 @@ class EspnClient:
         """GET /summary?event=<espn_event_id> — box score for one game."""
         return self._http.get_json("summary", params={"event": event_id})
 
+    def fetch_injuries(self) -> object:
+        """GET /injuries — current league-wide injury report, all teams.
+
+        Current-state only: this reflects today's report regardless of any
+        date context, there is no historical version of this endpoint.
+        """
+        return self._http.get_json("injuries")
+
     def close(self) -> None:
         self._http.close()
 

@@ -37,3 +37,8 @@ def kalshi_markets_payload() -> object:
 @pytest.fixture
 def polymarket_events_payload() -> object:
     return load_fixture("polymarket_events.json")
+
+
+@pytest.fixture
+def espn_injuries_payload() -> object:
+    return load_fixture("espn_injuries.json")

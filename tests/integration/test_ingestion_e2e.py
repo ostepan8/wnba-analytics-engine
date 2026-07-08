@@ -27,9 +27,12 @@ import pytest
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
+from wnba_engine.models.games import TeamRef
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
+from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
+from wnba_engine.repositories import entity_repo
 
 pytestmark = pytest.mark.integration
 
@@ -40,6 +43,7 @@ def load_fixture(name: str) -> object:
     return json.loads((_FIXTURES_DIR / name).read_text())
 
 _TABLES = (
+    "injury_reports",
     "market_price_snapshots",
     "player_game_stats",
     "team_game_stats",
@@ -306,3 +310,42 @@ def test_polymarket_game_mapping_resolves_via_teams_and_close_time(clean_db):
             ("999002",),
         ).fetchone()
     assert row is not None, "expected the seeded NY/SEA game to be mapped, got NULL game_id"
+
+
+class FakeInjuriesEspnClient:
+    def fetch_injuries(self) -> object:
+        return load_fixture("espn_injuries.json")
+
+
+def test_injury_ingestion_end_to_end(clean_db):
+    # Only pre-seed LA Sparks (external_id "6"), matching how a real team
+    # would already be known from box-score ingestion. Atlanta Dream (id
+    # "20") is deliberately left unknown to exercise the unresolved-team
+    # skip path in the same run.
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="6", name="Los Angeles Sparks", abbreviation="LA")
+        )
+        conn.commit()
+
+    result = ingest_current_injury_report(clean_db, FakeInjuriesEspnClient())
+    assert result.entries_seen == 4
+    assert result.entries_inserted == 2  # only LA's two entries resolved
+    assert result.unresolved_teams == 2  # Atlanta's two entries, skipped
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT p.full_name, ir.status, ir.injury_type, ir.return_date "
+            "FROM injury_reports ir JOIN players p ON p.id = ir.player_id "
+            "ORDER BY p.full_name"
+        ).fetchall()
+    assert rows == [
+        ("Cameron Brink", "Out", "Ankle", date(2026, 7, 13)),
+        ("Kelsey Plum", "Out", "Lower Leg", date(2026, 7, 28)),
+    ]
+
+    # Append-only: a second capture adds rows, never overwrites/updates.
+    ingest_current_injury_report(clean_db, FakeInjuriesEspnClient())
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM injury_reports").fetchone()[0]
+    assert count == 4
