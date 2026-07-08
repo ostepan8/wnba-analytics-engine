@@ -1,7 +1,8 @@
 """Pure parsers: raw ESPN JSON -> validated domain models. No network, no DB.
 
 Scoreboard payload shape (site.api.espn.com .../scoreboard?dates=YYYYMMDD):
-  events[] -> id, date, season.year, status.type.name,
+  events[] -> id, date, season.year, season.type (1=pre/2=regular/3=post),
+              status.type.name,
               competitions[0].competitors[] (id, homeAway, score, team{...})
 
 Summary payload shape (.../summary?event=<id>):
@@ -22,7 +23,7 @@ from wnba_engine.models.box_scores import (
     ShootingLine,
     TeamBoxScore,
 )
-from wnba_engine.models.games import GameStatus, ScoreboardGame, TeamRef
+from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, TeamRef
 from wnba_engine.parsing import (
     optional_int,
     parse_datetime_utc,
@@ -41,6 +42,12 @@ _STATUS_MAP = {
     "STATUS_HALFTIME": GameStatus.IN_PROGRESS,
     "STATUS_END_PERIOD": GameStatus.IN_PROGRESS,
     "STATUS_FINAL": GameStatus.FINAL,
+}
+
+_SEASON_TYPE_MAP = {
+    1: SeasonType.PRESEASON,
+    2: SeasonType.REGULAR_SEASON,
+    3: SeasonType.POSTSEASON,
 }
 
 # ESPN box score player stat labels, in the order stats[] is aligned to.
@@ -83,11 +90,14 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
     start_time = parse_datetime_utc(
         require(event, "date", PROVIDER, context), PROVIDER, f"{context}.date"
     )
+    season_obj = require_mapping(event, "season", PROVIDER, context)
     season = parse_int(
-        require(require_mapping(event, "season", PROVIDER, context), "year", PROVIDER, context),
-        PROVIDER,
-        f"{context}.season.year",
+        require(season_obj, "year", PROVIDER, context), PROVIDER, f"{context}.season.year"
     )
+    season_type_raw = parse_int(
+        require(season_obj, "type", PROVIDER, context), PROVIDER, f"{context}.season.type"
+    )
+    season_type = _SEASON_TYPE_MAP.get(season_type_raw, SeasonType.OTHER)
     status = _parse_status(event, context)
 
     competitions = require_sequence(event, "competitions", PROVIDER, context)
@@ -138,6 +148,7 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
         external_id=event_id,
         start_time=start_time,
         season=season,
+        season_type=season_type,
         status=status,
         home_team=home_team,
         away_team=away_team,
