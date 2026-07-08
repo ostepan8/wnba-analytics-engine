@@ -1,0 +1,21 @@
+# Local development Postgres. Matches the default WNBA_ENGINE_DATABASE_URL
+# in wnba_engine/config.py (port 5434 to avoid clashing with a system 5432).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wnba
+      POSTGRES_PASSWORD: wnba
+      POSTGRES_DB: wnba_engine
+    ports:
+      - "5434:5432"
+    volumes:
+      - wnba_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wnba -d wnba_engine"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  wnba_pgdata:

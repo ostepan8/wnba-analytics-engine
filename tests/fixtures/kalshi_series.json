@@ -1,0 +1,49 @@
+{
+  "series": [
+    {
+      "ticker": "KXWNBATOTAL",
+      "title": "Women's Pro Basketball Total",
+      "category": "Sports",
+      "frequency": "custom",
+      "tags": [
+        "Basketball"
+      ]
+    },
+    {
+      "ticker": "KXWNBA",
+      "title": "WNBA Championship",
+      "category": "Sports",
+      "frequency": "annual",
+      "tags": [
+        "Basketball"
+      ]
+    },
+    {
+      "ticker": "KXWNBAGAME",
+      "title": "Women's Pro Basketball Game",
+      "category": "Sports",
+      "frequency": "custom",
+      "tags": [
+        "Basketball"
+      ]
+    },
+    {
+      "ticker": "KXMARMADHIGHSEED",
+      "title": "March Madness Highest Seed to Reach Round",
+      "category": "Sports",
+      "frequency": "custom",
+      "tags": [
+        "Basketball"
+      ]
+    },
+    {
+      "ticker": "KXNFLDSTTD",
+      "title": "Pro Football D/ST Touchdown",
+      "category": "Sports",
+      "frequency": "one_off",
+      "tags": [
+        "Football"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "events": [
+    {
+      "id": "401736228",
+      "date": "2025-07-06T17:00Z",
+      "name": "Seattle Storm at New York Liberty",
+      "season": {
+        "year": 2025,
+        "type": 2,
+        "slug": "regular-season"
+      },
+      "status": {
+        "clock": 0.0,
+        "displayClock": "0.0",
+        "period": 4,
+        "type": {
+          "id": "3",
+          "name": "STATUS_FINAL",
+          "state": "post",
+          "completed": true,
+          "description": "Final",
+          "detail": "Final",
+          "shortDetail": "Final"
+        }
+      },
+      "competitions": [
+        {
+          "id": "401736228",
+          "date": "2025-07-06T17:00Z",
+          "competitors": [
+            {
+              "id": "9",
+              "homeAway": "home",
+              "score": "70",
+              "winner": false,
+              "team": {
+                "id": "9",
+                "displayName": "New York Liberty",
+                "abbreviation": "NY"
+              }
+            },
+            {
+              "id": "14",
+              "homeAway": "away",
+              "score": "79",
+              "winner": true,
+              "team": {
+                "id": "14",
+                "displayName": "Seattle Storm",
+                "abbreviation": "SEA"
+              }
+            }
+          ],
+          "status": {
+            "clock": 0.0,
+            "displayClock": "0.0",
+            "period": 4,
+            "type": {
+              "id": "3",
+              "name": "STATUS_FINAL",
+              "state": "post",
+              "completed": true,
+              "description": "Final",
+              "detail": "Final",
+              "shortDetail": "Final"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "401736227",
+      "date": "2025-07-06T20:00Z",
+      "name": "Las Vegas Aces at Connecticut Sun",
+      "season": {
+        "year": 2025,
+        "type": 2,
+        "slug": "regular-season"
+      },
+      "status": {
+        "clock": 0.0,
+        "displayClock": "0.0",
+        "period": 4,
+        "type": {
+          "id": "3",
+          "name": "STATUS_FINAL",
+          "state": "post",
+          "completed": true,
+          "description": "Final",
+          "detail": "Final",
+          "shortDetail": "Final"
+        }
+      },
+      "competitions": [
+        {
+          "id": "401736227",
+          "date": "2025-07-06T20:00Z",
+          "competitors": [
+            {
+              "id": "18",
+              "homeAway": "home",
+              "score": "68",
+              "winner": false,
+              "team": {
+                "id": "18",
+                "displayName": "Connecticut Sun",
+                "abbreviation": "CON"
+              }
+            },
+            {
+              "id": "17",
+              "homeAway": "away",
+              "score": "86",
+              "winner": true,
+              "team": {
+                "id": "17",
+                "displayName": "Las Vegas Aces",
+                "abbreviation": "LV"
+              }
+            }
+          ],
+          "status": {
+            "clock": 0.0,
+            "displayClock": "0.0",
+            "period": 4,
+            "type": {
+              "id": "3",
+              "name": "STATUS_FINAL",
+              "state": "post",
+              "completed": true,
+              "description": "Final",
+              "detail": "Final",
+              "shortDetail": "Final"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
