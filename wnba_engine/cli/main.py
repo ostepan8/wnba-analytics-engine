@@ -17,6 +17,7 @@ from wnba_engine.db.pool import Database
 from wnba_engine.espn.client import EspnClient
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
+from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.polymarket.client import PolymarketClient
@@ -103,6 +104,23 @@ def snapshot_kalshi(series_tickers: tuple[str, ...]) -> None:
                     db, client, series_tickers=series_tickers or None
                 )
             )
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-injuries")
+def snapshot_injuries() -> None:
+    """Snapshot the current league-wide ESPN injury report.
+
+    Current-state only -- see db/migrations/0005_injury_reports.sql. This
+    can only ever capture *today's* report; there's no historical version
+    of this feed to backfill.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with EspnClient(settings) as client:
+            click.echo(ingest_current_injury_report(db, client))
     finally:
         db.close()
 
