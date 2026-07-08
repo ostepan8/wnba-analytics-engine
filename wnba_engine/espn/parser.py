@@ -24,6 +24,7 @@ from wnba_engine.models.box_scores import (
 )
 from wnba_engine.models.games import GameStatus, ScoreboardGame, TeamRef
 from wnba_engine.parsing import (
+    optional_int,
     parse_datetime_utc,
     parse_int,
     require,
@@ -279,20 +280,20 @@ def _parse_athlete(entry: object, team: TeamRef, context: str) -> PlayerBoxLine:
         team=team,
         starter=starter,
         did_not_play=did_not_play,
-        minutes=parse_int(values["MIN"], PROVIDER, f"{context}.MIN"),
-        points=parse_int(values["PTS"], PROVIDER, f"{context}.PTS"),
+        minutes=optional_int(values["MIN"], PROVIDER, f"{context}.MIN"),
+        points=optional_int(values["PTS"], PROVIDER, f"{context}.PTS"),
         field_goals=_parse_shooting(values["FG"], f"{context}.FG"),
         three_pointers=_parse_shooting(values["3PT"], f"{context}.3PT"),
         free_throws=_parse_shooting(values["FT"], f"{context}.FT"),
-        rebounds=parse_int(values["REB"], PROVIDER, f"{context}.REB"),
-        offensive_rebounds=parse_int(values["OREB"], PROVIDER, f"{context}.OREB"),
-        defensive_rebounds=parse_int(values["DREB"], PROVIDER, f"{context}.DREB"),
-        assists=parse_int(values["AST"], PROVIDER, f"{context}.AST"),
-        steals=parse_int(values["STL"], PROVIDER, f"{context}.STL"),
-        blocks=parse_int(values["BLK"], PROVIDER, f"{context}.BLK"),
-        turnovers=parse_int(values["TO"], PROVIDER, f"{context}.TO"),
-        fouls=parse_int(values["PF"], PROVIDER, f"{context}.PF"),
-        plus_minus=parse_int(values["+/-"], PROVIDER, f"{context}.+/-"),
+        rebounds=optional_int(values["REB"], PROVIDER, f"{context}.REB"),
+        offensive_rebounds=optional_int(values["OREB"], PROVIDER, f"{context}.OREB"),
+        defensive_rebounds=optional_int(values["DREB"], PROVIDER, f"{context}.DREB"),
+        assists=optional_int(values["AST"], PROVIDER, f"{context}.AST"),
+        steals=optional_int(values["STL"], PROVIDER, f"{context}.STL"),
+        blocks=optional_int(values["BLK"], PROVIDER, f"{context}.BLK"),
+        turnovers=optional_int(values["TO"], PROVIDER, f"{context}.TO"),
+        fouls=optional_int(values["PF"], PROVIDER, f"{context}.PF"),
+        plus_minus=optional_int(values["+/-"], PROVIDER, f"{context}.+/-"),
     )
 
 
@@ -321,7 +322,9 @@ def _empty_line(
     )
 
 
-def _parse_shooting(value: object, context: str) -> ShootingLine:
+def _parse_shooting(value: object, context: str) -> ShootingLine | None:
+    if isinstance(value, str) and set(value.strip()) <= {"-"}:
+        return None  # ESPN placeholder for an untracked line, e.g. '--'
     if not isinstance(value, str) or "-" not in value:
         raise ProviderValidationError(
             PROVIDER, f"expected 'made-attempted' string, got {value!r}", context=context

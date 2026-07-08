@@ -84,6 +84,33 @@ def test_negative_plus_minus_parses(espn_summary_payload):
     assert line.plus_minus == -12
 
 
+def test_dash_placeholder_stat_becomes_none(espn_summary_payload):
+    """ESPN occasionally returns '--' for a stat on a player marked as played
+    (didNotPlay=False) rather than omitting it. Observed live during the
+    2022-2026 historical backfill (24/1307 games) — one such field must not
+    abort the whole game's box score.
+    """
+    payload = copy.deepcopy(espn_summary_payload)
+    athlete = payload["boxscore"]["players"][0]["statistics"][0]["athletes"][0]
+    athlete["stats"][-1] = "--"  # +/-, last in EXPECTED_PLAYER_LABELS
+    box = parse_summary(payload)
+    line = next(p for p in box.players if p.player.external_id == "1068")
+    assert line.did_not_play is False
+    assert line.points == 15  # other stats on the same line still parse
+    assert line.plus_minus is None
+
+
+def test_dash_placeholder_shooting_stat_becomes_none(espn_summary_payload):
+    payload = copy.deepcopy(espn_summary_payload)
+    athlete = payload["boxscore"]["players"][0]["statistics"][0]["athletes"][0]
+    fg_index = payload["boxscore"]["players"][0]["statistics"][0]["labels"].index("FG")
+    athlete["stats"][fg_index] = "--"
+    box = parse_summary(payload)
+    line = next(p for p in box.players if p.player.external_id == "1068")
+    assert line.field_goals is None
+    assert line.points == 15
+
+
 def test_missing_boxscore_raises():
     with pytest.raises(ProviderValidationError, match="boxscore"):
         parse_summary({"header": {"id": "x"}})

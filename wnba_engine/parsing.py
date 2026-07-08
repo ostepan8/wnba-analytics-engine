@@ -77,6 +77,20 @@ def optional_float(value: object, provider: str, context: str) -> float | None:
     return parse_float(value, provider, context)
 
 
+def optional_int(value: object, provider: str, context: str) -> int | None:
+    """Like parse_int, but treats missing/blank/placeholder values as None.
+
+    Some providers (observed on ESPN) use a placeholder like '--' for a stat
+    on an entity that otherwise has real data, rather than omitting the key.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or set(text) <= {"-"}:
+        return None
+    return parse_int(value, provider, context)
+
+
 def parse_datetime_utc(value: object, provider: str, context: str) -> datetime:
     """Parse an ISO-8601 timestamp (with 'Z' or offset) into aware UTC."""
     if not isinstance(value, str) or not value.strip():
