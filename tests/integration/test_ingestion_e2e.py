@@ -1,15 +1,25 @@
 """End-to-end integration tests: migrations + pipeline -> real Postgres.
 
-Requires a reachable Postgres at WNBA_ENGINE_DATABASE_URL (docker compose
-up -d). Skips gracefully when the database is unavailable. Network calls
-are replayed from fixtures via fake clients so results are deterministic.
+Requires a reachable *test* Postgres database (docker compose up -d
+provisions one — see db/init/001-create-test-db.sql). Skips gracefully when
+unavailable. Network calls are replayed from fixtures via fake clients so
+results are deterministic.
+
+These tests TRUNCATE tables between runs (see `clean_db`). They deliberately
+never touch WNBA_ENGINE_DATABASE_URL directly — that's the real dev database,
+and truncating it by accident once already cost a full historical backfill.
+Instead they connect to a derived '<db>_test' database (or
+WNBA_ENGINE_TEST_DATABASE_URL if set) and hard-fail if that database's name
+doesn't contain 'test', as a second guard against ever pointing this at dev.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 import pytest
@@ -40,6 +50,15 @@ _TABLES = (
 )
 
 
+def _test_database_url(dev_database_url: str) -> str:
+    override = os.environ.get("WNBA_ENGINE_TEST_DATABASE_URL")
+    if override:
+        return override
+    parts = urlsplit(dev_database_url)
+    db_name = parts.path.lstrip("/")
+    return urlunsplit(parts._replace(path=f"/{db_name}_test"))
+
+
 def _database_available(url: str) -> bool:
     try:
         with psycopg.connect(url, connect_timeout=3):
@@ -50,12 +69,20 @@ def _database_available(url: str) -> bool:
 
 @pytest.fixture(scope="module")
 def db():
-    settings = load_settings()
-    if not _database_available(settings.database_url):
-        pytest.skip(
-            "Postgres not reachable at WNBA_ENGINE_DATABASE_URL; run `docker compose up -d`"
+    test_url = _test_database_url(load_settings().database_url)
+    db_name = urlsplit(test_url).path.lstrip("/")
+    if "test" not in db_name:
+        pytest.fail(
+            f"refusing to run destructive integration tests against non-test "
+            f"database {db_name!r}; set WNBA_ENGINE_TEST_DATABASE_URL to a "
+            f"database with 'test' in its name"
         )
-    database = Database(settings.database_url, min_size=1, max_size=2)
+    if not _database_available(test_url):
+        pytest.skip(
+            f"Test Postgres database {db_name!r} not reachable; run "
+            f"`docker compose up -d` (provisioned by db/init/001-create-test-db.sql)"
+        )
+    database = Database(test_url, min_size=1, max_size=2)
     run_migrations(database)
     yield database
     database.close()
