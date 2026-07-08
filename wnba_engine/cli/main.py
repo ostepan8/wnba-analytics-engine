@@ -7,7 +7,7 @@ separate, later task.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import click
 
@@ -61,6 +61,31 @@ def backfill_espn(since, until) -> None:
     try:
         with EspnClient(settings) as client:
             click.echo(backfill(db, client, since.date(), until.date()))
+    finally:
+        db.close()
+
+
+@cli.command("sync-recent")
+@click.option(
+    "--days",
+    default=3,
+    show_default=True,
+    help="Re-ingest a trailing window ending today, to pick up score/status corrections.",
+)
+def sync_recent(days: int) -> None:
+    """Ingest ESPN data for the last N days through today.
+
+    Meant for a recurring schedule (cron, launchd, ...): a short trailing
+    window is cheap to re-sweep and catches games that were 'scheduled' on
+    first ingest and have since gone final, without needing a full backfill.
+    """
+    since = date.today() - timedelta(days=days)
+    until = date.today()
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with EspnClient(settings) as client:
+            click.echo(backfill(db, client, since, until))
     finally:
         db.close()
 
