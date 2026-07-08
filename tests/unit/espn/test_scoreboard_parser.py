@@ -9,7 +9,7 @@ import pytest
 
 from wnba_engine.errors import ProviderValidationError
 from wnba_engine.espn.parser import parse_scoreboard
-from wnba_engine.models.games import GameStatus
+from wnba_engine.models.games import GameStatus, SeasonType
 
 
 def test_parses_all_events(espn_scoreboard_payload):
@@ -23,6 +23,7 @@ def test_parses_teams_scores_and_status(espn_scoreboard_payload):
     assert game.status is GameStatus.FINAL
     assert game.is_final
     assert game.season == 2025
+    assert game.season_type is SeasonType.REGULAR_SEASON
     assert game.start_time == datetime(2025, 7, 6, 17, 0, tzinfo=UTC)
     assert game.home_team.external_id == "9"
     assert game.home_team.abbreviation == "NY"
@@ -77,4 +78,31 @@ def test_malformed_score_raises(espn_scoreboard_payload):
     broken = copy.deepcopy(espn_scoreboard_payload)
     broken["events"][0]["competitions"][0]["competitors"][0]["score"] = "seventy"
     with pytest.raises(ProviderValidationError, match="integer"):
+        parse_scoreboard(broken)
+
+
+@pytest.mark.parametrize(
+    ("season_type_value", "expected"),
+    [
+        (1, SeasonType.PRESEASON),
+        (2, SeasonType.REGULAR_SEASON),
+        (3, SeasonType.POSTSEASON),
+        (99, SeasonType.OTHER),  # an unrecognized future value must not crash
+    ],
+)
+def test_season_type_distinguishes_preseason_from_regular_season(
+    espn_scoreboard_payload, season_type_value, expected
+):
+    """Regression test: a preseason win previously counted identically to a
+    real regular-season win (real bug, caught via a standings mismatch)."""
+    payload = copy.deepcopy(espn_scoreboard_payload)
+    payload["events"][0]["season"]["type"] = season_type_value
+    game = parse_scoreboard(payload)[0]
+    assert game.season_type is expected
+
+
+def test_missing_season_type_raises(espn_scoreboard_payload):
+    broken = copy.deepcopy(espn_scoreboard_payload)
+    del broken["events"][0]["season"]["type"]
+    with pytest.raises(ProviderValidationError, match="'type'"):
         parse_scoreboard(broken)

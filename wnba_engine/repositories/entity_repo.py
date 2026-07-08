@@ -100,15 +100,23 @@ def upsert_game(
     if existing is not None:
         conn.execute(
             "UPDATE games SET status = %s, home_score = %s, away_score = %s, "
-            "start_time = %s, updated_at = now() WHERE id = %s",
-            (game.status.value, game.home_score, game.away_score, game.start_time, existing),
+            "start_time = %s, season_type = %s, updated_at = now() WHERE id = %s",
+            (
+                game.status.value,
+                game.home_score,
+                game.away_score,
+                game.start_time,
+                game.season_type.value,
+                existing,
+            ),
         )
         return existing
     row = conn.execute(
-        "INSERT INTO games (season, start_time, home_team_id, away_team_id, status, "
-        "home_score, away_score) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "INSERT INTO games (season, season_type, start_time, home_team_id, away_team_id, "
+        "status, home_score, away_score) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (
             game.season,
+            game.season_type.value,
             game.start_time,
             home_team_id,
             away_team_id,
