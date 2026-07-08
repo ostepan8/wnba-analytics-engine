@@ -11,6 +11,23 @@ engine stays useful and inspectable on its own.
 Scope is WNBA only, on purpose. No multi-sport expansion is planned until this
 is solid.
 
+## Data strategy: why multiple sources
+
+A single data source is replicable — anyone can point a script at the same
+API we use. The actual moat is breadth: independently observing the same
+games through box scores, sportsbook odds, *and* regulated prediction
+markets means the edge doesn't collapse when one vendor changes an endpoint,
+rate-limits us, or a competitor scrapes the same site we do. Different
+sources also disagree in informative ways — e.g. a regulated exchange's
+implied probability drifting from sportsbook consensus is itself a signal,
+not just redundant coverage. Phase 2's insights are only as good as the
+number of independent angles feeding them.
+
+This means Phase 1 isn't "pick one box-score API," it's building the
+**foundation to onboard many sources without a rewrite each time**: one
+canonical schema, one adapter per provider, and a crosswalk table that
+resolves each provider's own team/player/game IDs to ours.
+
 ---
 
 ## Phase 0 — Odds & outcomes foundation (done, private companion pipeline)
@@ -23,31 +40,51 @@ personal data-hoarding project against the-odds-api.com. Folding this into the
 open engine (or publishing a derived, license-clean subset of it) is a later
 decision, not a blocker for Phase 1.
 
-## Phase 1 — Stats & box-score foundation (current focus)
+## Phase 1 — Multi-source data foundation (current focus)
 
 The actual gap: odds + final score tells you who won, not *why*, and isn't
-enough to build real insights on. This phase adds:
+enough to build real insights on. This phase adds box scores, player-level
+stats, and situational context — and, because breadth is the moat, the
+architecture to keep adding independent sources cheaply:
 
 - Box scores and player-level stats (points, rebounds, assists, shooting
   splits, minutes) per game, backfilled 2022–present and swept going forward.
 - Situational context: home/road, rest days, back-to-backs, pace.
-- A clean join key back to existing odds/outcome data (team + date matching,
-  same approach already proven for the ESPN score backfill).
+- Regulated prediction-market prices (Kalshi, Polymarket) captured
+  alongside sportsbook odds — a second, independently-priced probability
+  signal to diff against sportsbook consensus. **Read-only market-data
+  ingestion only** — see Non-goals.
+- A canonical schema (our own team/player/game IDs), one adapter per
+  provider mapping raw → canonical, a crosswalk table resolving each
+  provider's external IDs to ours, and precedence rules for when sources
+  disagree (e.g. the-odds-api already wins over ESPN for final scores).
 
-Candidate sources: ESPN's public scoreboard/box-score endpoints (already have
-a working, rate-limited puller pattern to extend) and balldontlie.io's WNBA
-endpoints as a fallback/cross-check. Both are free; no new paid data contracts
-needed for this phase.
+Provider list (free unless noted):
 
-Deliverable: a Postgres schema + sweeper pipeline that produces one queryable
-dataset — odds, line movement, outcomes, and box scores — per game, per player.
+| Source | Category | Provides | Status |
+|---|---|---|---|
+| the-odds-api | Sportsbook odds | 32-book lines, line movement | Integrated (Phase 0, paid) |
+| ESPN scoreboard/summary | Box score | Team + per-player box score | Priority add (unofficial) |
+| stats.wnba.com | Advanced stats | Advanced box score, four factors, hustle, shot charts | Priority add (unofficial, richer than ESPN) |
+| Kalshi | Prediction market | Per-game, prop, and futures market prices | Priority add (CFTC-regulated, free read) |
+| Polymarket | Prediction market | Futures/award market prices | Priority add (free) |
+| Basketball-Reference / Her Hoop Stats | Historical/advanced | Deep historical + advanced metrics | Secondary (scrape, no API) |
+| balldontlie.io | Box score | Backup/cross-check | Secondary (free tier, depth unverified) |
+
+Deliverable: a Postgres schema + adapter pipeline that produces one queryable
+dataset — odds, line movement, prediction-market prices, outcomes, and box
+scores — per game, per player, sourced from multiple independent providers.
 
 ## Phase 2 — Insights engine
 
 Rules-based first, not ML: situational splits, player prop hit-rate trends,
-line-movement-vs-outcome patterns, matchup history. Fast to build, easy to
-explain, and doesn't require a trained model to be useful. ML-based modeling
-is a later, explicit decision — not a default.
+line-movement-vs-outcome patterns, matchup history, and — enabled by Phase 1's
+multi-source foundation — divergence between sportsbook consensus and
+regulated prediction-market pricing (Kalshi/Polymarket vs the-odds-api).
+Cross-source disagreement is a distinct signal from any single-source trend
+and harder for a single-source competitor to replicate. Fast to build, easy
+to explain, and doesn't require a trained model to be useful. ML-based
+modeling is a later, explicit decision — not a default.
 
 ## Phase 3 — Picks + a public track record
 
@@ -82,5 +119,9 @@ gets written once Phase 3's track record exists to point to.
 - Facilitating or placing bets, handling wagered money, or anything that
   crosses into money-transmission/gambling-license territory. This project is
   information and tooling, never the sportsbook.
+- Trading on Kalshi, Polymarket, or any exchange. Prediction-market
+  integration is **read-only price/probability ingestion for analysis**, not
+  order placement, execution, or a trading bot. Same boundary as the
+  sportsbook non-goal above, applied to exchanges.
 - ML-driven predictions before the rules-based insights layer (Phase 2) proves
   out on real data.
