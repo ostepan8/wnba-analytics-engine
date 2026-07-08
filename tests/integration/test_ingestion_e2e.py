@@ -197,7 +197,7 @@ def test_kalshi_ingestion_end_to_end(clean_db):
     assert row[1] == "KXWNBAGAME-26JUL09INDPHX"
     assert row[2] == "Phoenix"
     assert float(row[3]) == pytest.approx(0.405)
-    assert row[4] is None  # game mapping deferred
+    assert row[4] is None  # no Indiana/Phoenix game seeded in this test's DB to map to
 
     # Snapshots are append-only: a second run adds rows, never overwrites.
     ingest_kalshi_wnba_markets(clean_db, FakeKalshiClient())
@@ -218,3 +218,91 @@ def test_polymarket_ingestion_end_to_end(clean_db):
     assert row[1] == "Connecticut Sun"
     assert float(row[2]) == pytest.approx(0.0005)
     assert row[3] is None
+
+
+class FakeKalshiGameMarketClient:
+    """A single KXWNBAGAME market for the same game FakeEspnClient seeds."""
+
+    def fetch_sports_series(self) -> object:
+        return {"series": [{"ticker": "KXWNBAGAME", "title": "Women's Pro Basketball Game"}]}
+
+    def fetch_markets_page(self, series_ticker: str, **_: object) -> object:
+        return {
+            "cursor": "",
+            "markets": [
+                {
+                    "ticker": "KXWNBAGAME-25JUL06SEANY-NY",
+                    "event_ticker": "KXWNBAGAME-25JUL06SEANY",
+                    "title": "Seattle vs New York winner?",
+                    "status": "active",
+                    "yes_bid_dollars": "0.4000",
+                    "yes_ask_dollars": "0.4200",
+                    "last_price_dollars": "0.4100",
+                    "volume_fp": "100.00",
+                    "open_interest_fp": "50.00",
+                    "liquidity_dollars": "10.00",
+                    "close_time": "2025-07-20T00:00:00Z",
+                    "yes_sub_title": "New York",
+                }
+            ],
+        }
+
+
+def test_kalshi_game_mapping_resolves_via_teams_and_ticker_date(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_kalshi_wnba_markets(clean_db, FakeKalshiGameMarketClient())
+    assert result.failures == 0
+    assert result.snapshots_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT g.id FROM market_price_snapshots m JOIN games g ON g.id = m.game_id "
+            "WHERE m.market_external_id = %s",
+            ("KXWNBAGAME-25JUL06SEANY-NY",),
+        ).fetchone()
+    assert row is not None, "expected the seeded NY/SEA game to be mapped, got NULL game_id"
+
+
+class FakePolymarketGameMarketClient:
+    """A single team-matchup market for the same game FakeEspnClient seeds."""
+
+    def fetch_wnba_events_page(self, *, offset: int = 0, **_: object) -> object:
+        if offset != 0:
+            return []
+        return [
+            {
+                "id": "999001",
+                "markets": [
+                    {
+                        "id": "999002",
+                        "question": "Seattle Storm vs New York Liberty",
+                        "bestBid": 0.45,
+                        "bestAsk": 0.47,
+                        "lastTradePrice": 0.46,
+                        "outcomePrices": '["0.46", "0.54"]',
+                        "groupItemTitle": "New York",
+                        "volumeNum": 500,
+                        "liquidityNum": 200,
+                        "closed": False,
+                        "active": True,
+                        "endDateIso": "2025-07-08T00:00:00Z",
+                    }
+                ],
+            }
+        ]
+
+
+def test_polymarket_game_mapping_resolves_via_teams_and_close_time(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_polymarket_wnba_markets(clean_db, FakePolymarketGameMarketClient())
+    assert result.snapshots_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT g.id FROM market_price_snapshots m JOIN games g ON g.id = m.game_id "
+            "WHERE m.market_external_id = %s",
+            ("999002",),
+        ).fetchone()
+    assert row is not None, "expected the seeded NY/SEA game to be mapped, got NULL game_id"
