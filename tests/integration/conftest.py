@@ -23,6 +23,7 @@ from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 
 _TABLES = (
+    "balldontlie_injury_reports",
     "injury_reports",
     "market_price_snapshots",
     "sportsbook_player_prop_odds",

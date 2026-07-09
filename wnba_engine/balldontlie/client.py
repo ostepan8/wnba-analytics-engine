@@ -22,6 +22,7 @@ PLAYER_PROP_ODDS_PATH = "wnba/v1/odds/player_props"
 PLAYERS_PATH = "wnba/v1/players"
 PLAYER_STATS_PATH = "wnba/v1/player_stats"
 TEAM_STATS_PATH = "wnba/v1/team_stats"
+PLAYER_INJURIES_PATH = "wnba/v1/player_injuries"
 DEFAULT_PAGE_SIZE = 100
 # A full 4-quarter game has ~440 plays (verified live); this ceiling gives
 # OT games headroom while staying one request per game -- the endpoint
@@ -222,6 +223,25 @@ class BalldontlieClient:
         if cursor is not None:
             params["cursor"] = cursor
         return self._http.get_json(TEAM_STATS_PATH, params=params)
+
+    def fetch_player_injuries_page(
+        self,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/player_injuries -- one cursor-paginated page of
+        every current injury balldontlie has on file league-wide (43 rows
+        total, verified live -- fits on a single per_page=100 page in
+        practice, but the endpoint is genuinely cursor-paginated like the
+        other list endpoints, so this still loops on meta.next_cursor).
+        No date/season filter exists (only team_ids[]/player_ids[], per
+        the OpenAPI spec) -- current-state only, same as ESPN's
+        /injuries."""
+        params: dict[str, object] = {"per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(PLAYER_INJURIES_PATH, params=params)
 
     def close(self) -> None:
         self._http.close()

@@ -122,3 +122,8 @@ def balldontlie_player_stats_payload() -> object:
 @pytest.fixture
 def balldontlie_team_stats_payload() -> object:
     return load_fixture("balldontlie_team_stats.json")
+
+
+@pytest.fixture
+def balldontlie_player_injuries_payload() -> object:
+    return load_fixture("balldontlie_player_injuries.json")
