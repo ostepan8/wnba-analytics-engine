@@ -1,0 +1,140 @@
+{
+  "data": [
+    {
+      "player": {
+        "id": 736,
+        "first_name": "Sonia",
+        "last_name": "Citron",
+        "position": "G",
+        "position_abbreviation": "G",
+        "height": "6' 1\"",
+        "weight": "--",
+        "jersey_number": "22",
+        "college": "Notre Dame",
+        "age": 22
+      },
+      "team": {
+        "id": 5,
+        "conference": "Eastern Conference",
+        "city": "Washington",
+        "name": "Mystics",
+        "full_name": "Washington Mystics",
+        "abbreviation": "WSH"
+      },
+      "game": {
+        "id": 3858,
+        "date": "2025-05-16T23:30:00.000Z",
+        "season": 2025
+      },
+      "min": "24",
+      "fgm": 6,
+      "fga": 7,
+      "fg3m": 2,
+      "fg3a": 2,
+      "ftm": 5,
+      "fta": 6,
+      "oreb": null,
+      "dreb": 2,
+      "reb": 2,
+      "ast": 2,
+      "stl": null,
+      "blk": null,
+      "turnover": 1,
+      "pf": 4,
+      "pts": 19,
+      "plus_minus": 3
+    },
+    {
+      "player": {
+        "id": 658,
+        "first_name": "Naz",
+        "last_name": "Hillmon",
+        "position": "F",
+        "position_abbreviation": "F",
+        "height": "6' 2\"",
+        "weight": "190 lbs",
+        "jersey_number": "00",
+        "college": "Michigan",
+        "age": 26
+      },
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      },
+      "game": {
+        "id": 3858,
+        "date": "2025-05-16T23:30:00.000Z",
+        "season": 2025
+      },
+      "min": "2",
+      "fgm": null,
+      "fga": 1,
+      "fg3m": null,
+      "fg3a": 1,
+      "ftm": null,
+      "fta": null,
+      "oreb": null,
+      "dreb": null,
+      "reb": null,
+      "ast": null,
+      "stl": null,
+      "blk": null,
+      "turnover": null,
+      "pf": null,
+      "pts": null,
+      "plus_minus": -2
+    },
+    {
+      "player": {
+        "id": 734,
+        "first_name": "Taylor",
+        "last_name": "Thierry",
+        "position": "F",
+        "position_abbreviation": "F",
+        "height": "6' 1\"",
+        "weight": "--",
+        "jersey_number": "3",
+        "college": "Ohio State",
+        "age": 23
+      },
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      },
+      "game": {
+        "id": 3858,
+        "date": "2025-05-16T23:30:00.000Z",
+        "season": 2025
+      },
+      "min": "0",
+      "fgm": null,
+      "fga": null,
+      "fg3m": null,
+      "fg3a": null,
+      "ftm": null,
+      "fta": null,
+      "oreb": null,
+      "dreb": null,
+      "reb": null,
+      "ast": null,
+      "stl": null,
+      "blk": null,
+      "turnover": null,
+      "pf": null,
+      "pts": null,
+      "plus_minus": null
+    }
+  ],
+  "meta": {
+    "next_cursor": null,
+    "per_page": 3
+  }
+}

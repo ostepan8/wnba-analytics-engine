@@ -32,6 +32,9 @@ from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_sh
 from wnba_engine.pipeline.balldontlie_standings_ingest import (
     backfill_season as backfill_standings_season,
 )
+from wnba_engine.pipeline.balldontlie_stats_ingest import (
+    backfill_season as backfill_balldontlie_stats_season,
+)
 from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
@@ -198,6 +201,31 @@ def backfill_team_advanced_stats(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_team_advanced_stats_season(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-balldontlie-stats")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_balldontlie_stats(season: int) -> None:
+    """Backfill balldontlie TRADITIONAL box score stats (points, rebounds,
+    assists, etc.) for one season -- a second, independent source of the
+    same stats ESPN's box scores already provide, for future cross-source
+    validation.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. Not
+    to be confused with backfill-advanced-stats (offensive/defensive
+    rating, PIE, four factors -- data ESPN has no equivalent for). Writes
+    into the SAME team_game_stats/player_game_stats tables ESPN populates,
+    with source='balldontlie', via the same team+date game crosswalk and
+    name-based player resolution backfill-advanced-stats uses. Upserted,
+    safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_balldontlie_stats_season(db, client, season))
     finally:
         db.close()
 
