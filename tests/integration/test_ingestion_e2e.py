@@ -31,6 +31,8 @@ from wnba_engine.errors import ProviderRequestError
 from wnba_engine.models.box_scores import PlayerRef
 from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, TeamRef
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
+from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
+from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -50,9 +52,13 @@ def load_fixture(name: str) -> object:
 def load_text_fixture(name: str) -> str:
     return (_FIXTURES_DIR / name).read_text()
 
+
 _TABLES = (
     "injury_reports",
     "market_price_snapshots",
+    "game_plays",
+    "player_shot_zone_stats",
+    "team_shot_zone_stats",
     "player_advanced_stats",
     "player_game_stats",
     "team_game_stats",
@@ -159,9 +165,7 @@ def test_espn_ingestion_end_to_end(clean_db):
     assert _count(clean_db, "provider_entity_map") == 11
 
     with clean_db.connection() as conn:
-        game = conn.execute(
-            "SELECT status, home_score, away_score, season FROM games"
-        ).fetchone()
+        game = conn.execute("SELECT status, home_score, away_score, season FROM games").fetchone()
         assert game == ("final", 70, 79, 2025)
         dnp = conn.execute(
             "SELECT did_not_play, minutes, points FROM player_game_stats pgs "
@@ -715,7 +719,7 @@ class FakeWaybackClientGuidLogo:
     def fetch_snapshot_html(self, timestamp: str) -> str:
         assert timestamp == _WAYBACK_TIMESTAMP
         return (
-            "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
+            '<script>window[\'__espnfitt__\']={"page": {"content": {"injuries": ['
             '{"displayName": "Chicago Sky", '
             '"logo": "https://a.espncdn.com/guid/170598de-f63a-3497-a04d-1fc514508f56/'
             'logos/primary_logo_on_white_color.png", '
@@ -795,7 +799,7 @@ class FakeWaybackClientSameDayFallback:
             )
         assert timestamp == _DAY_WITH_WORKING_SECOND_CANDIDATE
         return (
-            "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
+            '<script>window[\'__espnfitt__\']={"page": {"content": {"injuries": ['
             '{"displayName": "Chicago Sky", '
             '"logo": "https://a.espncdn.com/i/teamlogos/wnba/500/chi.png", '
             '"items": [{"type": {"name": "INJURY_STATUS_OUT"}, '
@@ -815,9 +819,7 @@ def test_wayback_injury_backfill_tries_same_day_alternate_when_first_candidate_f
         conn.commit()
 
     fake_client = FakeWaybackClientSameDayFallback()
-    result = backfill_injury_history(
-        clean_db, fake_client, date(2024, 4, 25), date(2024, 4, 25)
-    )
+    result = backfill_injury_history(clean_db, fake_client, date(2024, 4, 25), date(2024, 4, 25))
     assert fake_client.attempted == [
         _DAY_WITH_BROKEN_FIRST_CANDIDATE,
         _DAY_WITH_WORKING_SECOND_CANDIDATE,
@@ -996,6 +998,193 @@ def test_balldontlie_advanced_stats_backfill_end_to_end(clean_db):
             "SELECT count(*) FROM player_advanced_stats WHERE source = 'balldontlie'"
         ).fetchone()[0]
     assert count == 1
+
+
+class FakeBalldontliePlaysClient:
+    """Same NY vs SEA 2025-07-06 game as FakeBalldontlieClient, plus two
+    plays for that game -- one per team, to prove both resolve."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 9001,
+                    "date": "2025-07-06T17:00:00.000Z",
+                    "home_team": {"id": 1, "full_name": "New York Liberty"},
+                    "visitor_team": {"id": 2, "full_name": "Seattle Storm"},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_plays(self, game_id: int):
+        assert game_id == 9001
+        return {
+            "data": [
+                {
+                    "game_id": 9001,
+                    "order": 1,
+                    "type": "Jumpball",
+                    "text": "Test jumpball",
+                    "home_score": 0,
+                    "away_score": 0,
+                    "period": 1,
+                    "clock": "10:00",
+                    "scoring_play": False,
+                    "score_value": 0,
+                    "team": {"id": 2, "abbreviation": "SEA"},
+                },
+                {
+                    "game_id": 9001,
+                    "order": 2,
+                    "type": "Jump Shot",
+                    "text": "Nneka Ogwumike makes 15-foot jumper",
+                    "home_score": 2,
+                    "away_score": 0,
+                    "period": 1,
+                    "clock": "9:50",
+                    "scoring_play": True,
+                    "score_value": 2,
+                    "team": {"id": 1, "abbreviation": "NY"},
+                },
+            ]
+        }
+
+
+def test_balldontlie_plays_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = backfill_season_plays(clean_db, FakeBalldontliePlaysClient(), 2025)
+    assert result.games_seen == 1
+    assert result.games_resolved == 1
+    assert result.games_unresolved == 0
+    assert result.plays_seen == 2
+    assert result.plays_inserted == 2
+    assert result.games_with_unresolved_teams == 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT gp.sequence, gp.play_type, gp.scoring_play, t.abbreviation "
+            "FROM game_plays gp JOIN teams t ON t.id = gp.team_id "
+            "ORDER BY gp.sequence"
+        ).fetchall()
+    assert rows == [
+        (1, "Jumpball", False, "SEA"),
+        (2, "Jump Shot", True, "NY"),
+    ]
+
+    # Idempotent, not duplicated: re-running the same season doesn't add
+    # more rows for a game already ingested.
+    rerun = backfill_season_plays(clean_db, FakeBalldontliePlaysClient(), 2025)
+    assert rerun.plays_seen == 2
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM game_plays").fetchone()[0]
+    assert count == 2
+
+
+class FakeBalldontlieShotZoneClient:
+    """One player row (Nneka Ogwumike, ESPN external_id '1068') and one
+    team row (Seattle Storm), matching FakeEspnClient's seeded entities."""
+
+    _ZONES = {
+        "restricted_area": {"fga": 10, "fgm": 6},
+        "in_the_paint_non_ra": {"fga": 5, "fgm": 2},
+        "mid_range": {"fga": 8, "fgm": 3},
+        "left_corner_3": {"fga": 1, "fgm": 0},
+        "right_corner_3": {"fga": 2, "fgm": 1},
+        "corner_3": {"fga": 3, "fgm": 1},
+        "above_the_break_3": {"fga": 4, "fgm": 1},
+        "backcourt": {"fga": 0, "fgm": 0},
+    }
+
+    def fetch_player_shot_zone_stats_page(
+        self, season: int, *, cursor: int | None = None, per_page: int = 100
+    ):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 1,
+                    "player": {
+                        "id": 777,
+                        "first_name": "Nneka",
+                        "last_name": "Ogwumike",
+                        "position": "F",
+                    },
+                    "team": {"id": 2, "abbreviation": "SEA"},
+                    "season": 2025,
+                    "season_type": "regular",
+                    "stats": {"shot_zones": self._ZONES},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_team_shot_zone_stats_page(
+        self, season: int, *, cursor: int | None = None, per_page: int = 100
+    ):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 2,
+                    "team": {"id": 2, "abbreviation": "SEA"},
+                    "season": 2025,
+                    "season_type": "regular",
+                    "stats": {"shot_zones": self._ZONES},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+
+def test_balldontlie_shot_zone_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, incl. Ogwumike
+
+    result = backfill_season_shot_zones(clean_db, FakeBalldontlieShotZoneClient(), 2025)
+    assert result.player_rows_seen == 1
+    assert result.player_rows_inserted == 1
+    assert result.team_rows_seen == 1
+    assert result.team_rows_inserted == 1
+    assert result.unresolved_teams == 0
+
+    with clean_db.connection() as conn:
+        player_row = conn.execute(
+            "SELECT p.full_name, pz.restricted_area_fga, pz.restricted_area_fgm, "
+            "pz.mid_range_fga, t.abbreviation "
+            "FROM player_shot_zone_stats pz "
+            "JOIN players p ON p.id = pz.player_id "
+            "JOIN teams t ON t.id = pz.team_id "
+            "WHERE pz.source = 'balldontlie'"
+        ).fetchone()
+        team_row = conn.execute(
+            "SELECT t.abbreviation, tz.restricted_area_fga, tz.backcourt_fgm "
+            "FROM team_shot_zone_stats tz JOIN teams t ON t.id = tz.team_id "
+            "WHERE tz.source = 'balldontlie'"
+        ).fetchone()
+
+    assert player_row == ("Nneka Ogwumike", 10, 6, 8, "SEA")
+    assert team_row == ("SEA", 10, 0)
+
+    # Crosswalk correctness: balldontlie's player id resolves to the SAME
+    # canonical player ESPN's box score already created.
+    with clean_db.connection() as conn:
+        espn_player_id = entity_repo.lookup_internal_id(conn, "espn", "player", "1068")
+        bdl_player_id = entity_repo.lookup_internal_id(conn, "balldontlie", "player", "777")
+    assert espn_player_id is not None
+    assert bdl_player_id == espn_player_id
+
+    # Upserted, not append-only: re-running updates the same rows.
+    rerun = backfill_season_shot_zones(clean_db, FakeBalldontlieShotZoneClient(), 2025)
+    assert rerun.player_rows_inserted == 1
+    assert rerun.team_rows_inserted == 1
+    with clean_db.connection() as conn:
+        counts = conn.execute(
+            "SELECT (SELECT count(*) FROM player_shot_zone_stats), "
+            "(SELECT count(*) FROM team_shot_zone_stats)"
+        ).fetchone()
+    assert counts == (1, 1)
 
 
 def test_find_game_id_by_teams_matches_partial_expansion_team_names(clean_db):

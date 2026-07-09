@@ -19,6 +19,8 @@ from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
+from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
+from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -104,9 +106,7 @@ def snapshot_kalshi(series_tickers: tuple[str, ...]) -> None:
     try:
         with KalshiClient(settings) as client:
             click.echo(
-                ingest_kalshi_wnba_markets(
-                    db, client, series_tickers=series_tickers or None
-                )
+                ingest_kalshi_wnba_markets(db, client, series_tickers=series_tickers or None)
             )
     finally:
         db.close()
@@ -130,9 +130,7 @@ def snapshot_injuries() -> None:
 
 
 @cli.command("backfill-injuries-wayback")
-@click.option(
-    "--since", type=click.DateTime(["%Y-%m-%d"]), default="2022-04-01", show_default=True
-)
+@click.option("--since", type=click.DateTime(["%Y-%m-%d"]), default="2022-04-01", show_default=True)
 @click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
 def backfill_injuries_wayback(since, until) -> None:
     """Backfill real historical injury status from archived ESPN pages.
@@ -166,6 +164,45 @@ def backfill_advanced_stats(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_season(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-plays")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_plays(season: int) -> None:
+    """Backfill balldontlie play-by-play for one season.
+
+    Paid API (GOAT tier). One request per game (no cursor pagination on
+    this endpoint); games resolve via the same crosswalk
+    backfill-advanced-stats uses. No structured player attribution --
+    plays carry a team and a free-text description only. Idempotent,
+    safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_season_plays(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-shot-zones")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_shot_zones(season: int) -> None:
+    """Backfill balldontlie season-level shot-zone efficiency splits
+    (player and team) for one season.
+
+    Paid API (GOAT tier). Despite the source endpoint's name, this is NOT
+    per-shot x/y coordinate data -- it's field goals attempted/made
+    aggregated into 8 fixed court zones. Upserted, safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_season_shot_zones(db, client, season))
     finally:
         db.close()
 

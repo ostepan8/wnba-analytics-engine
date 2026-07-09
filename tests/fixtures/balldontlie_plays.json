@@ -1,0 +1,96 @@
+{
+  "data": [
+    {
+      "game_id": 3858,
+      "order": 1,
+      "type": "Jumpball",
+      "text": "Brittney Griner vs. Kiki Iriafen (Rhyne Howard gains possession)",
+      "home_score": 0,
+      "away_score": 0,
+      "period": 1,
+      "clock": "10:00",
+      "scoring_play": false,
+      "score_value": 0,
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      }
+    },
+    {
+      "game_id": 3858,
+      "order": 2,
+      "type": "Jump Shot",
+      "text": "Rhyne Howard makes 23-foot three point jumper (Te-Hina Paopao assists)",
+      "home_score": 0,
+      "away_score": 3,
+      "period": 1,
+      "clock": "9:43",
+      "scoring_play": true,
+      "score_value": 3,
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      }
+    },
+    {
+      "game_id": 3858,
+      "order": 3,
+      "type": "Pullup Jump Shot",
+      "text": "Brittney Sykes misses 17-foot pullup jump shot",
+      "home_score": 0,
+      "away_score": 3,
+      "period": 1,
+      "clock": "9:29",
+      "scoring_play": false,
+      "score_value": 0,
+      "team": {
+        "id": 5,
+        "conference": "Eastern Conference",
+        "city": "Washington",
+        "name": "Mystics",
+        "full_name": "Washington Mystics",
+        "abbreviation": "WSH"
+      }
+    },
+    {
+      "game_id": 3858,
+      "order": 4,
+      "type": "Defensive Rebound",
+      "text": "Allisha Gray defensive rebound",
+      "home_score": 0,
+      "away_score": 3,
+      "period": 1,
+      "clock": "9:27",
+      "scoring_play": false,
+      "score_value": 0,
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      }
+    },
+    {
+      "game_id": 24830,
+      "order": 293,
+      "type": "ejection",
+      "text": null,
+      "home_score": 64,
+      "away_score": 43,
+      "period": 3,
+      "clock": "3:52",
+      "scoring_play": false,
+      "score_value": 0
+    }
+  ]
+}
