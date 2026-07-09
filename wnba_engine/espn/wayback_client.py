@@ -41,16 +41,18 @@ class WaybackClient:
         )
 
     def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
-        """CDX API: one successful snapshot timestamp per calendar day in
-        [since, until].
+        """CDX API: every successful-capture timestamp in [since, until],
+        not collapsed to one per day.
 
-        filter=statuscode:200 + collapse=timestamp:8 together give the first
-        *successful* capture per day, not just the first attempt regardless
-        of outcome -- archive.org sometimes recrawls the same day multiple
-        times, and the day's first attempt is occasionally a 403 (ESPN
-        blocking the crawler that moment) while a later same-day attempt
-        succeeds. Without the status filter, collapse keeps the failed one
-        and the day is silently lost even though real data exists for it.
+        filter=statuscode:200 excludes captures we already know are dead
+        (ESPN blocking the crawler at that exact moment). Deliberately NOT
+        collapsed to one-per-day here: even a CDX-confirmed 200 can fail at
+        fetch time for reasons the CDX status doesn't capture -- observed
+        live, a "revisit" record pointing to a differently-timestamped
+        capture that was failing on archive.org's own storage backend. The
+        pipeline groups these by day and tries same-day alternates in order
+        until one actually works, rather than giving up on the day after
+        one candidate fails.
         """
         return self._http.get_json(
             "cdx/search/cdx",
@@ -60,7 +62,6 @@ class WaybackClient:
                 "from": since.strftime("%Y%m%d"),
                 "to": until.strftime("%Y%m%d"),
                 "filter": "statuscode:200",
-                "collapse": "timestamp:8",
                 "limit": 100_000,
             },
         )
