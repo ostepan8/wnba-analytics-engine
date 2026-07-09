@@ -117,6 +117,38 @@ def test_unparseable_team_logo_raises():
         parse_wayback_injuries_page(html, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT)
 
 
+@pytest.mark.parametrize(
+    ("logo_slug", "expected_abbreviation"),
+    [
+        ("conn", "CON"),  # Connecticut Sun: canonical abbreviation is CON, not CONN
+        ("gsv", "GS"),  # Golden State Valkyries: canonical abbreviation is GS, not GSV
+        ("chi", "CHI"),  # unaliased case still passes through unchanged
+    ],
+)
+def test_known_logo_abbreviation_aliases_normalize_to_canonical(logo_slug, expected_abbreviation):
+    """Regression test: discovered via a real backfill run where ~1,300
+    entries across 540 snapshot days were silently unresolved because these
+    two teams' logo filenames don't match their canonical abbreviation."""
+    html = (
+        "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
+        f'{{"displayName": "Team", '
+        f'"logo": "https://a.espncdn.com/i/teamlogos/wnba/500/{logo_slug}.png", '
+        '"items": []}'
+        "]}}};</script>"
+    )
+    entries = parse_wayback_injuries_page(html, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT)
+    assert entries == ()  # no items in this fixture, just checking it doesn't raise
+
+    # Exercise the abbreviation resolution directly via a real item too.
+    html_with_item = _html_with_single_item(date="Jun 6", description="").replace(
+        "chi.png", f"{logo_slug}.png"
+    )
+    entries_with_item = parse_wayback_injuries_page(
+        html_with_item, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT
+    )
+    assert entries_with_item[0].team_abbreviation == expected_abbreviation
+
+
 def _html_with_single_item(*, date: str, description: str, snapshot_month_day: str = "") -> str:
     del snapshot_month_day  # kept for readability at call sites, unused
     payload = (
