@@ -15,11 +15,13 @@ from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.espn.client import EspnClient
+from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
+from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.polymarket.client import PolymarketClient
 
 
@@ -113,14 +115,36 @@ def snapshot_injuries() -> None:
     """Snapshot the current league-wide ESPN injury report.
 
     Current-state only -- see db/migrations/0005_injury_reports.sql. This
-    can only ever capture *today's* report; there's no historical version
-    of this feed to backfill.
+    only ever captures *today's* report; for real history see
+    backfill-injuries-wayback.
     """
     settings = load_settings()
     db = Database(settings.database_url)
     try:
         with EspnClient(settings) as client:
             click.echo(ingest_current_injury_report(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-injuries-wayback")
+@click.option(
+    "--since", type=click.DateTime(["%Y-%m-%d"]), default="2022-04-01", show_default=True
+)
+@click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
+def backfill_injuries_wayback(since, until) -> None:
+    """Backfill real historical injury status from archived ESPN pages.
+
+    One Wayback Machine snapshot per day, ~1.5s apart out of courtesy to
+    archive.org (a free, donation-funded service, not a commercial API) --
+    this takes a while for a multi-year range. Resumable: an interrupted
+    run picks back up without re-fetching already-captured days.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with WaybackClient(settings) as client:
+            click.echo(backfill_injury_history(db, client, since.date(), until.date()))
     finally:
         db.close()
 

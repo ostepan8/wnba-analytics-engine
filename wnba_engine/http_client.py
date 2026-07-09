@@ -83,6 +83,22 @@ class JsonHttpClient:
     def provider(self) -> str:
         return self._provider
 
+    def get_text(self, path: str, params: Mapping[str, object] | None = None) -> str:
+        """GET a text/HTML document, retrying transient failures with backoff."""
+        url = f"{self._client.base_url.join(path)}"
+        try:
+            response = self._get_with_retry(path, params)
+        except httpx.HTTPError as exc:
+            logger.error(
+                "request failed provider=%s url=%s params=%s error=%s",
+                self._provider,
+                url,
+                params,
+                exc,
+            )
+            raise ProviderRequestError(self._provider, url, str(exc)) from exc
+        return response.text
+
     def get_json(self, path: str, params: Mapping[str, object] | None = None) -> object:
         """GET a JSON document, retrying transient failures with backoff.
 

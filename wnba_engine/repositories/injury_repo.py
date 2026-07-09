@@ -1,7 +1,9 @@
 """Injury report snapshot persistence. Append-only -- never updated.
 
-See db/migrations/0005_injury_reports.sql: this data can't be retroactively
-backfilled, only captured going forward.
+The live ESPN source (see db/migrations/0005_injury_reports.sql) can't be
+retroactively backfilled, only captured going forward. The Wayback source
+below is how history actually gets filled in for 2022-2026: each row is a
+real archived snapshot, not a live capture.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from collections.abc import Mapping, Sequence
 
 from psycopg import Connection
 
-from wnba_engine.models.injuries import InjuryReportEntry
+from wnba_engine.models.injuries import InjuryReportEntry, WaybackInjuryEntry
 
 _INSERT_SNAPSHOT = """
 INSERT INTO injury_reports (
@@ -18,6 +20,14 @@ INSERT INTO injury_reports (
     injury_type, side, return_date, short_comment, long_comment,
     reported_at, captured_at, source
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+_INSERT_WAYBACK_SNAPSHOT = """
+INSERT INTO injury_reports (
+    espn_injury_id, player_id, team_id, status, status_type,
+    injury_type, side, return_date, short_comment, long_comment,
+    reported_at, captured_at, source
+) VALUES (%s, %s, %s, %s, %s, NULL, NULL, NULL, %s, NULL, %s, %s, %s)
 """
 
 
@@ -58,4 +68,41 @@ def insert_snapshots(
     if rows:
         with conn.cursor() as cursor:
             cursor.executemany(_INSERT_SNAPSHOT, rows)
+    return len(rows)
+
+
+def insert_wayback_snapshots(
+    conn: Connection,
+    entries: Sequence[WaybackInjuryEntry],
+    *,
+    player_id_by_external_id: Mapping[str, int],
+    team_id_by_abbreviation: Mapping[str, int],
+    source: str = "espn-wayback",
+) -> int:
+    """Append one row per entry whose player and team both resolved.
+
+    injury_type/side/return_date are always NULL here: the archived page
+    format never had those structured fields, only free text (stored in
+    short_comment). espn_injury_id is synthesized (player + snapshot time)
+    since this page format carries no per-note id.
+    """
+    rows = [
+        (
+            f"wayback:{entry.player.external_id}:{entry.captured_at.isoformat()}",
+            player_id_by_external_id[entry.player.external_id],
+            team_id_by_abbreviation[entry.team_abbreviation],
+            entry.status,
+            entry.status_type,
+            entry.description,
+            entry.reported_at,
+            entry.captured_at,
+            source,
+        )
+        for entry in entries
+        if entry.player.external_id in player_id_by_external_id
+        and entry.team_abbreviation in team_id_by_abbreviation
+    ]
+    if rows:
+        with conn.cursor() as cursor:
+            cursor.executemany(_INSERT_WAYBACK_SNAPSHOT, rows)
     return len(rows)

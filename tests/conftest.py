@@ -42,3 +42,8 @@ def polymarket_events_payload() -> object:
 @pytest.fixture
 def espn_injuries_payload() -> object:
     return load_fixture("espn_injuries.json")
+
+
+@pytest.fixture
+def espn_wayback_injuries_html() -> str:
+    return (FIXTURES_DIR / "espn_wayback_injuries.html").read_text()
