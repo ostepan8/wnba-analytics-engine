@@ -25,6 +25,12 @@ from wnba_engine.errors import ProviderRequestError
 from wnba_engine.models.box_scores import PlayerRef
 from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, TeamRef
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
+from wnba_engine.pipeline.balldontlie_odds_ingest import (
+    backfill_date_range as backfill_odds_date_range,
+)
+from wnba_engine.pipeline.balldontlie_player_prop_odds_ingest import (
+    backfill_season as backfill_player_prop_odds_season,
+)
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
 from wnba_engine.pipeline.balldontlie_standings_ingest import (
@@ -1592,3 +1598,238 @@ def test_find_game_id_by_teams_matches_partial_expansion_team_names(clean_db):
             window=timedelta(hours=6),
         )
     assert game_id is not None
+
+
+class FakeBalldontlieOddsClient:
+    """One game matching FakeEspnClient's NY vs SEA, 2025-07-06 game
+    (external id 9001, same technique as FakeBalldontlieClient above), and
+    two game-odds rows for that game -- REAL field shapes captured live
+    from /wnba/v1/odds (tests/fixtures/balldontlie_odds.json's draftkings/
+    fanatics rows for game 24909), with game_id substituted to 9001 so both
+    resolve onto the SAME canonical game ESPN's box score already
+    created."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 9001,
+                    "date": "2025-07-06T17:00:00.000Z",
+                    "home_team": {"id": 1, "full_name": "New York Liberty"},
+                    "visitor_team": {"id": 2, "full_name": "Seattle Storm"},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_odds_page(self, day: date, *, cursor: int | None = None, per_page: int = 100):
+        del cursor, per_page
+        if day != date(2025, 7, 6):
+            return {"data": [], "meta": {"per_page": 0}}
+        return {
+            "data": [
+                {
+                    "id": 266605323,
+                    "game_id": 9001,
+                    "vendor": "draftkings",
+                    "spread_home_value": "8.5",
+                    "spread_home_odds": 105,
+                    "spread_away_value": "-8.5",
+                    "spread_away_odds": -135,
+                    "moneyline_home_odds": 900,
+                    "moneyline_away_odds": -1850,
+                    "total_value": "166.5",
+                    "total_over_odds": -110,
+                    "total_under_odds": -120,
+                    "updated_at": "2026-07-08T01:59:02.636Z",
+                },
+                {
+                    "id": 266605328,
+                    "game_id": 9001,
+                    "vendor": "fanatics",
+                    "spread_home_value": "9.5",
+                    "spread_home_odds": 105,
+                    "spread_away_value": "-9.5",
+                    "spread_away_odds": -140,
+                    "moneyline_home_odds": 4000,
+                    "moneyline_away_odds": -20000,
+                    "total_value": "166.5",
+                    "total_over_odds": -105,
+                    "total_under_odds": -125,
+                    "updated_at": "2026-07-08T02:01:02.331Z",
+                },
+            ],
+            "meta": {"next_cursor": None, "per_page": 2},
+        }
+
+
+def test_balldontlie_odds_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = backfill_odds_date_range(
+        clean_db, FakeBalldontlieOddsClient(), date(2025, 7, 6), date(2025, 7, 6)
+    )
+    assert result.dates_processed == 1
+    assert result.rows_seen == 2
+    assert result.rows_inserted == 2
+    assert result.unresolved_games == 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT vendor, moneyline_home_odds, spread_home_value, total_value "
+            "FROM sportsbook_game_odds ORDER BY vendor"
+        ).fetchall()
+    assert len(rows) == 2
+    draftkings = next(r for r in rows if r[0] == "draftkings")
+    assert draftkings[1] == 900
+    assert float(draftkings[2]) == pytest.approx(8.5)
+    assert float(draftkings[3]) == pytest.approx(166.5)
+
+    # Append-only but idempotent: UNIQUE(external_id, captured_at) makes a
+    # re-run over an unchanged window a no-op, not a duplicate.
+    rerun = backfill_odds_date_range(
+        clean_db, FakeBalldontlieOddsClient(), date(2025, 7, 6), date(2025, 7, 6)
+    )
+    assert rerun.rows_inserted == 0
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM sportsbook_game_odds").fetchone()[0]
+    assert count == 2
+
+
+class FakeBalldontlieOddsUnresolvedGameClient:
+    """No games at all in the season (so game_id 9999 below can never
+    resolve) -- exercises the unresolved-game skip path."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {"data": [], "meta": {"next_cursor": None, "per_page": 0}}
+
+    def fetch_odds_page(self, day: date, *, cursor: int | None = None, per_page: int = 100):
+        del cursor, per_page
+        if day != date(2025, 7, 6):
+            return {"data": [], "meta": {"per_page": 0}}
+        return {
+            "data": [
+                {
+                    "id": 1,
+                    "game_id": 9999,
+                    "vendor": "draftkings",
+                    "spread_home_value": "1.5",
+                    "spread_home_odds": -110,
+                    "spread_away_value": "-1.5",
+                    "spread_away_odds": -110,
+                    "moneyline_home_odds": 150,
+                    "moneyline_away_odds": -180,
+                    "total_value": "160.5",
+                    "total_over_odds": -110,
+                    "total_under_odds": -110,
+                    "updated_at": "2026-07-08T01:59:02.636Z",
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+
+def test_balldontlie_odds_backfill_skips_unresolved_game(clean_db):
+    result = backfill_odds_date_range(
+        clean_db, FakeBalldontlieOddsUnresolvedGameClient(), date(2025, 7, 6), date(2025, 7, 6)
+    )
+    assert result.rows_seen == 1
+    assert result.rows_inserted == 0
+    assert result.unresolved_games == 1
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM sportsbook_game_odds").fetchone()[0]
+    assert count == 0
+
+
+class FakeBalldontliePlayerPropOddsClient:
+    """One game (external id 9001, matching FakeEspnClient's NY vs SEA
+    game) and two prop-odds rows -- one for Nneka Ogwumike (balldontlie
+    player_id 777, pre-seeded via resolve_or_create_player_by_name, same
+    technique as the advanced-stats/shot-zone tests above) and one for a
+    never-before-seen player_id, to exercise the unresolved-player skip
+    path in the same run. Field shapes are the REAL payload captured live
+    (tests/fixtures/balldontlie_player_prop_odds.json), with game_id/
+    player_id substituted to resolve onto seeded entities."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 9001,
+                    "date": "2025-07-06T17:00:00.000Z",
+                    "home_team": {"id": 1, "full_name": "New York Liberty"},
+                    "visitor_team": {"id": 2, "full_name": "Seattle Storm"},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_player_prop_odds_page(
+        self, game_id: int, *, cursor: int | None = None, per_page: int = 100
+    ):
+        del cursor, per_page
+        assert game_id == 9001
+        return {
+            "data": [
+                {
+                    "id": 8663418827,
+                    "game_id": 9001,
+                    "player_id": 777,
+                    "vendor": "betrivers",
+                    "prop_type": "assists",
+                    "line_value": "3.5",
+                    "market": {"type": "milestone", "odds": 107},
+                    "updated_at": "2026-07-08T00:17:10.667Z",
+                },
+                {
+                    "id": 8663552235,
+                    "game_id": 9001,
+                    "player_id": 999999,
+                    "vendor": "draftkings",
+                    "prop_type": "assists",
+                    "line_value": "10.5",
+                    "market": {"type": "over_under", "over_odds": 115, "under_odds": -160},
+                    "updated_at": "2026-07-08T02:17:06.821Z",
+                },
+            ],
+            "meta": {"next_cursor": None, "per_page": 2},
+        }
+
+
+def test_balldontlie_player_prop_odds_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, incl. teams
+
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player_by_name(
+            conn, "balldontlie", "777", "Nneka Ogwumike", "F", None, None, None, None, None
+        )
+        conn.commit()
+
+    result = backfill_player_prop_odds_season(clean_db, FakeBalldontliePlayerPropOddsClient(), 2025)
+    assert result.games_seen == 1
+    assert result.games_resolved == 1
+    assert result.games_unresolved == 0
+    assert result.prop_rows_seen == 2
+    assert result.prop_rows_inserted == 1
+    assert result.unresolved_players == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT p.full_name, spo.market_type, spo.odds, spo.line_value, spo.vendor "
+            "FROM sportsbook_player_prop_odds spo JOIN players p ON p.id = spo.player_id"
+        ).fetchone()
+    assert row[0] == "Nneka Ogwumike"
+    assert row[1] == "milestone"
+    assert row[2] == 107
+    assert float(row[3]) == pytest.approx(3.5)
+    assert row[4] == "betrivers"
+
+    # Append-only but idempotent re-run, same as game-level odds.
+    rerun = backfill_player_prop_odds_season(clean_db, FakeBalldontliePlayerPropOddsClient(), 2025)
+    assert rerun.prop_rows_inserted == 0
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM sportsbook_player_prop_odds").fetchone()[0]
+    assert count == 1

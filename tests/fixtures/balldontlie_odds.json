@@ -1,0 +1,67 @@
+{
+  "data": [
+    {
+      "id": 266605323,
+      "game_id": 24909,
+      "vendor": "draftkings",
+      "spread_home_value": "8.5",
+      "spread_home_odds": 105,
+      "spread_away_value": "-8.5",
+      "spread_away_odds": -135,
+      "moneyline_home_odds": 900,
+      "moneyline_away_odds": -1850,
+      "total_value": "166.5",
+      "total_over_odds": -110,
+      "total_under_odds": -120,
+      "updated_at": "2026-07-08T01:59:02.636Z"
+    },
+    {
+      "id": 266605328,
+      "game_id": 24909,
+      "vendor": "fanatics",
+      "spread_home_value": "9.5",
+      "spread_home_odds": 105,
+      "spread_away_value": "-9.5",
+      "spread_away_odds": -140,
+      "moneyline_home_odds": 4000,
+      "moneyline_away_odds": -20000,
+      "total_value": "166.5",
+      "total_over_odds": -105,
+      "total_under_odds": -125,
+      "updated_at": "2026-07-08T02:01:02.331Z"
+    },
+    {
+      "id": 266608134,
+      "game_id": 24909,
+      "vendor": "fanduel",
+      "spread_home_value": "7.5",
+      "spread_home_odds": 114,
+      "spread_away_value": "-7.5",
+      "spread_away_odds": -152,
+      "moneyline_home_odds": 1060,
+      "moneyline_away_odds": -3500,
+      "total_value": "166.5",
+      "total_over_odds": -102,
+      "total_under_odds": -130,
+      "updated_at": "2026-07-08T02:01:02.444Z"
+    },
+    {
+      "id": 266605827,
+      "game_id": 24910,
+      "vendor": "draftkings",
+      "spread_home_value": "10.5",
+      "spread_home_odds": -125,
+      "spread_away_value": "-10.5",
+      "spread_away_odds": -105,
+      "moneyline_home_odds": 8000,
+      "moneyline_away_odds": -100000,
+      "total_value": "141.5",
+      "total_over_odds": 130,
+      "total_under_odds": -166,
+      "updated_at": "2026-07-08T04:03:02.425Z"
+    }
+  ],
+  "meta": {
+    "per_page": 25
+  }
+}

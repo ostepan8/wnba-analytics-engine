@@ -25,6 +25,8 @@ from wnba_engine.db.pool import Database
 _TABLES = (
     "injury_reports",
     "market_price_snapshots",
+    "sportsbook_player_prop_odds",
+    "sportsbook_game_odds",
     "game_plays",
     "player_shot_zone_stats",
     "team_shot_zone_stats",

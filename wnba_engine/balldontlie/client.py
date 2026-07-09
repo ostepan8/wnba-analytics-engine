@@ -4,6 +4,8 @@ no anonymous access.
 
 from __future__ import annotations
 
+from datetime import date
+
 from wnba_engine.config import Settings
 from wnba_engine.http_client import JsonHttpClient
 
@@ -15,6 +17,8 @@ PLAYS_PATH = "wnba/v1/plays"
 PLAYER_SHOT_LOCATIONS_PATH = "wnba/v1/player_shot_locations"
 TEAM_SHOT_LOCATIONS_PATH = "wnba/v1/team_shot_locations"
 STANDINGS_PATH = "wnba/v1/standings"
+ODDS_PATH = "wnba/v1/odds"
+PLAYER_PROP_ODDS_PATH = "wnba/v1/odds/player_props"
 DEFAULT_PAGE_SIZE = 100
 # A full 4-quarter game has ~440 plays (verified live); this ceiling gives
 # OT games headroom while staying one request per game -- the endpoint
@@ -129,6 +133,42 @@ class BalldontlieClient:
         team, ~13 rows for the whole league, so there's nothing to
         paginate)."""
         return self._http.get_json(STANDINGS_PATH, params={"season": season})
+
+    def fetch_odds_page(
+        self,
+        day: date,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/odds -- one cursor-paginated page of bookmaker odds
+        for every game on one date (verified live: `dates[]=YYYY-MM-DD` is
+        required -- a bare request 400s with "At least one of dates or
+        game_ids is required"). Only carries a rolling recent window (the
+        current/upcoming season), not full historical archives -- see
+        wnba_engine/balldontlie/odds_parser.py."""
+        params: dict[str, object] = {"dates[]": day.isoformat(), "per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(ODDS_PATH, params=params)
+
+    def fetch_player_prop_odds_page(
+        self,
+        game_id: int,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/odds/player_props -- one cursor-paginated page of
+        player-prop odds for one game (verified live: a single `game_id=
+        <int>` is required, a DIFFERENT contract than fetch_odds_page's
+        `dates[]=` -- a bare request or `dates[]=` 400s with "game_id must
+        be an integer"). See
+        wnba_engine/balldontlie/player_prop_odds_parser.py."""
+        params: dict[str, object] = {"game_id": game_id, "per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(PLAYER_PROP_ODDS_PATH, params=params)
 
     def close(self) -> None:
         self._http.close()

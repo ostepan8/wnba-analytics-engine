@@ -97,3 +97,13 @@ def balldontlie_team_shot_zones_payload() -> object:
 @pytest.fixture
 def balldontlie_standings_payload() -> object:
     return load_fixture("balldontlie_standings.json")
+
+
+@pytest.fixture
+def balldontlie_odds_payload() -> object:
+    return load_fixture("balldontlie_odds.json")
+
+
+@pytest.fixture
+def balldontlie_player_prop_odds_payload() -> object:
+    return load_fixture("balldontlie_player_prop_odds.json")
