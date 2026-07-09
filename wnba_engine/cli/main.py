@@ -11,12 +11,14 @@ from datetime import date, timedelta
 
 import click
 
+from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
+from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -145,6 +147,25 @@ def backfill_injuries_wayback(since, until) -> None:
     try:
         with WaybackClient(settings) as client:
             click.echo(backfill_injury_history(db, client, since.date(), until.date()))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-advanced-stats")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_advanced_stats(season: int) -> None:
+    """Backfill balldontlie advanced player stats for one season.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. Two
+    phases: resolve balldontlie's games to our canonical games via
+    team+date matching, then ingest per-player advanced stats using that
+    crosswalk. Upserted, safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_season(db, client, season))
     finally:
         db.close()
 
