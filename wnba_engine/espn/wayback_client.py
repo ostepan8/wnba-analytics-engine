@@ -31,11 +31,16 @@ class WaybackClient:
         )
 
     def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
-        """CDX API: one snapshot timestamp per calendar day in [since, until].
+        """CDX API: one successful snapshot timestamp per calendar day in
+        [since, until].
 
-        collapse=timestamp:8 keeps only the first capture per YYYYMMDD, since
-        we only need one point-in-time read per day, not every intraday
-        recrawl.
+        filter=statuscode:200 + collapse=timestamp:8 together give the first
+        *successful* capture per day, not just the first attempt regardless
+        of outcome -- archive.org sometimes recrawls the same day multiple
+        times, and the day's first attempt is occasionally a 403 (ESPN
+        blocking the crawler that moment) while a later same-day attempt
+        succeeds. Without the status filter, collapse keeps the failed one
+        and the day is silently lost even though real data exists for it.
         """
         return self._http.get_json(
             "cdx/search/cdx",
@@ -44,6 +49,7 @@ class WaybackClient:
                 "output": "json",
                 "from": since.strftime("%Y%m%d"),
                 "to": until.strftime("%Y%m%d"),
+                "filter": "statuscode:200",
                 "collapse": "timestamp:8",
                 "limit": 100_000,
             },
