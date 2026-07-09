@@ -47,3 +47,13 @@ def espn_injuries_payload() -> object:
 @pytest.fixture
 def espn_wayback_injuries_html() -> str:
     return (FIXTURES_DIR / "espn_wayback_injuries.html").read_text()
+
+
+@pytest.fixture
+def balldontlie_player_advanced_stats_payload() -> object:
+    return load_fixture("balldontlie_player_advanced_stats.json")
+
+
+@pytest.fixture
+def balldontlie_games_payload() -> object:
+    return load_fixture("balldontlie_games.json")

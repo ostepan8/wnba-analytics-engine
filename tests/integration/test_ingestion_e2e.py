@@ -29,6 +29,7 @@ from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.errors import ProviderRequestError
 from wnba_engine.models.games import TeamRef
+from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -51,6 +52,7 @@ def load_text_fixture(name: str) -> str:
 _TABLES = (
     "injury_reports",
     "market_price_snapshots",
+    "player_advanced_stats",
     "player_game_stats",
     "team_game_stats",
     "provider_entity_map",
@@ -623,3 +625,125 @@ def test_wayback_injury_backfill_counts_one_failure_when_all_same_day_candidates
     assert result.snapshots_available == 1
     assert result.failures == 1  # one failure for the DAY, not one per exhausted candidate
     assert result.snapshots_processed == 0
+
+
+class FakeBalldontlieClient:
+    """One game matching the ESPN fixture's NY vs SEA, 2025-07-06 game, and
+    one advanced-stats row for Nneka Ogwumike (ESPN external_id '1068' in
+    the summary fixture) -- to prove the crosswalk lands on the SAME
+    canonical player ESPN's box score already created."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 9001,
+                    "date": "2025-07-06T17:00:00.000Z",
+                    "home_team": {"id": 1, "full_name": "New York Liberty"},
+                    "visitor_team": {"id": 2, "full_name": "Seattle Storm"},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_player_advanced_stats_page(
+        self, season: int, *, cursor: int | None = None, per_page: int = 100
+    ):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 500001,
+                    "player": {
+                        "id": 777,
+                        "first_name": "Nneka",
+                        "last_name": "Ogwumike",
+                        "position": "F",
+                    },
+                    "team": {"id": 2, "abbreviation": "SEA"},
+                    "game": {"id": 9001, "date": "2025-07-06T17:00:00.000Z", "season": 2025},
+                    "period": 0,
+                    "stats": {
+                        "misc": {"blocks": 0},
+                        "usage": {"usage_percentage": 0.2},
+                        "scoring": {"percentage_points2pt": 0.5},
+                        "advanced": {
+                            "minutes": "30:00",
+                            "offensive_rating": 105.0,
+                            "defensive_rating": 95.0,
+                            "net_rating": 10.0,
+                            "pace": 98.0,
+                            "possessions": 60,
+                            "true_shooting_percentage": 0.6,
+                            "effective_field_goal_percentage": 0.55,
+                            "usage_percentage": 0.2,
+                            "assist_percentage": 0.1,
+                            "assist_ratio": 12.0,
+                            "assist_to_turnover": 1.5,
+                            "turnover_ratio": 8.0,
+                            "rebound_percentage": 0.15,
+                            "offensive_rebound_percentage": 0.05,
+                            "defensive_rebound_percentage": 0.2,
+                            "pie": 0.15,
+                        },
+                        "four_factors": {
+                            "free_throw_attempt_rate": 0.2,
+                            "team_turnover_percentage": 0.12,
+                            "opp_effective_field_goal_percentage": 0.5,
+                            "opp_free_throw_attempt_rate": 0.18,
+                            "opp_team_turnover_percentage": 0.14,
+                            "opp_offensive_rebound_percentage": 0.25,
+                        },
+                    },
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+
+def test_balldontlie_advanced_stats_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, incl. Ogwumike
+
+    result = backfill_season(clean_db, FakeBalldontlieClient(), 2025)
+    assert result.games_seen == 1
+    assert result.games_resolved == 1
+    assert result.games_unresolved == 0
+    assert result.stat_rows_seen == 1
+    assert result.stat_rows_inserted == 1
+    assert result.unresolved_games_for_stats == 0
+    assert result.unresolved_teams_for_stats == 0
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT p.full_name, pas.offensive_rating, pas.true_shooting_percentage, "
+            "pas.pie, pas.misc_stats, t.abbreviation "
+            "FROM player_advanced_stats pas "
+            "JOIN players p ON p.id = pas.player_id "
+            "JOIN teams t ON t.id = pas.team_id "
+            "WHERE pas.source = 'balldontlie'"
+        ).fetchone()
+    assert row[0] == "Nneka Ogwumike"
+    assert float(row[1]) == pytest.approx(105.0)
+    assert float(row[2]) == pytest.approx(0.6)
+    assert float(row[3]) == pytest.approx(0.15)
+    assert row[4] == {"blocks": 0}
+    assert row[5] == "SEA"
+
+    # Crosswalk correctness: balldontlie's player id must resolve to the
+    # SAME canonical player ESPN's box score already created (external_id
+    # '1068' in the summary fixture), not a forked duplicate identity.
+    with clean_db.connection() as conn:
+        espn_player_id = entity_repo.lookup_internal_id(conn, "espn", "player", "1068")
+        bdl_player_id = entity_repo.lookup_internal_id(conn, "balldontlie", "player", "777")
+    assert espn_player_id is not None
+    assert bdl_player_id == espn_player_id
+
+    # Upserted, not append-only: re-running updates the same row.
+    rerun = backfill_season(clean_db, FakeBalldontlieClient(), 2025)
+    assert rerun.stat_rows_inserted == 1
+    with clean_db.connection() as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM player_advanced_stats WHERE source = 'balldontlie'"
+        ).fetchone()[0]
+    assert count == 1

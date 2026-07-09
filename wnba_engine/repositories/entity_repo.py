@@ -43,6 +43,17 @@ def _insert_mapping(
     conn.execute(_INSERT_MAPPING, (provider, entity_type, external_id, internal_id))
 
 
+def record_crosswalk_mapping(
+    conn: Connection, provider: str, entity_type: str, external_id: str, internal_id: int
+) -> None:
+    """Public entry point for persisting a crosswalk mapping resolved by
+    some OTHER method than a resolve_or_create_* call -- e.g. a game
+    matched by team+date (find_game_id_by_teams) rather than by a shared
+    provider id. Idempotent: safe to call again for an already-known pair.
+    """
+    _insert_mapping(conn, provider, entity_type, external_id, internal_id)
+
+
 def resolve_or_create_team(conn: Connection, provider: str, team: TeamRef) -> int:
     existing = lookup_internal_id(conn, provider, ENTITY_TEAM, team.external_id)
     if existing is not None:
@@ -202,3 +213,49 @@ def find_team_by_name(conn: Connection, name: str) -> int | None:
         "SELECT id FROM teams WHERE name ILIKE %s", (name,)
     ).fetchone()
     return int(row[0]) if row else None
+
+
+def find_player_by_name(conn: Connection, full_name: str) -> int | None:
+    """Read-only lookup by the canonical players.full_name column
+    (case-insensitive exact match). Used to resolve a second provider's own
+    player id (e.g. balldontlie's) to the SAME canonical player ESPN's box
+    scores already created, rather than a name match creating a duplicate
+    identity.
+    """
+    row = conn.execute(
+        "SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)
+    ).fetchone()
+    return int(row[0]) if row else None
+
+
+def resolve_or_create_player_by_name(
+    conn: Connection,
+    provider: str,
+    external_id: str,
+    full_name: str,
+    position: str | None,
+) -> int:
+    """Crosswalk contract for a provider whose player rarely has a
+    reliable external id shared with ESPN (e.g. balldontlie's numeric ids
+    are a different id space entirely). Falls back to matching an existing
+    canonical player by name before ever creating a new one, so a second
+    provider's data joins onto the SAME player ESPN's box scores already
+    populated instead of forking a duplicate, historyless identity.
+    """
+    existing = lookup_internal_id(conn, provider, ENTITY_PLAYER, external_id)
+    if existing is not None:
+        return existing
+
+    by_name = find_player_by_name(conn, full_name)
+    if by_name is not None:
+        _insert_mapping(conn, provider, ENTITY_PLAYER, external_id, by_name)
+        return by_name
+
+    row = conn.execute(
+        "INSERT INTO players (full_name, position) VALUES (%s, %s) RETURNING id",
+        (full_name, position),
+    ).fetchone()
+    assert row is not None
+    player_id = int(row[0])
+    _insert_mapping(conn, provider, ENTITY_PLAYER, external_id, player_id)
+    return player_id
