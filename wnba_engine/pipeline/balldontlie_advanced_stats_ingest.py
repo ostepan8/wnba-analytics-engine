@@ -94,6 +94,11 @@ def _ingest_advanced_stats(
                     row.player.external_id,
                     row.player.full_name,
                     row.player.position,
+                    row.player.height,
+                    row.player.weight,
+                    row.player.jersey_number,
+                    row.player.college,
+                    row.player.age,
                 )
                 advanced_stats_repo.upsert_player_advanced_stats(
                     conn,

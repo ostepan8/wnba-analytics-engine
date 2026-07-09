@@ -1,0 +1,168 @@
+{
+  "data": [
+    {
+      "id": 12665,
+      "player": {
+        "id": 535,
+        "first_name": "A'ja",
+        "last_name": "Wilson",
+        "position": "C",
+        "position_abbreviation": "C",
+        "height": "6' 4\"",
+        "weight": "195 lbs",
+        "jersey_number": "22",
+        "college": "South Carolina",
+        "age": 29,
+        "team": {
+          "id": 8,
+          "conference": "Western Conference",
+          "city": "Las Vegas",
+          "name": "Aces",
+          "full_name": "Las Vegas Aces",
+          "abbreviation": "LV"
+        }
+      },
+      "team": {
+        "id": 8,
+        "conference": "Western Conference",
+        "city": "Las Vegas",
+        "name": "Aces",
+        "full_name": "Las Vegas Aces",
+        "abbreviation": "LV"
+      },
+      "season": 2025,
+      "season_type": "regular",
+      "distance_range": "by_zone",
+      "per_mode": "totals",
+      "stats": {
+        "age": 29,
+        "shot_zones": {
+          "corner_3": {
+            "fga": 4,
+            "fgm": 2,
+            "fg_pct": 0.5
+          },
+          "backcourt": {
+            "fga": 0,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "mid_range": {
+            "fga": 146,
+            "fgm": 66,
+            "fg_pct": 0.452
+          },
+          "left_corner_3": {
+            "fga": 1,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "right_corner_3": {
+            "fga": 3,
+            "fgm": 2,
+            "fg_pct": 0.667
+          },
+          "restricted_area": {
+            "fga": 130,
+            "fgm": 91,
+            "fg_pct": 0.7
+          },
+          "above_the_break_3": {
+            "fga": 55,
+            "fgm": 23,
+            "fg_pct": 0.418
+          },
+          "in_the_paint_non_ra": {
+            "fga": 323,
+            "fgm": 150,
+            "fg_pct": 0.464
+          }
+        }
+      }
+    },
+    {
+      "id": 12672,
+      "player": {
+        "id": 504,
+        "first_name": "Alexis",
+        "last_name": "Prince",
+        "position": "Forward",
+        "position_abbreviation": "F",
+        "height": null,
+        "weight": null,
+        "jersey_number": "15",
+        "college": null,
+        "age": null,
+        "team": {
+          "id": 10,
+          "conference": "Western Conference",
+          "city": "Phoenix",
+          "name": "Mercury",
+          "full_name": "Phoenix Mercury",
+          "abbreviation": "PHX"
+        }
+      },
+      "team": {
+        "id": 10,
+        "conference": "Western Conference",
+        "city": "Phoenix",
+        "name": "Mercury",
+        "full_name": "Phoenix Mercury",
+        "abbreviation": "PHX"
+      },
+      "season": 2025,
+      "season_type": "regular",
+      "distance_range": "by_zone",
+      "per_mode": "totals",
+      "stats": {
+        "age": 32,
+        "shot_zones": {
+          "corner_3": {
+            "fga": null,
+            "fgm": null,
+            "fg_pct": null
+          },
+          "backcourt": {
+            "fga": 0,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "mid_range": {
+            "fga": 1,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "left_corner_3": {
+            "fga": 0,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "right_corner_3": {
+            "fga": 0,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "restricted_area": {
+            "fga": 0,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "above_the_break_3": {
+            "fga": 1,
+            "fgm": 0,
+            "fg_pct": 0
+          },
+          "in_the_paint_non_ra": {
+            "fga": 1,
+            "fgm": 1,
+            "fg_pct": 1
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "next_cursor": null,
+    "per_page": 2
+  }
+}

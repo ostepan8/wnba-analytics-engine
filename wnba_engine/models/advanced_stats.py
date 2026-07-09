@@ -18,6 +18,17 @@ class BdlPlayerRef:
     full_name: str
     position: str | None
 
+    # Bio fields: present on balldontlie's player object on every
+    # advanced-stats and shot-zone response, but not exposed by any other
+    # provider this repo ingests (ESPN box scores never carry them). Free
+    # text, not numeric -- height/weight are formatted like "6' 1\"" /
+    # "160 lbs", not inches/pounds as plain numbers (verified live).
+    height: str | None
+    weight: str | None
+    jersey_number: str | None
+    college: str | None
+    age: int | None
+
 
 @dataclass(frozen=True, slots=True)
 class BdlTeamRef:

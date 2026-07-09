@@ -10,6 +10,7 @@ from wnba_engine.errors import ProviderValidationError
 from wnba_engine.parsing import (
     optional_datetime_utc,
     optional_float,
+    optional_str,
     parse_datetime_utc,
     parse_float,
     parse_int,
@@ -77,3 +78,20 @@ def test_optional_datetime_none():
 def test_parse_datetime_rejects_garbage():
     with pytest.raises(ProviderValidationError):
         parse_datetime_utc("not-a-date", "p", "ctx")
+
+
+def test_optional_str_none_and_blank():
+    assert optional_str(None, "p", "ctx") is None
+    assert optional_str("", "p", "ctx") is None
+    assert optional_str("   ", "p", "ctx") is None
+
+
+def test_optional_str_placeholder_dashes_become_none():
+    # Observed live on balldontlie: weight/college use "--" as an in-band
+    # placeholder for "unknown" rather than omitting the key or using null.
+    assert optional_str("--", "p", "ctx") is None
+
+
+def test_optional_str_returns_stripped_text():
+    assert optional_str("  Notre Dame  ", "p", "ctx") == "Notre Dame"
+    assert optional_str("22", "p", "ctx") == "22"

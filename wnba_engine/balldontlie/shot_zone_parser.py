@@ -25,6 +25,7 @@ from wnba_engine.models.shot_zones import (
 )
 from wnba_engine.parsing import (
     optional_int,
+    optional_str,
     require,
     require_mapping,
     require_sequence,
@@ -124,6 +125,11 @@ def _parse_player(player: Mapping[str, object], context: str) -> BdlPlayerRef:
         external_id=external_id,
         full_name=f"{first_name} {last_name}",
         position=position if isinstance(position, str) and position else None,
+        height=optional_str(player.get("height"), PROVIDER, player_context),
+        weight=optional_str(player.get("weight"), PROVIDER, player_context),
+        jersey_number=optional_str(player.get("jersey_number"), PROVIDER, player_context),
+        college=optional_str(player.get("college"), PROVIDER, player_context),
+        age=optional_int(player.get("age"), PROVIDER, player_context),
     )
 
 

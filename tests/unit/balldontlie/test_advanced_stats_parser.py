@@ -94,3 +94,31 @@ def test_null_numeric_field_becomes_none(balldontlie_player_advanced_stats_paylo
     payload["data"][0]["stats"]["advanced"]["possessions"] = None
     stats = parse_player_advanced_stats(payload)
     assert stats[0].possessions is None
+
+
+def test_parses_player_bio_fields(balldontlie_player_advanced_stats_bio_payload):
+    # Real fixture (tests/fixtures/balldontlie_player_advanced_stats_bio.json):
+    # Sonia Citron -- full bio present except weight, which balldontlie
+    # returns as the in-band placeholder "--" (see wnba_engine/parsing.py's
+    # optional_str), not omitted or null.
+    stats = parse_player_advanced_stats(balldontlie_player_advanced_stats_bio_payload)
+    citron = stats[0]
+    assert citron.player.height == "6' 1\""
+    assert citron.player.weight is None
+    assert citron.player.jersey_number == "22"
+    assert citron.player.college == "Notre Dame"
+    assert citron.player.age == 22
+
+
+def test_parses_player_bio_fields_all_null(balldontlie_player_advanced_stats_bio_payload):
+    # Real fixture, second row: Marieme Badiane -- height/weight/college/age
+    # come back as real JSON null for this player (not "--"), only
+    # jersey_number is populated. Confirms both null-shapes balldontlie
+    # actually uses are handled.
+    stats = parse_player_advanced_stats(balldontlie_player_advanced_stats_bio_payload)
+    badiane = stats[1]
+    assert badiane.player.height is None
+    assert badiane.player.weight is None
+    assert badiane.player.jersey_number == "22"
+    assert badiane.player.college is None
+    assert badiane.player.age is None

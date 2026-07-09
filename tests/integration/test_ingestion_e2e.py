@@ -505,6 +505,105 @@ def test_find_player_by_name_falls_back_to_diacritic_insensitive_match(clean_db)
         assert entity_repo.find_player_by_name(conn, "Someone Else") is None
 
 
+def test_resolve_or_create_player_by_name_backfills_bio_on_name_match(clean_db):
+    # An ESPN-only player has no bio data (ESPN box scores never carry
+    # height/weight/jersey_number/college/age). The first time a
+    # balldontlie row names the SAME player, resolve_or_create_player_by_name
+    # must join onto that existing row by name AND backfill the bio
+    # columns in place, not just return the id untouched.
+    with clean_db.connection() as conn:
+        espn_id = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="1068", full_name="Nneka Ogwumike", position="F")
+        )
+        conn.commit()
+
+        bdl_id = entity_repo.resolve_or_create_player_by_name(
+            conn,
+            "balldontlie",
+            "777",
+            "Nneka Ogwumike",
+            "F",
+            "6' 2\"",
+            "173 lbs",
+            "30",
+            "Stanford",
+            34,
+        )
+        conn.commit()
+        assert bdl_id == espn_id
+
+        row = conn.execute(
+            "SELECT height, weight, jersey_number, college, age FROM players WHERE id = %s",
+            (espn_id,),
+        ).fetchone()
+        assert row == ("6' 2\"", "173 lbs", "30", "Stanford", 34)
+
+
+def test_resolve_or_create_player_by_name_updates_bio_on_repeat_crosswalk_hit(clean_db):
+    # Bio data is a snapshot that legitimately drifts (trade -> new jersey
+    # number, birthday -> new age). A player already mapped via the
+    # provider_entity_map crosswalk (not just matched by name) must also
+    # get bio updates on a later ingestion run, not just on first contact.
+    with clean_db.connection() as conn:
+        player_id = entity_repo.resolve_or_create_player_by_name(
+            conn,
+            "balldontlie",
+            "777",
+            "Nneka Ogwumike",
+            "F",
+            "6' 2\"",
+            "173 lbs",
+            "30",
+            "Stanford",
+            34,
+        )
+        conn.commit()
+
+        again = entity_repo.resolve_or_create_player_by_name(
+            conn,
+            "balldontlie",
+            "777",
+            "Nneka Ogwumike",
+            "F",
+            "6' 2\"",
+            "173 lbs",
+            "3",
+            "Stanford",
+            35,
+        )
+        conn.commit()
+        assert again == player_id
+
+        row = conn.execute(
+            "SELECT jersey_number, age FROM players WHERE id = %s", (player_id,)
+        ).fetchone()
+        assert row == ("3", 35)
+
+
+def test_resolve_or_create_player_by_name_inserts_bio_on_create(clean_db):
+    with clean_db.connection() as conn:
+        player_id = entity_repo.resolve_or_create_player_by_name(
+            conn,
+            "balldontlie",
+            "888",
+            "Brand New Player",
+            "G",
+            "5' 9\"",
+            "140 lbs",
+            "0",
+            "Texas",
+            22,
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT full_name, position, height, weight, jersey_number, college, age "
+            "FROM players WHERE id = %s",
+            (player_id,),
+        ).fetchone()
+        assert row == ("Brand New Player", "G", "5' 9\"", "140 lbs", "0", "Texas", 22)
+
+
 class FakeInjuriesEspnClient:
     def fetch_injuries(self) -> object:
         return load_fixture("espn_injuries.json")
