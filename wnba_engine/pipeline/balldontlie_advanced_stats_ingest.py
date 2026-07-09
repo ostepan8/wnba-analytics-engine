@@ -6,9 +6,9 @@ for a real pipeline.
 
 Two phases per season, in this order:
 1. Resolve every balldontlie game to our canonical games table via
-   team+date matching (find_game_id_by_teams) -- balldontlie's own game
-   ids are a different id space with no shared identifier to ESPN's.
-   Persisted to the crosswalk so a re-run doesn't re-match.
+   team+date matching (balldontlie_game_resolution, shared with
+   play-by-play ingestion) -- balldontlie's own game ids are a different
+   id space with no shared identifier to ESPN's.
 2. Ingest the actual per-player advanced stats, using that crosswalk plus
    team-abbreviation and player-name resolution (resolve_or_create_player_by_name
    joins onto the SAME canonical player ESPN's box scores already created,
@@ -19,12 +19,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import timedelta
 
 from wnba_engine.balldontlie.advanced_stats_parser import parse_player_advanced_stats
 from wnba_engine.balldontlie.client import BalldontlieClient
-from wnba_engine.balldontlie.games_parser import parse_games
 from wnba_engine.db.pool import Database
+from wnba_engine.pipeline.balldontlie_game_resolution import resolve_games_for_season
 from wnba_engine.repositories import advanced_stats_repo, entity_repo
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ logger = logging.getLogger(__name__)
 SOURCE = "balldontlie"
 MAX_PAGES = 200  # safety valve against a runaway cursor loop
 PAGE_SIZE = 100
-GAME_MATCH_WINDOW = timedelta(hours=6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,56 +45,13 @@ class BdlIngestResult:
 
 
 def backfill_season(db: Database, client: BalldontlieClient, season: int) -> BdlIngestResult:
-    result = _resolve_games(db, client, season, BdlIngestResult())
+    game_resolution = resolve_games_for_season(db, client, season)
+    result = BdlIngestResult(
+        games_seen=game_resolution.games_seen,
+        games_resolved=game_resolution.games_resolved,
+        games_unresolved=game_resolution.games_unresolved,
+    )
     return _ingest_advanced_stats(db, client, season, result)
-
-
-def _resolve_games(
-    db: Database, client: BalldontlieClient, season: int, result: BdlIngestResult
-) -> BdlIngestResult:
-    cursor: int | None = None
-    for _ in range(MAX_PAGES):
-        payload = client.fetch_games_page(season, cursor=cursor, per_page=PAGE_SIZE)
-        games = parse_games(payload)
-        with db.connection() as conn:
-            for game in games:
-                result = replace(result, games_seen=result.games_seen + 1)
-                existing = entity_repo.lookup_internal_id(
-                    conn, SOURCE, entity_repo.ENTITY_GAME, game.external_id
-                )
-                if existing is not None:
-                    result = replace(result, games_resolved=result.games_resolved + 1)
-                    continue
-                game_id = entity_repo.find_game_id_by_teams(
-                    conn,
-                    game.home_team_full_name,
-                    game.away_team_full_name,
-                    game.start_time,
-                    window=GAME_MATCH_WINDOW,
-                )
-                if game_id is None:
-                    logger.warning(
-                        "could not match balldontlie game external_id=%s (%s vs %s, %s) "
-                        "to a canonical game -- skipping",
-                        game.external_id,
-                        game.home_team_full_name,
-                        game.away_team_full_name,
-                        game.start_time,
-                    )
-                    result = replace(result, games_unresolved=result.games_unresolved + 1)
-                    continue
-                entity_repo.record_crosswalk_mapping(
-                    conn, SOURCE, entity_repo.ENTITY_GAME, game.external_id, game_id
-                )
-                result = replace(result, games_resolved=result.games_resolved + 1)
-            conn.commit()
-        if len(games) < PAGE_SIZE:
-            return result
-        cursor = _next_cursor(payload)
-        if cursor is None:
-            return result
-    logger.warning("balldontlie game resolution exceeded %d pages for season=%s", MAX_PAGES, season)
-    return result
 
 
 def _ingest_advanced_stats(
