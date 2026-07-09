@@ -6,10 +6,11 @@ lookup against the canonical games table. Per-game player-prop markets
 (KXWNBAPTS/REB/AST/3PT, ...) get their player_id resolved via
 kalshi.player_prop_matching + a name lookup, and their game_id resolved
 from there via the player's own recent team (props carry no team name or
-decodable team code -- see player_prop_matching's docstring). Every other
-series (season-long futures/awards, team quarter/half spread/total
-markets) stays unmapped -- there's no single game to resolve to, or
-resolving it is separate follow-up work.
+decodable team code -- see player_prop_matching's docstring). Team-level
+per-game derivative markets (spreads, totals, quarter/half winners,
+overtime) get their game_id resolved via kalshi.team_market_matching.
+Season-long futures/award markets stay unmapped -- there's no single game
+to resolve to.
 """
 
 from __future__ import annotations
@@ -31,6 +32,10 @@ from wnba_engine.kalshi.parser import (
     parse_series_list,
 )
 from wnba_engine.kalshi.player_prop_matching import parse_player_prop
+from wnba_engine.kalshi.team_market_matching import (
+    parse_single_team_market,
+    parse_two_team_market,
+)
 from wnba_engine.models.markets import MarketSnapshot
 from wnba_engine.repositories import entity_repo, market_repo
 
@@ -105,10 +110,14 @@ def _ingest_series(
                 player_id_by_market, prop_game_id_by_market = _resolve_player_prop_ids(
                     conn, snapshots
                 )
+                already_resolved = {**game_id_by_market, **prop_game_id_by_market}
+                team_market_game_id_by_market = _resolve_team_market_ids(
+                    conn, snapshots, already_resolved
+                )
                 inserted += market_repo.insert_snapshots(
                     conn,
                     snapshots,
-                    game_id_by_market={**game_id_by_market, **prop_game_id_by_market},
+                    game_id_by_market={**already_resolved, **team_market_game_id_by_market},
                     player_id_by_market=player_id_by_market,
                 )
                 conn.commit()
@@ -200,3 +209,51 @@ def _resolve_one_player_prop(
         conn, team_id, near, window=GAME_DATE_MATCH_WINDOW
     )
     return player_id, game_id
+
+
+def _resolve_team_market_ids(
+    conn: Connection,
+    snapshots: Sequence[MarketSnapshot],
+    already_resolved: dict[str, int],
+) -> dict[str, int]:
+    """Map market_external_id -> canonical game id for team-level
+    per-game derivative markets (spreads, totals, quarter/half winners,
+    overtime).
+
+    Resolved per-market rather than per-event: unlike KXWNBAGAME, a
+    derivative event's markets can carry different titles for the same
+    event ticker (e.g. KXWNBASPREAD's two outcome markets each name a
+    different team). already_resolved marks markets game_matching /
+    player_prop_matching already mapped, so they're not reprocessed here
+    (also sidesteps KXWNBAGAME's own "X vs Y winner?" title superficially
+    matching the two-team regex below).
+    """
+    game_id_by_market: dict[str, int] = {}
+    for snap in snapshots:
+        if snap.event_external_id is None or snap.market_external_id in already_resolved:
+            continue
+        game_id = _resolve_one_team_market(conn, snap.event_external_id, snap.title)
+        if game_id is not None:
+            game_id_by_market[snap.market_external_id] = game_id
+    return game_id_by_market
+
+
+def _resolve_one_team_market(conn: Connection, event_external_id: str, title: str) -> int | None:
+    two_team = parse_two_team_market(event_external_id, title)
+    if two_team is not None:
+        game_date, team_a, team_b = two_team
+        near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
+        return entity_repo.find_game_id_by_teams(
+            conn, team_a, team_b, near, window=GAME_DATE_MATCH_WINDOW
+        )
+    single_team = parse_single_team_market(event_external_id, title)
+    if single_team is not None:
+        game_date, team_name = single_team
+        team_id = entity_repo.find_team_by_name_fragment(conn, team_name)
+        if team_id is None:
+            return None
+        near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
+        return entity_repo.find_game_id_by_team_and_date(
+            conn, team_id, near, window=GAME_DATE_MATCH_WINDOW
+        )
+    return None
