@@ -52,6 +52,18 @@ def check_duplicate_crosswalk_mappings(conn: Connection) -> CheckResult:
     entities (e.g. two different players who happen to share a name) got
     merged into the same canonical row by resolve_or_create_player_by_name's
     name-matching fallback.
+
+    Known, verified-benign exception: balldontlie itself sometimes issues
+    a DIFFERENT player id for the same real person across its own separate
+    endpoints (advanced-stats vs. traditional-box-score, observed live for
+    a handful of players) -- not a provider we control, so this is a real
+    provider-side quirk, not a crosswalk bug. When investigating a flagged
+    balldontlie/player entry, check whether both external_ids consistently
+    appear under the SAME team_id in player_advanced_stats /
+    player_game_stats -- that's strong evidence it's the same person, not
+    a bad merge (verified for 3 real cases this way before concluding they
+    were fine, not "fixed" away here since silently suppressing a
+    legitimate-looking pattern risks hiding a genuinely bad future merge).
     """
     rows = conn.execute(_DUPLICATE_MAPPINGS_SQL).fetchall()
     return build_check_result(

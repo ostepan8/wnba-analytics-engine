@@ -39,7 +39,7 @@ def check_team_box_score_matches_final_score(conn: Connection) -> CheckResult:
 
 
 _TEAM_TOTALS_VS_PLAYER_SUMS_SQL = """
-SELECT tgs.game_id, tgs.team_id,
+SELECT tgs.game_id, tgs.team_id, tgs.source,
        tgs.field_goals_made, SUM(pgs.field_goals_made) AS fgm_sum,
        tgs.rebounds, SUM(pgs.rebounds) AS reb_sum,
        tgs.assists, SUM(pgs.assists) AS ast_sum,
@@ -47,7 +47,8 @@ SELECT tgs.game_id, tgs.team_id,
 FROM team_game_stats tgs
 JOIN player_game_stats pgs
     ON pgs.game_id = tgs.game_id AND pgs.team_id = tgs.team_id AND pgs.source = tgs.source
-GROUP BY tgs.game_id, tgs.team_id, tgs.field_goals_made, tgs.rebounds, tgs.assists, tgs.turnovers
+GROUP BY tgs.game_id, tgs.team_id, tgs.source,
+         tgs.field_goals_made, tgs.rebounds, tgs.assists, tgs.turnovers
 HAVING tgs.field_goals_made <> SUM(pgs.field_goals_made)
     OR tgs.rebounds <> SUM(pgs.rebounds)
     OR tgs.assists <> SUM(pgs.assists)
@@ -56,10 +57,17 @@ HAVING tgs.field_goals_made <> SUM(pgs.field_goals_made)
 
 
 def check_team_totals_match_player_sums(conn: Connection) -> CheckResult:
-    """team_game_stats and player_game_stats are separately-parsed
-    sections of the same ESPN box score page -- their totals (FGM,
-    rebounds, assists, turnovers) must agree, or one of the two parsers
-    has a bug.
+    """team_game_stats and player_game_stats totals must agree PER SOURCE
+    (FGM, rebounds, assists, turnovers), or one of a given provider's two
+    parsers (team-level vs player-level) has a bug.
+
+    GROUP BY must include tgs.source, not just the stat columns: verified
+    live that once a second box-score source (balldontlie) exists
+    alongside ESPN for the same game and both correctly report identical
+    real totals, grouping on the stat values alone collapsed the two
+    same-valued-but-different-source team rows into one group -- summing
+    player rows from BOTH sources together and reporting e.g. "32 vs 64"
+    as a false violation on totally correct, cross-source-agreeing data.
     """
     rows = conn.execute(_TEAM_TOTALS_VS_PLAYER_SUMS_SQL).fetchall()
     return build_check_result(
@@ -67,8 +75,8 @@ def check_team_totals_match_player_sums(conn: Connection) -> CheckResult:
         description="team_game_stats totals equal SUM() of that team's player_game_stats rows",
         rows=rows,
         formatter=lambda r: (
-            f"game={r[0]} team={r[1]} fgm(team/sum)={r[2]}/{r[3]} reb={r[4]}/{r[5]} "
-            f"ast={r[6]}/{r[7]} tov={r[8]}/{r[9]}"
+            f"game={r[0]} team={r[1]} source={r[2]} fgm(team/sum)={r[3]}/{r[4]} reb={r[5]}/{r[6]} "
+            f"ast={r[7]}/{r[8]} tov={r[9]}/{r[10]}"
         ),
     )
 

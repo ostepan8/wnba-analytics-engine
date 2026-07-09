@@ -50,21 +50,25 @@ def _seed_final_game(conn, home_score: int, away_score: int) -> tuple[int, int, 
     return home_id, away_id, int(row[0])
 
 
-def _insert_player_game_stats(conn, *, game_id: int, player_id: int, team_id: int, **stats) -> None:
+def _insert_player_game_stats(
+    conn, *, game_id: int, player_id: int, team_id: int, source: str = "espn", **stats
+) -> None:
     columns = ["game_id", "player_id", "team_id", "source", *stats.keys()]
     placeholders = ", ".join(["%s"] * len(columns))
     conn.execute(
         f"INSERT INTO player_game_stats ({', '.join(columns)}) VALUES ({placeholders})",  # noqa: S608
-        (game_id, player_id, team_id, "espn", *stats.values()),
+        (game_id, player_id, team_id, source, *stats.values()),
     )
 
 
-def _insert_team_game_stats(conn, *, game_id: int, team_id: int, **stats) -> None:
+def _insert_team_game_stats(
+    conn, *, game_id: int, team_id: int, source: str = "espn", **stats
+) -> None:
     columns = ["game_id", "team_id", "source", *stats.keys()]
     placeholders = ", ".join(["%s"] * len(columns))
     conn.execute(
         f"INSERT INTO team_game_stats ({', '.join(columns)}) VALUES ({placeholders})",  # noqa: S608
-        (game_id, team_id, "espn", *stats.values()),
+        (game_id, team_id, source, *stats.values()),
     )
 
 
@@ -190,6 +194,44 @@ def test_team_totals_match_player_sums_passes_when_matching(clean_db):
         _insert_team_game_stats(conn, game_id=game_id, team_id=home_id, **_FULL_STAT_LINE)
         _insert_player_game_stats(
             conn, game_id=game_id, player_id=player_id, team_id=home_id, **_FULL_STAT_LINE
+        )
+        result = consistency_checks.check_team_totals_match_player_sums(conn)
+    assert result.passed is True
+
+
+def test_team_totals_match_player_sums_passes_with_two_sources_reporting_identical_totals(clean_db):
+    """Regression test: verified live that once a second box-score source
+    (balldontlie) exists alongside ESPN for the same game, and both
+    providers correctly agree on the real totals, the check's GROUP BY
+    (missing tgs.source) collapsed the two identically-valued team rows
+    into one group and summed player rows from BOTH sources together --
+    reporting e.g. "32 vs 64" as a false violation on totally correct
+    data. Two sources with correct, identical, per-source-consistent
+    totals must never fail this check."""
+    with clean_db.connection() as conn:
+        home_id, _, game_id = _seed_final_game(conn, home_score=70, away_score=60)
+        espn_player = _seed_player(conn, "ESPN Player")
+        bdl_player = _seed_player(conn, "Balldontlie Player")
+        stat_line = {**_FULL_STAT_LINE, "field_goals_made": 32, "rebounds": 40}
+        _insert_team_game_stats(conn, game_id=game_id, team_id=home_id, source="espn", **stat_line)
+        _insert_team_game_stats(
+            conn, game_id=game_id, team_id=home_id, source="balldontlie", **stat_line
+        )
+        _insert_player_game_stats(
+            conn,
+            game_id=game_id,
+            player_id=espn_player,
+            team_id=home_id,
+            source="espn",
+            **stat_line,
+        )
+        _insert_player_game_stats(
+            conn,
+            game_id=game_id,
+            player_id=bdl_player,
+            team_id=home_id,
+            source="balldontlie",
+            **stat_line,
         )
         result = consistency_checks.check_team_totals_match_player_sums(conn)
     assert result.passed is True
