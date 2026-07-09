@@ -28,6 +28,7 @@ from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.errors import ProviderRequestError
+from wnba_engine.models.box_scores import PlayerRef
 from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, TeamRef
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
@@ -318,6 +319,114 @@ def test_polymarket_game_mapping_resolves_via_teams_and_close_time(clean_db):
             ("999002",),
         ).fetchone()
     assert row is not None, "expected the seeded NY/SEA game to be mapped, got NULL game_id"
+
+
+class FakeKalshiPlayerPropClient:
+    """A single KXWNBAREB player-prop market for a player FakeEspnClient
+    seeds (Breanna Stewart, New York Liberty, external_id 2998928)."""
+
+    def fetch_sports_series(self) -> object:
+        return {"series": [{"ticker": "KXWNBAREB", "title": "WNBA Player Rebounds"}]}
+
+    def fetch_markets_page(self, series_ticker: str, **_: object) -> object:
+        return {
+            "cursor": "",
+            "markets": [
+                {
+                    "ticker": "KXWNBAREB-25JUL06NYSEA-YES",
+                    "event_ticker": "KXWNBAREB-25JUL06NYSEA",
+                    "title": "Breanna Stewart: 8+ rebounds",
+                    "status": "active",
+                    "yes_bid_dollars": "0.5500",
+                    "yes_ask_dollars": "0.5700",
+                    "last_price_dollars": "0.5600",
+                    "volume_fp": "20.00",
+                    "open_interest_fp": "5.00",
+                    "liquidity_dollars": "2.00",
+                    "close_time": "2025-07-06T23:00:00Z",
+                }
+            ],
+        }
+
+
+def test_kalshi_player_prop_resolves_via_player_and_team_date(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_kalshi_wnba_markets(clean_db, FakeKalshiPlayerPropClient())
+    assert result.failures == 0
+    assert result.snapshots_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT p.full_name, g.id FROM market_price_snapshots m "
+            "JOIN players p ON p.id = m.player_id "
+            "JOIN games g ON g.id = m.game_id "
+            "WHERE m.market_external_id = %s",
+            ("KXWNBAREB-25JUL06NYSEA-YES",),
+        ).fetchone()
+    assert row is not None, "expected the prop to resolve both player_id and game_id"
+    assert row[0] == "Breanna Stewart"
+
+
+class FakePolymarketPlayerPropClient:
+    """A single player-prop market for a player FakeEspnClient seeds
+    (Breanna Stewart, New York Liberty, external_id 2998928)."""
+
+    def fetch_wnba_events_page(self, *, offset: int = 0, **_: object) -> object:
+        if offset != 0:
+            return []
+        return [
+            {
+                "id": "999101",
+                "markets": [
+                    {
+                        "id": "999102",
+                        "question": "Breanna Stewart: Points O/U 20.5",
+                        "bestBid": 0.5,
+                        "bestAsk": 0.52,
+                        "lastTradePrice": 0.51,
+                        "outcomePrices": '["0.51", "0.49"]',
+                        "groupItemTitle": "Over",
+                        "volumeNum": 300,
+                        "liquidityNum": 100,
+                        "closed": False,
+                        "active": True,
+                        "endDateIso": "2025-07-06T23:00:00Z",
+                    }
+                ],
+            }
+        ]
+
+
+def test_polymarket_player_prop_resolves_via_player_and_team_date(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_polymarket_wnba_markets(clean_db, FakePolymarketPlayerPropClient())
+    assert result.snapshots_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT p.full_name, g.id FROM market_price_snapshots m "
+            "JOIN players p ON p.id = m.player_id "
+            "JOIN games g ON g.id = m.game_id "
+            "WHERE m.market_external_id = %s",
+            ("999102",),
+        ).fetchone()
+    assert row is not None, "expected the prop to resolve both player_id and game_id"
+    assert row[0] == "Breanna Stewart"
+
+
+def test_find_player_by_name_falls_back_to_diacritic_insensitive_match(clean_db):
+    # Real gap found live: ESPN stores "Janelle Salaun" (no diaeresis);
+    # Kalshi/Polymarket prop titles spell it "Janelle Salaün".
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="1", full_name="Janelle Salaun", position="G")
+        )
+        conn.commit()
+
+        assert entity_repo.find_player_by_name(conn, "Janelle Salaün") is not None
+        assert entity_repo.find_player_by_name(conn, "Someone Else") is None
 
 
 class FakeInjuriesEspnClient:
