@@ -55,6 +55,16 @@ def espn_injuries_payload() -> object:
 
 
 @pytest.fixture
+def espn_transactions_2022_payload() -> object:
+    return load_fixture("espn_transactions_2022.json")
+
+
+@pytest.fixture
+def espn_transactions_2025_page2_payload() -> object:
+    return load_fixture("espn_transactions_2025_page2.json")
+
+
+@pytest.fixture
 def espn_wayback_injuries_html() -> str:
     return (FIXTURES_DIR / "espn_wayback_injuries.html").read_text()
 

@@ -35,6 +35,25 @@ class EspnClient:
         """
         return self._http.get_json("injuries")
 
+    def fetch_transactions(self, season: int, page: int = 1, limit: int = 200) -> object:
+        """GET /transactions?season=<year>&limit=<limit>&page=<page> — roster
+        moves (signings, waivers, releases, trades, front-office/coaching
+        hires, ...) for one season.
+
+        `limit=200` covers most seasons in a single page (confirmed live:
+        2022-2024 each returned `pageCount: 1`), but a busy trade-deadline
+        season can exceed it -- 2025 returned `count: 220` across
+        `pageCount: 2`. Callers must check the response's `pageCount` and
+        loop `page` (page-number pagination, 1-indexed) rather than assuming
+        one page is always enough. The response's echoed `season.year`
+        field is NOT reliable -- it always reflects the *current* season
+        regardless of what was requested; trust each transaction's own
+        `date` field instead (see espn/transactions_parser.py).
+        """
+        return self._http.get_json(
+            "transactions", params={"season": season, "limit": limit, "page": page}
+        )
+
     def close(self) -> None:
         self._http.close()
 
