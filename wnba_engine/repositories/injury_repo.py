@@ -76,10 +76,16 @@ def insert_wayback_snapshots(
     entries: Sequence[WaybackInjuryEntry],
     *,
     player_id_by_external_id: Mapping[str, int],
-    team_id_by_abbreviation: Mapping[str, int],
+    team_id_by_key: Mapping[tuple[str | None, str], int],
     source: str = "espn-wayback",
 ) -> int:
     """Append one row per entry whose player and team both resolved.
+
+    team_id_by_key is keyed by (team_abbreviation, team_name) -- the same
+    composite key the pipeline resolved each entry's team under (logo
+    abbreviation when extractable, falling back to team_name), not by
+    abbreviation alone: some snapshots have no extractable abbreviation at
+    all (see wayback_injuries_parser._extract_abbreviation).
 
     injury_type/side/return_date are always NULL here: the archived page
     format never had those structured fields, only free text (stored in
@@ -90,7 +96,7 @@ def insert_wayback_snapshots(
         (
             f"wayback:{entry.player.external_id}:{entry.captured_at.isoformat()}",
             player_id_by_external_id[entry.player.external_id],
-            team_id_by_abbreviation[entry.team_abbreviation],
+            team_id_by_key[(entry.team_abbreviation, entry.team_name)],
             entry.status,
             entry.status_type,
             entry.description,
@@ -100,7 +106,7 @@ def insert_wayback_snapshots(
         )
         for entry in entries
         if entry.player.external_id in player_id_by_external_id
-        and entry.team_abbreviation in team_id_by_abbreviation
+        and (entry.team_abbreviation, entry.team_name) in team_id_by_key
     ]
     if rows:
         with conn.cursor() as cursor:

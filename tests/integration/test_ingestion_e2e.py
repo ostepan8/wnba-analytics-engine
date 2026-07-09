@@ -437,3 +437,62 @@ def test_wayback_injury_backfill_end_to_end(clean_db):
         ).fetchone()
     assert live_id is not None
     assert wayback_row_player_id[0] == live_id
+
+
+class FakeWaybackClientGuidLogo:
+    """Real observed case: a team's logo URL has no extractable
+    abbreviation (GUID-based asset path, not the classic
+    /teamlogos/wnba/<size>/<abbr>.png), so resolution must fall back to
+    team_name."""
+
+    def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
+        del since, until
+        return [
+            ["urlkey", "timestamp", "original", "mimetype", "statuscode", "digest", "length"],
+            [
+                "com,espn)/wnba/injuries",
+                _WAYBACK_TIMESTAMP,
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "ABC123",
+                "500",
+            ],
+        ]
+
+    def fetch_snapshot_html(self, timestamp: str) -> str:
+        assert timestamp == _WAYBACK_TIMESTAMP
+        return (
+            "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
+            '{"displayName": "Chicago Sky", '
+            '"logo": "https://a.espncdn.com/guid/170598de-f63a-3497-a04d-1fc514508f56/'
+            'logos/primary_logo_on_white_color.png", '
+            '"items": [{"type": {"name": "INJURY_STATUS_OUT"}, '
+            '"athlete": {"name": "Angel Reese", '
+            '"href": "https://www.espn.com/wnba/player/_/id/4433402/angel-reese", '
+            '"position": "F"}, "statusDesc": "Out", '
+            '"date": "Jun 6", "description": "Reese (back) is out."}]}'
+            "]}}};</script>"
+        )
+
+
+def test_wayback_injury_backfill_falls_back_to_team_name_when_logo_unparseable(clean_db):
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="11", name="Chicago Sky", abbreviation="CHI")
+        )
+        conn.commit()
+
+    result = backfill_injury_history(
+        clean_db, FakeWaybackClientGuidLogo(), date(2026, 1, 1), date(2026, 1, 1)
+    )
+    assert result.failures == 0
+    assert result.unresolved_teams == 0
+    assert result.entries_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT t.name FROM injury_reports ir JOIN teams t ON t.id = ir.team_id "
+            "WHERE ir.source = 'espn-wayback'"
+        ).fetchone()
+    assert row[0] == "Chicago Sky"

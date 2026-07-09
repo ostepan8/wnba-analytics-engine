@@ -31,6 +31,7 @@ def test_parses_player_and_team_abbreviation(espn_wayback_injuries_html):
     reese = next(e for e in entries if e.player.full_name == "Angel Reese")
     assert reese.player.external_id == "4433402"
     assert reese.player.position == "F"
+    assert reese.team_name == "Chicago Sky"
     assert reese.team_abbreviation == "CHI"
 
 
@@ -107,14 +108,33 @@ def test_missing_athlete_id_raises():
         parse_wayback_injuries_page(html, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT)
 
 
-def test_unparseable_team_logo_raises():
+def test_unparseable_team_logo_falls_back_to_team_name():
+    """Real observed case: some snapshots serve a GUID-based logo URL
+    (.../guid/<uuid>/logos/primary_logo_on_white_color.png) instead of the
+    classic /teamlogos/wnba/<size>/<abbr>.png -- no abbreviation extractable
+    at all. This must not abort the whole snapshot; team_name is always
+    present and is exactly what the pipeline falls back to resolving by."""
     html = (
         "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
-        '{"displayName": "Chicago Sky", "logo": "not-a-logo-url", "items": []}'
+        '{"displayName": "Chicago Sky", '
+        '"logo": "https://a.espncdn.com/guid/170598de-f63a-3497-a04d-1fc514508f56/'
+        'logos/primary_logo_on_white_color.png", '
+        '"items": []}'
         "]}}};</script>"
     )
-    with pytest.raises(ProviderValidationError, match="abbreviation"):
-        parse_wayback_injuries_page(html, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT)
+    entries = parse_wayback_injuries_page(html, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT)
+    assert entries == ()  # no items in this fixture, just checking it doesn't raise
+
+    html_with_item = _html_with_single_item(date="Jun 6", description="").replace(
+        "https://a.espncdn.com/i/teamlogos/wnba/500/chi.png",
+        "https://a.espncdn.com/guid/170598de-f63a-3497-a04d-1fc514508f56/"
+        "logos/primary_logo_on_white_color.png",
+    )
+    entries_with_item = parse_wayback_injuries_page(
+        html_with_item, snapshot_captured_at=_SNAPSHOT_CAPTURED_AT
+    )
+    assert entries_with_item[0].team_name == "Chicago Sky"
+    assert entries_with_item[0].team_abbreviation is None
 
 
 @pytest.mark.parametrize(

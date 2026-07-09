@@ -49,16 +49,23 @@ class InjuryReportEntry:
 class WaybackInjuryEntry:
     """One entry from an archived ESPN injuries page snapshot.
 
-    Team is identified by abbreviation (extracted from a team logo URL) --
-    this older page format carries no team id, unlike the live API. There
-    are no structured body-part/side/return-date fields either, just a
-    free-text description; the "date" field has no year, so reported_at is
-    inferred from the snapshot's own capture date (see
+    Team has no id in this page format, unlike the live API -- team_name
+    (the team's displayName, e.g. "Atlanta Dream") is always present and is
+    the primary resolution key. team_abbreviation is extracted from the
+    team's logo URL when that URL matches the classic
+    /teamlogos/wnba/<size>/<abbr>.png pattern; some snapshots serve a newer
+    GUID-based logo URL instead (no abbreviation extractable), in which case
+    it's None and resolution falls back to team_name.
+
+    There are no structured body-part/side/return-date fields either, just
+    a free-text description; the "date" field has no year, so reported_at
+    is inferred from the snapshot's own capture date (see
     wayback_injuries_parser._infer_reported_at).
     """
 
     player: PlayerRef
-    team_abbreviation: str
+    team_name: str
+    team_abbreviation: str | None
     status: str
     status_type: str
     description: str | None
