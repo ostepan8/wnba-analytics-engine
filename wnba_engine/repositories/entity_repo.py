@@ -204,9 +204,7 @@ def find_team_by_abbreviation(conn: Connection, abbreviation: str) -> int | None
     too thin to safely originate a new canonical row, so an unresolved
     abbreviation is the caller's problem to log and skip.
     """
-    row = conn.execute(
-        "SELECT id FROM teams WHERE abbreviation = %s", (abbreviation,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM teams WHERE abbreviation = %s", (abbreviation,)).fetchone()
     return int(row[0]) if row else None
 
 
@@ -217,14 +215,27 @@ def find_team_by_name(conn: Connection, name: str) -> int | None:
     display name is present -- e.g. "Atlanta Dream". Never creates a team,
     same reasoning as find_team_by_abbreviation.
     """
-    row = conn.execute(
-        "SELECT id FROM teams WHERE name ILIKE %s", (name,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM teams WHERE name ILIKE %s", (name,)).fetchone()
     return int(row[0]) if row else None
 
 
 def _fold_diacritics(value: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+
+
+def find_team_by_name_fragment(conn: Connection, fragment: str) -> int | None:
+    """Read-only substring lookup by the canonical teams.name column
+    (case-insensitive). Used when a source names a team by a short/partial
+    city name rather than the full team name -- e.g. Kalshi's team-level
+    derivative-market titles say "Atlanta" not "Atlanta Dream" (see
+    kalshi/team_market_matching.py). Separate from find_team_by_name
+    (exact match) rather than loosening that function's contract, since
+    its existing caller (wayback_injuries_parser) relies on exact
+    matching against full display names. Never creates a team, same
+    reasoning as find_team_by_abbreviation.
+    """
+    row = conn.execute("SELECT id FROM teams WHERE name ILIKE %s", (f"%{fragment}%",)).fetchone()
+    return int(row[0]) if row else None
 
 
 def find_player_by_name(conn: Connection, full_name: str) -> int | None:
@@ -240,9 +251,7 @@ def find_player_by_name(conn: Connection, full_name: str) -> int | None:
     accent-sensitive. The fallback is Python-side (small player count, only
     runs on a miss) rather than requiring the Postgres unaccent extension.
     """
-    row = conn.execute(
-        "SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)).fetchone()
     if row is not None:
         return int(row[0])
 

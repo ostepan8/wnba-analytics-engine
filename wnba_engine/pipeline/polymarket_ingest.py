@@ -7,7 +7,10 @@ against the canonical games table, anchored on the market's own close_time
 Player-prop markets ("A'ja Wilson: Rebounds O/U 7.5") get their player_id
 resolved via polymarket.player_prop_matching + a name lookup, and their
 game_id resolved from there via the player's own recent team (same
-close_time anchor). Futures/award markets stay unmapped.
+close_time anchor). Team-level derivative markets ("Spread: Atlanta Dream
+(-10.5)", "Golden State Valkyries vs. Toronto Tempo: O/U 165.5") get
+their game_id resolved via polymarket.team_market_matching. Futures/award
+markets stay unmapped.
 """
 
 from __future__ import annotations
@@ -25,6 +28,10 @@ from wnba_engine.polymarket.client import PolymarketClient
 from wnba_engine.polymarket.game_matching import parse_matchup_teams
 from wnba_engine.polymarket.parser import parse_events
 from wnba_engine.polymarket.player_prop_matching import parse_player_prop_name
+from wnba_engine.polymarket.team_market_matching import (
+    parse_spread_market_team,
+    parse_total_market_teams,
+)
 from wnba_engine.repositories import entity_repo, market_repo
 
 logger = logging.getLogger(__name__)
@@ -64,10 +71,15 @@ def ingest_polymarket_wnba_markets(
                 player_id_by_market, prop_game_id_by_market = _resolve_player_prop_ids(
                     conn, snapshots
                 )
+                team_market_game_id_by_market = _resolve_team_market_ids(conn, snapshots)
                 inserted += market_repo.insert_snapshots(
                     conn,
                     snapshots,
-                    game_id_by_market={**game_id_by_market, **prop_game_id_by_market},
+                    game_id_by_market={
+                        **game_id_by_market,
+                        **prop_game_id_by_market,
+                        **team_market_game_id_by_market,
+                    },
                     player_id_by_market=player_id_by_market,
                 )
                 conn.commit()
@@ -130,3 +142,41 @@ def _resolve_player_prop_ids(
         if game_id is not None:
             game_id_by_market[snap.market_external_id] = game_id
     return player_id_by_market, game_id_by_market
+
+
+def _resolve_team_market_ids(
+    conn: Connection, snapshots: Sequence[MarketSnapshot]
+) -> dict[str, int]:
+    """Map market_external_id -> canonical game id for team-level
+    derivative markets (totals and spreads with a colon in the title,
+    which parse_matchup_teams deliberately excludes -- see
+    polymarket/team_market_matching.py). Team names here are Polymarket's
+    own full canonical names, so find_game_id_by_teams / find_team_by_name
+    (exact match) are enough -- no fragment matching needed, unlike
+    Kalshi's short city-name titles.
+    """
+    game_id_by_market: dict[str, int] = {}
+    for snap in snapshots:
+        if snap.close_time is None:
+            continue
+        total_teams = parse_total_market_teams(snap.title)
+        if total_teams is not None:
+            team_a, team_b = total_teams
+            game_id = entity_repo.find_game_id_by_teams(
+                conn, team_a, team_b, snap.close_time, window=GAME_DATE_MATCH_WINDOW
+            )
+            if game_id is not None:
+                game_id_by_market[snap.market_external_id] = game_id
+            continue
+        spread_team = parse_spread_market_team(snap.title)
+        if spread_team is None:
+            continue
+        team_id = entity_repo.find_team_by_name(conn, spread_team)
+        if team_id is None:
+            continue
+        game_id = entity_repo.find_game_id_by_team_and_date(
+            conn, team_id, snap.close_time, window=GAME_DATE_MATCH_WINDOW
+        )
+        if game_id is not None:
+            game_id_by_market[snap.market_external_id] = game_id
+    return game_id_by_market

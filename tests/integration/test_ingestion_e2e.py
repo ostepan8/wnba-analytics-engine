@@ -416,6 +416,146 @@ def test_polymarket_player_prop_resolves_via_player_and_team_date(clean_db):
     assert row[0] == "Breanna Stewart"
 
 
+class FakeKalshiTeamDerivativeClient:
+    """A two-team total market and a single-team spread market for the
+    same NY/SEA game FakeEspnClient seeds, sharing one event ticker to
+    exercise the per-market (not per-event) resolution path."""
+
+    def fetch_sports_series(self) -> object:
+        return {
+            "series": [
+                {"ticker": "KXWNBATOTAL", "title": "WNBA Total"},
+                {"ticker": "KXWNBASPREAD", "title": "WNBA Spread"},
+            ]
+        }
+
+    def fetch_markets_page(self, series_ticker: str, **_: object) -> object:
+        if series_ticker == "KXWNBATOTAL":
+            return {
+                "cursor": "",
+                "markets": [
+                    {
+                        "ticker": "KXWNBATOTAL-25JUL06NYSEA-YES",
+                        "event_ticker": "KXWNBATOTAL-25JUL06NYSEA",
+                        "title": "New York vs Seattle",
+                        "status": "active",
+                        "yes_bid_dollars": "0.5000",
+                        "yes_ask_dollars": "0.5200",
+                        "last_price_dollars": "0.5100",
+                        "volume_fp": "10.00",
+                        "open_interest_fp": "5.00",
+                        "liquidity_dollars": "1.00",
+                        "close_time": "2025-07-07T00:00:00Z",
+                    }
+                ],
+            }
+        if series_ticker == "KXWNBASPREAD":
+            return {
+                "cursor": "",
+                "markets": [
+                    {
+                        "ticker": "KXWNBASPREAD-25JUL06NYSEA-NY",
+                        "event_ticker": "KXWNBASPREAD-25JUL06NYSEA",
+                        "title": "New York wins by over 3.5 points?",
+                        "status": "active",
+                        "yes_bid_dollars": "0.4500",
+                        "yes_ask_dollars": "0.4700",
+                        "last_price_dollars": "0.4600",
+                        "volume_fp": "10.00",
+                        "open_interest_fp": "5.00",
+                        "liquidity_dollars": "1.00",
+                        "close_time": "2025-07-07T00:00:00Z",
+                    }
+                ],
+            }
+        return {"cursor": "", "markets": []}
+
+
+def test_kalshi_team_derivative_markets_resolve_via_team_and_ticker_date(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_kalshi_wnba_markets(clean_db, FakeKalshiTeamDerivativeClient())
+    assert result.failures == 0
+    assert result.snapshots_inserted == 2
+
+    with clean_db.connection() as conn:
+        total_game = conn.execute(
+            "SELECT game_id FROM market_price_snapshots WHERE market_external_id = %s",
+            ("KXWNBATOTAL-25JUL06NYSEA-YES",),
+        ).fetchone()
+        spread_game = conn.execute(
+            "SELECT game_id FROM market_price_snapshots WHERE market_external_id = %s",
+            ("KXWNBASPREAD-25JUL06NYSEA-NY",),
+        ).fetchone()
+    assert total_game is not None and total_game[0] is not None
+    assert spread_game is not None and spread_game[0] is not None
+    assert total_game[0] == spread_game[0]
+
+
+class FakePolymarketTeamDerivativeClient:
+    """A two-team total market and a single-team spread market for the
+    same NY/SEA game FakeEspnClient seeds."""
+
+    def fetch_wnba_events_page(self, *, offset: int = 0, **_: object) -> object:
+        if offset != 0:
+            return []
+        return [
+            {
+                "id": "999201",
+                "markets": [
+                    {
+                        "id": "999202",
+                        "question": "New York Liberty vs. Seattle Storm: O/U 165.5",
+                        "bestBid": 0.5,
+                        "bestAsk": 0.52,
+                        "lastTradePrice": 0.51,
+                        "outcomePrices": '["0.51", "0.49"]',
+                        "groupItemTitle": "Over",
+                        "volumeNum": 200,
+                        "liquidityNum": 80,
+                        "closed": False,
+                        "active": True,
+                        "endDateIso": "2025-07-06T23:00:00Z",
+                    },
+                    {
+                        "id": "999203",
+                        "question": "Spread: New York Liberty (-3.5)",
+                        "bestBid": 0.45,
+                        "bestAsk": 0.47,
+                        "lastTradePrice": 0.46,
+                        "outcomePrices": '["0.46", "0.54"]',
+                        "groupItemTitle": "Yes",
+                        "volumeNum": 150,
+                        "liquidityNum": 60,
+                        "closed": False,
+                        "active": True,
+                        "endDateIso": "2025-07-06T23:00:00Z",
+                    },
+                ],
+            }
+        ]
+
+
+def test_polymarket_team_derivative_markets_resolve_via_team_and_close_time(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA, 2025-07-06
+
+    result = ingest_polymarket_wnba_markets(clean_db, FakePolymarketTeamDerivativeClient())
+    assert result.snapshots_inserted == 2
+
+    with clean_db.connection() as conn:
+        total_game = conn.execute(
+            "SELECT game_id FROM market_price_snapshots WHERE market_external_id = %s",
+            ("999202",),
+        ).fetchone()
+        spread_game = conn.execute(
+            "SELECT game_id FROM market_price_snapshots WHERE market_external_id = %s",
+            ("999203",),
+        ).fetchone()
+    assert total_game is not None and total_game[0] is not None
+    assert spread_game is not None and spread_game[0] is not None
+    assert total_game[0] == spread_game[0]
+
+
 def test_find_player_by_name_falls_back_to_diacritic_insensitive_match(clean_db):
     # Real gap found live: ESPN stores "Janelle Salaun" (no diaeresis);
     # Kalshi/Polymarket prop titles spell it "Janelle Salaün".
