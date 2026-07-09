@@ -27,6 +27,9 @@ from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, Tea
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
+from wnba_engine.pipeline.balldontlie_standings_ingest import (
+    backfill_season as backfill_standings_season,
+)
 from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
@@ -1195,6 +1198,172 @@ def test_balldontlie_team_advanced_stats_backfill_end_to_end(clean_db):
             "SELECT count(*) FROM team_advanced_stats WHERE source = 'balldontlie'"
         ).fetchone()[0]
     assert count == 2
+
+
+class FakeBalldontlieStandingsClient:
+    """Two standings rows -- real field shapes captured live from
+    /wnba/v1/standings (tests/fixtures/balldontlie_standings.json's NY
+    Liberty and Seattle Storm rows) -- for the same teams FakeEspnClient's
+    NY vs SEA game seeds, so each row resolves onto the SAME canonical
+    teams ESPN's box score already created. `ny_wins` is overridable to
+    exercise that a re-fetch genuinely changes standings values (unlike
+    per-game stats, which are immutable once a game is final)."""
+
+    def __init__(self, ny_wins: int = 27) -> None:
+        self._ny_wins = ny_wins
+
+    def fetch_standings(self, season: int) -> object:
+        assert season == 2025
+        return {
+            "data": [
+                {
+                    "team": {
+                        "id": 1,
+                        "conference": "Eastern Conference",
+                        "city": "New York",
+                        "name": "Liberty",
+                        "full_name": "New York Liberty",
+                        "abbreviation": "NY",
+                    },
+                    "season": 2025,
+                    "conference": "Eastern Conference",
+                    "wins": self._ny_wins,
+                    "losses": 17,
+                    "win_percentage": 0.614,
+                    "games_behind": 3,
+                    "home_record": "17-5",
+                    "away_record": "10-12",
+                    "conference_record": "15-5",
+                    "playoff_seed": 2,
+                },
+                {
+                    "team": {
+                        "id": 2,
+                        "conference": "Western Conference",
+                        "city": "Seattle",
+                        "name": "Storm",
+                        "full_name": "Seattle Storm",
+                        "abbreviation": "SEA",
+                    },
+                    "season": 2025,
+                    "conference": "Western Conference",
+                    "wins": 23,
+                    "losses": 21,
+                    "win_percentage": 0.523,
+                    "games_behind": 11,
+                    "home_record": "10-12",
+                    "away_record": "13-9",
+                    "conference_record": "12-12",
+                    "playoff_seed": 4,
+                },
+            ]
+        }
+
+
+def test_balldontlie_standings_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA
+
+    result = backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(), 2025)
+    assert result.rows_seen == 2
+    assert result.rows_inserted == 2
+    assert result.unresolved_teams == 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT t.abbreviation, ts.wins, ts.losses, ts.win_percentage, "
+            "ts.games_behind, ts.home_record, ts.playoff_seed "
+            "FROM team_standings ts JOIN teams t ON t.id = ts.team_id "
+            "WHERE ts.source = 'balldontlie' ORDER BY t.abbreviation"
+        ).fetchall()
+    assert len(rows) == 2
+    ny, sea = rows
+    assert ny[0] == "NY"
+    assert ny[1] == 27
+    assert ny[2] == 17
+    assert float(ny[3]) == pytest.approx(0.614)
+    assert float(ny[4]) == pytest.approx(3)
+    assert ny[5] == "17-5"
+    assert ny[6] == 2
+    assert sea[0] == "SEA"
+    assert sea[1] == 23
+
+    # Crosswalk correctness: balldontlie's team abbreviation resolves onto
+    # the SAME canonical teams rows ESPN's box score already created -- no
+    # forked duplicate identity.
+    with clean_db.connection() as conn:
+        team_count = conn.execute("SELECT count(*) FROM teams").fetchone()[0]
+    assert team_count == 2
+
+    # Upserted, not append-only, and this matters more here than for the
+    # per-game stats tables: standings genuinely change on every re-fetch
+    # (wins increments as the season progresses), so a re-run must both
+    # avoid duplicating rows AND overwrite the changed values.
+    rerun = backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(ny_wins=28), 2025)
+    assert rerun.rows_inserted == 2
+    with clean_db.connection() as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM team_standings WHERE source = 'balldontlie'"
+        ).fetchone()[0]
+        ny_wins = conn.execute(
+            "SELECT ts.wins FROM team_standings ts JOIN teams t ON t.id = ts.team_id "
+            "WHERE t.abbreviation = 'NY'"
+        ).fetchone()[0]
+    assert count == 2
+    assert ny_wins == 28
+
+
+class FakeBalldontlieStandingsUnresolvedTeamClient:
+    """One resolvable row (NY, matching FakeEspnClient's seeded team) and
+    one row for a team never seeded in this test's DB, to exercise the
+    unresolved-team skip path."""
+
+    def fetch_standings(self, season: int) -> object:
+        del season
+        return {
+            "data": [
+                {
+                    "team": {"id": 1, "abbreviation": "NY"},
+                    "season": 2025,
+                    "conference": "Eastern Conference",
+                    "wins": 27,
+                    "losses": 17,
+                    "win_percentage": 0.614,
+                    "games_behind": 3,
+                    "home_record": "17-5",
+                    "away_record": "10-12",
+                    "conference_record": "15-5",
+                    "playoff_seed": 2,
+                },
+                {
+                    "team": {"id": 99, "abbreviation": "ZZZ"},
+                    "season": 2025,
+                    "conference": "Western Conference",
+                    "wins": 1,
+                    "losses": 1,
+                    "win_percentage": 0.5,
+                    "games_behind": 0,
+                    "home_record": "1-0",
+                    "away_record": "0-1",
+                    "conference_record": "1-1",
+                    "playoff_seed": 7,
+                },
+            ]
+        }
+
+
+def test_balldontlie_standings_backfill_skips_unresolved_team(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA
+
+    result = backfill_standings_season(
+        clean_db, FakeBalldontlieStandingsUnresolvedTeamClient(), 2025
+    )
+    assert result.rows_seen == 2
+    assert result.rows_inserted == 1
+    assert result.unresolved_teams == 1
+
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM team_standings").fetchone()[0]
+    assert count == 1
 
 
 class FakeBalldontliePlaysClient:
