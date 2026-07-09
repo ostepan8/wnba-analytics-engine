@@ -1,0 +1,69 @@
+{
+  "count": 220,
+  "pageIndex": 2,
+  "pageSize": 200,
+  "pageCount": 2,
+  "season": {
+    "year": 2026,
+    "type": 2,
+    "name": "Regular Season",
+    "displayName": "2026"
+  },
+  "transactions": [
+    {
+      "date": "2025-02-20T08:00Z",
+      "description": "F Kristy Wallace announced she will not play in the 2025 season for personal reasons.",
+      "team": {
+        "id": "5",
+        "location": "Indiana",
+        "name": "Fever",
+        "abbreviation": "IND",
+        "displayName": "Indiana Fever"
+      }
+    },
+    {
+      "date": "2025-02-17T08:00Z",
+      "description": "Signed G Arella Cuirantes to a training camp contract.",
+      "team": {
+        "id": "19",
+        "location": "Chicago",
+        "name": "Sky",
+        "abbreviation": "CHI",
+        "displayName": "Chicago Sky"
+      }
+    },
+    {
+      "date": "2025-02-16T08:00Z",
+      "description": "Signed G Carla Leite to a rookie scale contract.",
+      "team": {
+        "id": "129689",
+        "location": "Golden State",
+        "name": "Valkyries",
+        "abbreviation": "GS",
+        "displayName": "Golden State Valkyries"
+      }
+    },
+    {
+      "date": "2025-02-16T08:00Z",
+      "description": "Signed G Crystal Bradford to a training camp contract.",
+      "team": {
+        "id": "17",
+        "location": "Las Vegas",
+        "name": "Aces",
+        "abbreviation": "LV",
+        "displayName": "Las Vegas Aces"
+      }
+    },
+    {
+      "date": "2025-02-16T08:00Z",
+      "description": "Signed F Katie Lou Samuelson to a contract.",
+      "team": {
+        "id": "14",
+        "location": "Seattle",
+        "name": "Storm",
+        "abbreviation": "SEA",
+        "displayName": "Seattle Storm"
+      }
+    }
+  ]
+}

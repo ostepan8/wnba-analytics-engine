@@ -1,0 +1,531 @@
+{
+  "count": 47,
+  "pageIndex": 1,
+  "pageSize": 200,
+  "pageCount": 1,
+  "season": {
+    "year": 2026,
+    "type": 2,
+    "name": "Regular Season",
+    "displayName": "2026"
+  },
+  "transactions": [
+    {
+      "date": "2022-12-15T08:00Z",
+      "description": "Signed general manager Dan Padover and head coach Tanisha Wright to five-year contract extensions through the 2027 season.",
+      "team": {
+        "id": "20",
+        "location": "Atlanta",
+        "name": "Dream",
+        "abbreviation": "ATL",
+        "displayName": "Atlanta Dream"
+      }
+    },
+    {
+      "date": "2022-12-08T08:00Z",
+      "description": "Named Clare Duwelius general manager.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-10-29T07:00Z",
+      "description": "Signed head coach Cheryl Reeve to a multi-year contract extension and also moved her to president of basketball operations from general manager.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-10-16T07:00Z",
+      "description": "Announced the hiring of Curt Miller as head coach.",
+      "team": {
+        "id": "6",
+        "location": "Los Angeles",
+        "name": "Sparks",
+        "abbreviation": "LA",
+        "displayName": "Los Angeles Sparks"
+      }
+    },
+    {
+      "date": "2022-08-05T07:00Z",
+      "description": "Activated G Aerial Powers. Released F Nikolina Milic from hardship exeption.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-08-04T07:00Z",
+      "description": "Signed G Maya Caldwell to a rest-of-season contract.",
+      "team": {
+        "id": "20",
+        "location": "Atlanta",
+        "name": "Dream",
+        "abbreviation": "ATL",
+        "displayName": "Atlanta Dream"
+      }
+    },
+    {
+      "date": "2022-08-03T07:00Z",
+      "description": "Signed G Yvonne Turner to a hardship contract.",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-08-01T07:00Z",
+      "description": "Re-signed G Lindsay Allen to a third seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-07-28T07:00Z",
+      "description": "Signed G Maya Caldwell to a seven-day contract.",
+      "team": {
+        "id": "20",
+        "location": "Atlanta",
+        "name": "Dream",
+        "abbreviation": "ATL",
+        "displayName": "Atlanta Dream"
+      }
+    },
+    {
+      "date": "2022-07-28T07:00Z",
+      "description": "Signed G Kianna Smith to a rest-of-season contract.",
+      "team": {
+        "id": "6",
+        "location": "Los Angeles",
+        "name": "Sparks",
+        "abbreviation": "LA",
+        "displayName": "Los Angeles Sparks"
+      }
+    },
+    {
+      "date": "2022-07-23T07:00Z",
+      "description": "Re-signed G Lindsay Allen to a seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-07-16T07:00Z",
+      "description": "Signed F Kaela Davis to a hardship contract.",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-07-16T07:00Z",
+      "description": "Signed G Lindsay Allen to a seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-07-15T07:00Z",
+      "description": "Released F Joyner Holmes and G Jazmine Jones.",
+      "team": {
+        "id": "18",
+        "location": "Connecticut",
+        "name": "Sun",
+        "abbreviation": "CON",
+        "displayName": "Connecticut Sun"
+      }
+    },
+    {
+      "date": "2022-07-14T07:00Z",
+      "description": "Re-signed F Nikolina Milic to a rest-of-season contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-07-08T07:00Z",
+      "description": "Signed G Jazmine Jones and F Joyner Holmes to their 3rd seven-day contract.",
+      "team": {
+        "id": "18",
+        "location": "Connecticut",
+        "name": "Sun",
+        "abbreviation": "CON",
+        "displayName": "Connecticut Sun"
+      }
+    },
+    {
+      "date": "2022-07-06T07:00Z",
+      "description": "Re-signed F Nikolina Milic to a third seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-28T07:00Z",
+      "description": "Re-singed F Nikolina Milic to a second seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-26T07:00Z",
+      "description": "Waived F Lorela Cubaj.",
+      "team": {
+        "id": "9",
+        "location": "New York",
+        "name": "Liberty",
+        "abbreviation": "NY",
+        "displayName": "New York Liberty"
+      }
+    },
+    {
+      "date": "2022-06-24T07:00Z",
+      "description": "Agreed to terms with F Dearica Hamby on a contract amendment and extension.",
+      "team": {
+        "id": "17",
+        "location": "Las Vegas",
+        "name": "Aces",
+        "abbreviation": "LV",
+        "displayName": "Las Vegas Aces"
+      }
+    },
+    {
+      "date": "2022-06-22T07:00Z",
+      "description": "Signed F Reshanda Gray and G Jennie Simms",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-06-21T07:00Z",
+      "description": "Signed F Nikolina Milic to a seven-day contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-19T07:00Z",
+      "description": "Waived G Evina Westbrook.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-18T07:00Z",
+      "description": "Released G Destiny Slocum from her hardship contract.",
+      "team": {
+        "id": "20",
+        "location": "Atlanta",
+        "name": "Dream",
+        "abbreviation": "ATL",
+        "displayName": "Atlanta Dream"
+      }
+    },
+    {
+      "date": "2022-06-18T07:00Z",
+      "description": "Released F Jennie Simms from her hardship contract.",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-06-18T07:00Z",
+      "description": "Reinstated C Sylvia Fowles. Released F Nikolina Milic from her hardship contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-16T07:00Z",
+      "description": "Announced F Natalie Achomnwa has been cleared to return to play. Released C Elissa Cunane from her hardship contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-10T07:00Z",
+      "description": "Signed G Destiny Slocum to a rest-of-season contract.",
+      "team": {
+        "id": "20",
+        "location": "Atlanta",
+        "name": "Dream",
+        "abbreviation": "ATL",
+        "displayName": "Atlanta Dream"
+      }
+    },
+    {
+      "date": "2022-06-06T07:00Z",
+      "description": "Waived G Yvonne Anderson.",
+      "team": {
+        "id": "18",
+        "location": "Connecticut",
+        "name": "Sun",
+        "abbreviation": "CON",
+        "displayName": "Connecticut Sun"
+      }
+    },
+    {
+      "date": "2022-06-05T07:00Z",
+      "description": "Announced F Megan Walker has cleared waivers.",
+      "team": {
+        "id": "9",
+        "location": "New York",
+        "name": "Liberty",
+        "abbreviation": "NY",
+        "displayName": "New York Liberty"
+      }
+    },
+    {
+      "date": "2022-06-05T07:00Z",
+      "description": "Announced F Damiris Dantas and G Moriah Jefferson have been cleared to return to play. Signed F Mikolina Milic and C Cunane Elissa to rest-of-season hardship contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-06-04T07:00Z",
+      "description": "Announced C Alaina Coates cleared waivers.",
+      "team": {
+        "id": "5",
+        "location": "Indiana",
+        "name": "Fever",
+        "abbreviation": "IND",
+        "displayName": "Indiana Fever"
+      }
+    },
+    {
+      "date": "2022-06-04T07:00Z",
+      "description": "Announced G Julie Allemand was set to active.",
+      "team": {
+        "id": "19",
+        "location": "Chicago",
+        "name": "Sky",
+        "abbreviation": "CHI",
+        "displayName": "Chicago Sky"
+      }
+    },
+    {
+      "date": "2022-06-04T07:00Z",
+      "description": "Signed G Jennie Simms to a hardship contract.",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-06-04T07:00Z",
+      "description": "Signed G Crystal Dangerfield to a rest-of-season hardship contract.",
+      "team": {
+        "id": "9",
+        "location": "New York",
+        "name": "Liberty",
+        "abbreviation": "NY",
+        "displayName": "New York Liberty"
+      }
+    },
+    {
+      "date": "2022-06-04T07:00Z",
+      "description": "Announced F Amy Atwell cleared waivers.",
+      "team": {
+        "id": "6",
+        "location": "Los Angeles",
+        "name": "Sparks",
+        "abbreviation": "LA",
+        "displayName": "Los Angeles Sparks"
+      }
+    },
+    {
+      "date": "2022-06-02T07:00Z",
+      "description": "Waived G/F Amy Atwell and C Alaima Coates.",
+      "team": {
+        "id": "6",
+        "location": "Los Angeles",
+        "name": "Sparks",
+        "abbreviation": "LA",
+        "displayName": "Los Angeles Sparks"
+      }
+    },
+    {
+      "date": "2022-05-31T07:00Z",
+      "description": "Signed F Emma Cannon to a rest-of-season contract.",
+      "team": {
+        "id": "5",
+        "location": "Indiana",
+        "name": "Fever",
+        "abbreviation": "IND",
+        "displayName": "Indiana Fever"
+      }
+    },
+    {
+      "date": "2022-05-29T07:00Z",
+      "description": "Signed G Kiana Williams to a rest-of-season hardship contract.",
+      "team": {
+        "id": "14",
+        "location": "Seattle",
+        "name": "Storm",
+        "abbreviation": "SEA",
+        "displayName": "Seattle Storm"
+      }
+    },
+    {
+      "date": "2022-05-27T07:00Z",
+      "description": "Signed G Kamiah Smalls to a hardship contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-05-27T07:00Z",
+      "description": "Announced F Alanna Smith has cleared waivers.",
+      "team": {
+        "id": "5",
+        "location": "Indiana",
+        "name": "Fever",
+        "abbreviation": "IND",
+        "displayName": "Indiana Fever"
+      }
+    },
+    {
+      "date": "2022-05-26T07:00Z",
+      "description": "Signed C Elissa Cunane to a rest-of-season hardship contract.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-05-20T07:00Z",
+      "description": "Signed G Karlie Samuelson to a hardship contract.",
+      "team": {
+        "id": "11",
+        "location": "Phoenix",
+        "name": "Mercury",
+        "abbreviation": "PHX",
+        "displayName": "Phoenix Mercury"
+      }
+    },
+    {
+      "date": "2022-05-17T07:00Z",
+      "description": "Released C Hannah Sjerven.",
+      "team": {
+        "id": "8",
+        "location": "Minnesota",
+        "name": "Lynx",
+        "abbreviation": "MIN",
+        "displayName": "Minnesota Lynx"
+      }
+    },
+    {
+      "date": "2022-05-15T07:00Z",
+      "description": "Announced G Kahleah Copper is set active and C Tina Krajisnik was a hardship release.",
+      "team": {
+        "id": "19",
+        "location": "Chicago",
+        "name": "Sky",
+        "abbreviation": "CHI",
+        "displayName": "Chicago Sky"
+      }
+    },
+    {
+      "date": "2022-05-15T07:00Z",
+      "description": "Announced G Bria Hartley is set active.",
+      "team": {
+        "id": "5",
+        "location": "Indiana",
+        "name": "Fever",
+        "abbreviation": "IND",
+        "displayName": "Indiana Fever"
+      }
+    },
+    {
+      "date": "2022-05-14T07:00Z",
+      "description": "Announced C Elizabeth Williams as set active.",
+      "team": {
+        "id": "16",
+        "location": "Washington",
+        "name": "Mystics",
+        "abbreviation": "WSH",
+        "displayName": "Washington Mystics"
+      }
+    }
+  ]
+}

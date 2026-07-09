@@ -40,6 +40,9 @@ from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
+from wnba_engine.pipeline.espn_transactions_ingest import (
+    backfill_season as backfill_transactions_season,
+)
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
@@ -326,6 +329,36 @@ def backfill_standings(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_standings_season(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-transactions")
+@click.option("--since-season", type=int, required=True, help="First season year, e.g. 2022.")
+@click.option("--until-season", type=int, required=True, help="Last season year, e.g. 2025.")
+def backfill_transactions(since_season: int, until_season: int) -> None:
+    """Backfill ESPN roster-move transactions (signings, waivers, releases,
+    trades, front-office/coaching hires) for every season in
+    [since-season, until-season].
+
+    Free API, no key required. `description` is always stored verbatim;
+    `transaction_type` and `player_id`/`raw_player_name` are best-effort
+    extraction off that free text (see espn/transaction_classifier.py) and
+    fall back to 'other'/NULL rather than blocking ingestion. Append-only,
+    idempotent -- a re-run over an already-ingested season inserts nothing
+    new (see db/migrations/0020_player_transactions.sql).
+    """
+    if since_season > until_season:
+        raise click.UsageError(
+            f"--since-season ({since_season}) must not be after --until-season ({until_season})"
+        )
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with EspnClient(settings) as client:
+            for season in range(since_season, until_season + 1):
+                result = backfill_transactions_season(db, client, season)
+                click.echo(f"season {season}: {result}")
     finally:
         db.close()
 
