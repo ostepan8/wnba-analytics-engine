@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -28,7 +28,7 @@ from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.errors import ProviderRequestError
-from wnba_engine.models.games import TeamRef
+from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, TeamRef
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
@@ -747,3 +747,44 @@ def test_balldontlie_advanced_stats_backfill_end_to_end(clean_db):
             "SELECT count(*) FROM player_advanced_stats WHERE source = 'balldontlie'"
         ).fetchone()[0]
     assert count == 1
+
+
+def test_find_game_id_by_teams_matches_partial_expansion_team_names(clean_db):
+    """Regression test: balldontlie's two newest (2026) expansion franchises
+    have an empty city field on their end, so their full_name comes back as
+    just "Tempo" or "Fire" -- a prefix-only match against our canonical
+    "Toronto Tempo" / "Portland Fire" would miss this entirely."""
+    with clean_db.connection() as conn:
+        home_id = entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="900", name="Toronto Tempo", abbreviation="TOR")
+        )
+        away_id = entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="901", name="Portland Fire", abbreviation="POR")
+        )
+        entity_repo.upsert_game(
+            conn,
+            "espn",
+            ScoreboardGame(
+                external_id="9999",
+                start_time=datetime(2026, 6, 3, 23, 30, tzinfo=UTC),
+                season=2026,
+                season_type=SeasonType.REGULAR_SEASON,
+                status=GameStatus.FINAL,
+                home_team=TeamRef(external_id="900", name="Toronto Tempo", abbreviation="TOR"),
+                away_team=TeamRef(external_id="901", name="Portland Fire", abbreviation="POR"),
+                home_score=80,
+                away_score=75,
+            ),
+            home_team_id=home_id,
+            away_team_id=away_id,
+        )
+        conn.commit()
+
+        game_id = entity_repo.find_game_id_by_teams(
+            conn,
+            "Tempo",
+            "Fire",
+            datetime(2026, 6, 3, 23, 30, tzinfo=UTC),
+            window=timedelta(hours=6),
+        )
+    assert game_id is not None

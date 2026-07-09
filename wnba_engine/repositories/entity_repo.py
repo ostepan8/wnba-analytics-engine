@@ -165,13 +165,20 @@ def find_game_id_by_teams(
     *,
     window: timedelta,
 ) -> int | None:
-    """Best-effort match: two teams (matched as a case-insensitive prefix
+    """Best-effort match: two teams (matched as a case-insensitive substring
     against the canonical team name, e.g. 'Phoenix' matches 'Phoenix
     Mercury') playing each other within `window` of `near`, in either
-    home/away order. Used to link prediction-market snapshots -- which name
-    teams and a rough date, not a canonical game id -- to a canonical game.
+    home/away order. Used to link data that names teams and a rough date,
+    not a canonical game id, to a canonical game (prediction-market
+    snapshots, balldontlie's own game ids).
+
+    A substring match, not just a prefix: balldontlie's two newest (2026)
+    expansion franchises have an empty city field on their end, so their
+    full_name comes back as just "Tempo" or "Fire" instead of "Toronto
+    Tempo" / "Portland Fire" -- a prefix match against our canonical name
+    misses that entirely, since "Toronto Tempo" doesn't start with "Tempo".
     """
-    pattern_a, pattern_b = f"{team_a_name}%", f"{team_b_name}%"
+    pattern_a, pattern_b = f"%{team_a_name}%", f"%{team_b_name}%"
     row = conn.execute(
         _FIND_GAME_BY_TEAMS_SQL,
         (
