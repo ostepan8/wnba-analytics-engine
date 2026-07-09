@@ -7,6 +7,7 @@ and the mapping in one transaction-scoped step and return the internal id.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timedelta
 
 from psycopg import Connection
@@ -222,15 +223,77 @@ def find_team_by_name(conn: Connection, name: str) -> int | None:
     return int(row[0]) if row else None
 
 
+def _fold_diacritics(value: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+
+
 def find_player_by_name(conn: Connection, full_name: str) -> int | None:
     """Read-only lookup by the canonical players.full_name column
     (case-insensitive exact match). Used to resolve a second provider's own
-    player id (e.g. balldontlie's) to the SAME canonical player ESPN's box
-    scores already created, rather than a name match creating a duplicate
-    identity.
+    player id (e.g. balldontlie's, or a Kalshi/Polymarket player-prop
+    title) to the SAME canonical player ESPN's box scores already created,
+    rather than a name match creating a duplicate identity.
+
+    Falls back to a diacritic-insensitive match if the exact match misses:
+    providers don't always agree on accents (Kalshi/Polymarket "Janelle
+    Salaün" vs ESPN's "Janelle Salaun"), and Postgres ILIKE is
+    accent-sensitive. The fallback is Python-side (small player count, only
+    runs on a miss) rather than requiring the Postgres unaccent extension.
     """
     row = conn.execute(
         "SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)
+    ).fetchone()
+    if row is not None:
+        return int(row[0])
+
+    folded_target = _fold_diacritics(full_name).lower()
+    for player_id, candidate in conn.execute("SELECT id, full_name FROM players").fetchall():
+        if _fold_diacritics(candidate).lower() == folded_target:
+            return int(player_id)
+    return None
+
+
+_FIND_RECENT_TEAM_FOR_PLAYER_SQL = """
+SELECT pgs.team_id
+FROM player_game_stats pgs
+JOIN games g ON g.id = pgs.game_id
+WHERE pgs.player_id = %s
+ORDER BY g.start_time DESC
+LIMIT 1
+"""
+
+
+def find_recent_team_id_for_player(conn: Connection, player_id: int) -> int | None:
+    """Most recent team a player has a box-score row for, ordered by the
+    game's actual start_time (not row insertion order). Used to resolve
+    which team a player-prop market's game belongs to when the market
+    title names only the player, not a team -- Kalshi player-prop titles
+    carry no team name at all (see kalshi/player_prop_matching.py).
+    """
+    row = conn.execute(_FIND_RECENT_TEAM_FOR_PLAYER_SQL, (player_id,)).fetchone()
+    return int(row[0]) if row else None
+
+
+_FIND_GAME_BY_TEAM_AND_DATE_SQL = """
+SELECT id FROM games
+WHERE (home_team_id = %s OR away_team_id = %s)
+AND start_time BETWEEN %s AND %s
+ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - %s)))
+LIMIT 1
+"""
+
+
+def find_game_id_by_team_and_date(
+    conn: Connection, team_id: int, near: datetime, *, window: timedelta
+) -> int | None:
+    """Best-effort match: a game the given team plays within `window` of
+    `near`. Narrower than find_game_id_by_teams -- used for player-prop
+    markets after resolving the player's most recent team via
+    find_recent_team_id_for_player, since only one team is known there.
+    """
+    row = conn.execute(
+        _FIND_GAME_BY_TEAM_AND_DATE_SQL,
+        (team_id, team_id, near - window, near + window, near),
     ).fetchone()
     return int(row[0]) if row else None
 

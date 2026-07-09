@@ -2,10 +2,14 @@
 
 KXWNBAGAME markets (event tickers like KXWNBAGAME-26JUL09INDPHX) get their
 game_id resolved at ingest time via kalshi.game_matching + a team/date
-lookup against the canonical games table. Every other series (futures,
-totals, props, ...) stays unmapped (NULL game_id) -- there's no single game
-to resolve to, or resolving it needs a player crosswalk that doesn't exist
-yet, and guessing would be worse than leaving it null.
+lookup against the canonical games table. Per-game player-prop markets
+(KXWNBAPTS/REB/AST/3PT, ...) get their player_id resolved via
+kalshi.player_prop_matching + a name lookup, and their game_id resolved
+from there via the player's own recent team (props carry no team name or
+decodable team code -- see player_prop_matching's docstring). Every other
+series (season-long futures/awards, team quarter/half spread/total
+markets) stays unmapped -- there's no single game to resolve to, or
+resolving it is separate follow-up work.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from wnba_engine.kalshi.parser import (
     parse_markets_page,
     parse_series_list,
 )
+from wnba_engine.kalshi.player_prop_matching import parse_player_prop
 from wnba_engine.models.markets import MarketSnapshot
 from wnba_engine.repositories import entity_repo, market_repo
 
@@ -97,8 +102,14 @@ def _ingest_series(
         if snapshots:
             with db.connection() as conn:
                 game_id_by_market = _resolve_game_ids(conn, snapshots)
+                player_id_by_market, prop_game_id_by_market = _resolve_player_prop_ids(
+                    conn, snapshots
+                )
                 inserted += market_repo.insert_snapshots(
-                    conn, snapshots, game_id_by_market=game_id_by_market
+                    conn,
+                    snapshots,
+                    game_id_by_market={**game_id_by_market, **prop_game_id_by_market},
+                    player_id_by_market=player_id_by_market,
                 )
                 conn.commit()
         if not cursor or not snapshots:
@@ -137,3 +148,55 @@ def _resolve_game_ids(conn: Connection, snapshots: Sequence[MarketSnapshot]) -> 
         if game_id is not None:
             game_id_by_market[snap.market_external_id] = game_id
     return game_id_by_market
+
+
+def _resolve_player_prop_ids(
+    conn: Connection, snapshots: Sequence[MarketSnapshot]
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Map market_external_id -> player_id, and separately -> game_id, for
+    per-game player-prop markets (KXWNBAPTS/REB/AST/3PT, ...).
+
+    Grouped by event_external_id first, same rationale as
+    _resolve_game_ids. game_id is best-effort on top of player_id: a prop
+    can resolve to a player without resolving to a game (e.g. a far-future
+    prop beyond the synced schedule, or a player with no box-score rows
+    yet to infer a team from).
+    """
+    player_id_by_market: dict[str, int] = {}
+    game_id_by_market: dict[str, int] = {}
+    resolved_by_event: dict[str, tuple[int, int | None] | None] = {}
+    for snap in snapshots:
+        if snap.event_external_id is None:
+            continue
+        if snap.event_external_id not in resolved_by_event:
+            resolved_by_event[snap.event_external_id] = _resolve_one_player_prop(
+                conn, snap.event_external_id, snap.title
+            )
+        resolved = resolved_by_event[snap.event_external_id]
+        if resolved is None:
+            continue
+        player_id, game_id = resolved
+        player_id_by_market[snap.market_external_id] = player_id
+        if game_id is not None:
+            game_id_by_market[snap.market_external_id] = game_id
+    return player_id_by_market, game_id_by_market
+
+
+def _resolve_one_player_prop(
+    conn: Connection, event_external_id: str, title: str
+) -> tuple[int, int | None] | None:
+    parsed = parse_player_prop(event_external_id, title)
+    if parsed is None:
+        return None
+    game_date, player_name = parsed
+    player_id = entity_repo.find_player_by_name(conn, player_name)
+    if player_id is None:
+        return None
+    team_id = entity_repo.find_recent_team_id_for_player(conn, player_id)
+    if team_id is None:
+        return player_id, None
+    near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
+    game_id = entity_repo.find_game_id_by_team_and_date(
+        conn, team_id, near, window=GAME_DATE_MATCH_WINDOW
+    )
+    return player_id, game_id

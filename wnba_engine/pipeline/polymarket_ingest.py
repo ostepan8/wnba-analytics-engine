@@ -3,9 +3,11 @@
 Team-matchup markets ("Atlanta Dream vs. Toronto Tempo") get their game_id
 resolved at ingest time via polymarket.game_matching + a team/date lookup
 against the canonical games table, anchored on the market's own close_time
-(the best proxy Polymarket exposes for game date on these markets). Player
-props and futures/award markets stay unmapped -- see game_matching's
-docstring for why props are out of scope here.
+(the best proxy Polymarket exposes for game date on these markets).
+Player-prop markets ("A'ja Wilson: Rebounds O/U 7.5") get their player_id
+resolved via polymarket.player_prop_matching + a name lookup, and their
+game_id resolved from there via the player's own recent team (same
+close_time anchor). Futures/award markets stay unmapped.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from wnba_engine.models.markets import MarketSnapshot
 from wnba_engine.polymarket.client import PolymarketClient
 from wnba_engine.polymarket.game_matching import parse_matchup_teams
 from wnba_engine.polymarket.parser import parse_events
+from wnba_engine.polymarket.player_prop_matching import parse_player_prop_name
 from wnba_engine.repositories import entity_repo, market_repo
 
 logger = logging.getLogger(__name__)
@@ -58,8 +61,14 @@ def ingest_polymarket_wnba_markets(
         if snapshots:
             with db.connection() as conn:
                 game_id_by_market = _resolve_game_ids(conn, snapshots)
+                player_id_by_market, prop_game_id_by_market = _resolve_player_prop_ids(
+                    conn, snapshots
+                )
                 inserted += market_repo.insert_snapshots(
-                    conn, snapshots, game_id_by_market=game_id_by_market
+                    conn,
+                    snapshots,
+                    game_id_by_market={**game_id_by_market, **prop_game_id_by_market},
+                    player_id_by_market=player_id_by_market,
                 )
                 conn.commit()
     logger.warning("polymarket pagination exceeded %d pages; stopping early", MAX_PAGES)
@@ -87,3 +96,37 @@ def _resolve_game_ids(conn: Connection, snapshots: Sequence[MarketSnapshot]) -> 
         if game_id is not None:
             game_id_by_market[snap.market_external_id] = game_id
     return game_id_by_market
+
+
+def _resolve_player_prop_ids(
+    conn: Connection, snapshots: Sequence[MarketSnapshot]
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Map market_external_id -> player_id, and separately -> game_id, for
+    player-prop markets ("A'ja Wilson: Rebounds O/U 7.5").
+
+    game_id is best-effort on top of player_id, resolved via the player's
+    own recent team + close_time proximity -- a prop can resolve to a
+    player without resolving to a game (e.g. a far-future prop beyond the
+    synced schedule).
+    """
+    player_id_by_market: dict[str, int] = {}
+    game_id_by_market: dict[str, int] = {}
+    for snap in snapshots:
+        if snap.close_time is None:
+            continue
+        player_name = parse_player_prop_name(snap.title)
+        if player_name is None:
+            continue
+        player_id = entity_repo.find_player_by_name(conn, player_name)
+        if player_id is None:
+            continue
+        player_id_by_market[snap.market_external_id] = player_id
+        team_id = entity_repo.find_recent_team_id_for_player(conn, player_id)
+        if team_id is None:
+            continue
+        game_id = entity_repo.find_game_id_by_team_and_date(
+            conn, team_id, snap.close_time, window=GAME_DATE_MATCH_WINDOW
+        )
+        if game_id is not None:
+            game_id_by_market[snap.market_external_id] = game_id
+    return player_id_by_market, game_id_by_market
