@@ -1,0 +1,68 @@
+{
+    "data": [
+        {
+            "id": 1,
+            "first_name": "Tina",
+            "last_name": "Thompson",
+            "position": "Forward",
+            "position_abbreviation": "F",
+            "height": null,
+            "weight": null,
+            "jersey_number": null,
+            "college": null,
+            "age": null,
+            "team": {
+                "id": 15,
+                "conference": "Western Conference",
+                "city": "Houston",
+                "name": "Comets",
+                "full_name": "Houston Comets",
+                "abbreviation": "HOU"
+            }
+        },
+        {
+            "id": 336,
+            "first_name": "Layshia",
+            "last_name": "Clarendon",
+            "position": "Guard",
+            "position_abbreviation": "G",
+            "height": null,
+            "weight": null,
+            "jersey_number": "5",
+            "college": null,
+            "age": null,
+            "team": {
+                "id": 3,
+                "conference": "Eastern Conference",
+                "city": "Indiana",
+                "name": "Fever",
+                "full_name": "Indiana Fever",
+                "abbreviation": "IND"
+            }
+        },
+        {
+            "id": 242,
+            "first_name": "DeWanna",
+            "last_name": "Bonner",
+            "position": "F",
+            "position_abbreviation": "F",
+            "height": "6' 4\"",
+            "weight": "140 lbs",
+            "jersey_number": "24",
+            "college": "Auburn",
+            "age": 38,
+            "team": {
+                "id": 10,
+                "conference": "Western Conference",
+                "city": "Phoenix",
+                "name": "Mercury",
+                "full_name": "Phoenix Mercury",
+                "abbreviation": "PHX"
+            }
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "per_page": 3
+    }
+}

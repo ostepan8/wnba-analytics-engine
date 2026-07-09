@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from wnba_engine.balldontlie.player_ref_parsing import parse_player_ref
 from wnba_engine.errors import ProviderValidationError
-from wnba_engine.models.advanced_stats import BdlPlayerRef, BdlTeamRef
+from wnba_engine.models.advanced_stats import BdlTeamRef
 from wnba_engine.models.shot_zones import (
     PlayerShotZoneStats,
     ShotZoneBreakdown,
@@ -25,7 +26,6 @@ from wnba_engine.models.shot_zones import (
 )
 from wnba_engine.parsing import (
     optional_int,
-    optional_str,
     require,
     require_mapping,
     require_sequence,
@@ -56,7 +56,8 @@ def parse_team_shot_zone_stats(payload: object) -> tuple[TeamShotZoneStats, ...]
 def _parse_player_row(row: object, context: str) -> PlayerShotZoneStats:
     if not isinstance(row, Mapping):
         raise ProviderValidationError(PROVIDER, "row must be an object", context=context)
-    player = _parse_player(require_mapping(row, "player", PROVIDER, context), context)
+    player_mapping = require_mapping(row, "player", PROVIDER, context)
+    player = parse_player_ref(player_mapping, f"{context}.player")
     team_raw = row.get("team")
     team = _parse_team(team_raw, context) if isinstance(team_raw, Mapping) else None
     return PlayerShotZoneStats(
@@ -112,24 +113,6 @@ def _parse_zone_counts(zone: object, context: str) -> ShotZoneCounts:
     return ShotZoneCounts(
         fga=optional_int(zone.get("fga"), PROVIDER, context),
         fgm=optional_int(zone.get("fgm"), PROVIDER, context),
-    )
-
-
-def _parse_player(player: Mapping[str, object], context: str) -> BdlPlayerRef:
-    player_context = f"{context}.player"
-    external_id = str(require(player, "id", PROVIDER, player_context))
-    first_name = require_str(player, "first_name", PROVIDER, player_context)
-    last_name = require_str(player, "last_name", PROVIDER, player_context)
-    position = player.get("position")
-    return BdlPlayerRef(
-        external_id=external_id,
-        full_name=f"{first_name} {last_name}",
-        position=position if isinstance(position, str) and position else None,
-        height=optional_str(player.get("height"), PROVIDER, player_context),
-        weight=optional_str(player.get("weight"), PROVIDER, player_context),
-        jersey_number=optional_str(player.get("jersey_number"), PROVIDER, player_context),
-        college=optional_str(player.get("college"), PROVIDER, player_context),
-        age=optional_int(player.get("age"), PROVIDER, player_context),
     )
 
 
