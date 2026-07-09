@@ -248,9 +248,10 @@ def backfill_standings(season: int) -> None:
     Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY.
     Season-level only (no game dimension): fetches the season's current
     standings in a single request and resolves each row's team via
-    find_team_by_abbreviation. Upserted, safe to re-run -- standings values
-    change on every re-fetch, so a re-run corrects the same row rather than
-    accumulating history.
+    find_team_by_abbreviation. Writes both team_standings (upserted --
+    always reflects the latest fetch) and team_standings_history
+    (append-only -- a new timestamped snapshot row per run, skipped only
+    when unchanged since the last capture). Safe to re-run.
     """
     settings = load_settings()
     db = Database(settings.database_url)

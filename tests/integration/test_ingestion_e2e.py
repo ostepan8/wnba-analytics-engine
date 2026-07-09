@@ -1372,6 +1372,90 @@ def test_balldontlie_standings_backfill_skips_unresolved_team(clean_db):
     assert count == 1
 
 
+def test_balldontlie_standings_backfill_writes_history_and_dedups_unchanged_rerun(clean_db):
+    """team_standings_history is append-only, but a re-run with IDENTICAL
+    values must not accumulate meaningless duplicate rows -- unlike
+    team_standings (always upserted regardless), a no-op history insert is
+    skipped."""
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA
+
+    result = backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(), 2025)
+    assert result.history_rows_inserted == 2
+    assert result.history_rows_skipped_no_change == 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT t.abbreviation, h.wins, h.losses, h.captured_at "
+            "FROM team_standings_history h JOIN teams t ON t.id = h.team_id "
+            "WHERE h.source = 'balldontlie' ORDER BY t.abbreviation"
+        ).fetchall()
+    assert len(rows) == 2
+    ny, sea = rows
+    assert ny[0] == "NY"
+    assert ny[1] == 27
+    assert ny[2] == 17
+    assert ny[3] is not None
+    assert sea[0] == "SEA"
+    assert sea[1] == 23
+
+    # Current-state team_standings still has exactly one row per team.
+    with clean_db.connection() as conn:
+        current_count = conn.execute(
+            "SELECT count(*) FROM team_standings WHERE source = 'balldontlie'"
+        ).fetchone()[0]
+    assert current_count == 2
+
+    # Re-run with the SAME (unchanged) values: no new history rows.
+    rerun = backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(), 2025)
+    assert rerun.history_rows_inserted == 0
+    assert rerun.history_rows_skipped_no_change == 2
+
+    with clean_db.connection() as conn:
+        history_count = conn.execute(
+            "SELECT count(*) FROM team_standings_history WHERE source = 'balldontlie'"
+        ).fetchone()[0]
+    assert history_count == 2
+
+
+def test_balldontlie_standings_backfill_appends_new_history_row_on_change(clean_db):
+    """When a team's standings genuinely change between runs, a NEW history
+    row is appended (old row is kept, not overwritten) while the unchanged
+    team's history is skipped as a no-op."""
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA
+
+    backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(ny_wins=27), 2025)
+    rerun = backfill_standings_season(clean_db, FakeBalldontlieStandingsClient(ny_wins=28), 2025)
+
+    # NY changed (27 -> 28 wins): new history row. SEA unchanged: skipped.
+    assert rerun.history_rows_inserted == 1
+    assert rerun.history_rows_skipped_no_change == 1
+
+    with clean_db.connection() as conn:
+        ny_history = conn.execute(
+            "SELECT h.wins, h.captured_at FROM team_standings_history h "
+            "JOIN teams t ON t.id = h.team_id "
+            "WHERE t.abbreviation = 'NY' ORDER BY h.captured_at ASC"
+        ).fetchall()
+        total_history = conn.execute("SELECT count(*) FROM team_standings_history").fetchone()[0]
+
+    assert total_history == 3  # 2 from first run + 1 new NY row from the rerun
+    assert len(ny_history) == 2
+    assert ny_history[0][0] == 27
+    assert ny_history[1][0] == 28
+    # Distinct, real captured_at timestamps -- proves it's a time series,
+    # not an overwrite.
+    assert ny_history[0][1] != ny_history[1][1]
+
+    # team_standings (current-state) still has exactly one row per team,
+    # holding the LATEST value.
+    with clean_db.connection() as conn:
+        current_ny_wins = conn.execute(
+            "SELECT ts.wins FROM team_standings ts JOIN teams t ON t.id = ts.team_id "
+            "WHERE t.abbreviation = 'NY' AND ts.source = 'balldontlie'"
+        ).fetchone()[0]
+    assert current_ny_wins == 28
+
+
 class FakeBalldontliePlaysClient:
     """Same NY vs SEA 2025-07-06 game as FakeBalldontlieClient, plus two
     plays for that game -- one per team, to prove both resolve."""
