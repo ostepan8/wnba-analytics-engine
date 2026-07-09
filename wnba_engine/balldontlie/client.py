@@ -19,6 +19,7 @@ TEAM_SHOT_LOCATIONS_PATH = "wnba/v1/team_shot_locations"
 STANDINGS_PATH = "wnba/v1/standings"
 ODDS_PATH = "wnba/v1/odds"
 PLAYER_PROP_ODDS_PATH = "wnba/v1/odds/player_props"
+PLAYERS_PATH = "wnba/v1/players"
 DEFAULT_PAGE_SIZE = 100
 # A full 4-quarter game has ~440 plays (verified live); this ceiling gives
 # OT games headroom while staying one request per game -- the endpoint
@@ -169,6 +170,22 @@ class BalldontlieClient:
         if cursor is not None:
             params["cursor"] = cursor
         return self._http.get_json(PLAYER_PROP_ODDS_PATH, params=params)
+
+    def fetch_players_page(
+        self,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/players -- one cursor-paginated page of EVERY player
+        balldontlie has ever recorded (859 total, verified live), no
+        season/date scoping -- same cursor contract as the other
+        cursor-paginated endpoints (meta.next_cursor, absent on the final
+        page)."""
+        params: dict[str, object] = {"per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(PLAYERS_PATH, params=params)
 
     def close(self) -> None:
         self._http.close()

@@ -26,6 +26,7 @@ from wnba_engine.pipeline.balldontlie_odds_ingest import (
 from wnba_engine.pipeline.balldontlie_player_prop_odds_ingest import (
     backfill_season as backfill_player_prop_odds_season,
 )
+from wnba_engine.pipeline.balldontlie_players_ingest import backfill_players
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
 from wnba_engine.pipeline.balldontlie_standings_ingest import (
@@ -236,6 +237,26 @@ def backfill_shot_zones(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_season_shot_zones(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-players")
+def backfill_players_cmd() -> None:
+    """Sweep balldontlie's /wnba/v1/players endpoint for EVERY player it
+    has ever recorded, regardless of season or recent game activity.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. No
+    --season option: this is a global sweep, not scoped to one season.
+    Backfills bio data (height/weight/jersey_number/college/age) for
+    players the season-scoped advanced-stats/shot-zone pipelines never
+    reach, via the same name-based crosswalk. Safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_players(db, client))
     finally:
         db.close()
 
