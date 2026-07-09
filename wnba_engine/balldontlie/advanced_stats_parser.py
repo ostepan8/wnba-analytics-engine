@@ -26,6 +26,7 @@ from wnba_engine.models.advanced_stats import (
 from wnba_engine.parsing import (
     optional_float,
     optional_int,
+    optional_str,
     require,
     require_mapping,
     require_sequence,
@@ -82,9 +83,7 @@ def _parse_row(row: object, context: str) -> PlayerAdvancedStats:
             adv("effective_field_goal_percentage"), PROVIDER, f"{context}.advanced"
         ),
         usage_percentage=optional_float(adv("usage_percentage"), PROVIDER, f"{context}.advanced"),
-        assist_percentage=optional_float(
-            adv("assist_percentage"), PROVIDER, f"{context}.advanced"
-        ),
+        assist_percentage=optional_float(adv("assist_percentage"), PROVIDER, f"{context}.advanced"),
         assist_ratio=optional_float(adv("assist_ratio"), PROVIDER, f"{context}.advanced"),
         assist_to_turnover=optional_float(
             adv("assist_to_turnover"), PROVIDER, f"{context}.advanced"
@@ -134,6 +133,11 @@ def _parse_player(player: Mapping[str, object], context: str) -> BdlPlayerRef:
         external_id=external_id,
         full_name=f"{first_name} {last_name}",
         position=position if isinstance(position, str) and position else None,
+        height=optional_str(player.get("height"), PROVIDER, player_context),
+        weight=optional_str(player.get("weight"), PROVIDER, player_context),
+        jersey_number=optional_str(player.get("jersey_number"), PROVIDER, player_context),
+        college=optional_str(player.get("college"), PROVIDER, player_context),
+        age=optional_int(player.get("age"), PROVIDER, player_context),
     )
 
 

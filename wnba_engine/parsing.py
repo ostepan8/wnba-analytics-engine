@@ -38,9 +38,7 @@ def require_mapping(
 ) -> Mapping[str, object]:
     value = require(payload, key, provider, context)
     if not isinstance(value, Mapping):
-        raise ProviderValidationError(
-            provider, f"key '{key}' must be an object", context=context
-        )
+        raise ProviderValidationError(provider, f"key '{key}' must be an object", context=context)
     return value
 
 
@@ -89,6 +87,22 @@ def optional_int(value: object, provider: str, context: str) -> int | None:
     if not text or set(text) <= {"-"}:
         return None
     return parse_int(value, provider, context)
+
+
+def optional_str(value: object, provider: str, context: str) -> str | None:
+    """Like optional_int/optional_float, but for free-text string fields.
+
+    Some providers (observed on balldontlie's player bio fields -- weight,
+    college) use a placeholder like '--' for an unset field rather than
+    omitting the key or using JSON null outright. Treated the same as a
+    missing value here so it's never stored as the literal string '--'.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or set(text) <= {"-"}:
+        return None
+    return text
 
 
 def parse_datetime_utc(value: object, provider: str, context: str) -> datetime:

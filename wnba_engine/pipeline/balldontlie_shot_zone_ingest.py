@@ -66,7 +66,16 @@ def _ingest_player_shot_zones(
                     )
                     result = replace(result, unresolved_teams=result.unresolved_teams + 1)
                 player_id = entity_repo.resolve_or_create_player_by_name(
-                    conn, SOURCE, row.player.external_id, row.player.full_name, row.player.position
+                    conn,
+                    SOURCE,
+                    row.player.external_id,
+                    row.player.full_name,
+                    row.player.position,
+                    row.player.height,
+                    row.player.weight,
+                    row.player.jersey_number,
+                    row.player.college,
+                    row.player.age,
                 )
                 shot_zone_repo.upsert_player_shot_zone_stats(
                     conn, player_id=player_id, team_id=team_id, source=SOURCE, stats=row

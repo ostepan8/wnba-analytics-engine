@@ -307,12 +307,57 @@ def find_game_id_by_team_and_date(
     return int(row[0]) if row else None
 
 
+_UPDATE_PLAYER_BIO_SQL = """
+UPDATE players SET
+    height = %s, weight = %s, jersey_number = %s, college = %s, age = %s,
+    updated_at = now()
+WHERE id = %s AND (
+    height IS DISTINCT FROM %s OR weight IS DISTINCT FROM %s OR
+    jersey_number IS DISTINCT FROM %s OR college IS DISTINCT FROM %s OR
+    age IS DISTINCT FROM %s
+)
+"""
+
+
+def _update_player_bio(
+    conn: Connection,
+    player_id: int,
+    *,
+    height: str | None,
+    weight: str | None,
+    jersey_number: str | None,
+    college: str | None,
+    age: int | None,
+) -> None:
+    conn.execute(
+        _UPDATE_PLAYER_BIO_SQL,
+        (
+            height,
+            weight,
+            jersey_number,
+            college,
+            age,
+            player_id,
+            height,
+            weight,
+            jersey_number,
+            college,
+            age,
+        ),
+    )
+
+
 def resolve_or_create_player_by_name(
     conn: Connection,
     provider: str,
     external_id: str,
     full_name: str,
     position: str | None,
+    height: str | None,
+    weight: str | None,
+    jersey_number: str | None,
+    college: str | None,
+    age: int | None,
 ) -> int:
     """Crosswalk contract for a provider whose player rarely has a
     reliable external id shared with ESPN (e.g. balldontlie's numeric ids
@@ -320,19 +365,49 @@ def resolve_or_create_player_by_name(
     canonical player by name before ever creating a new one, so a second
     provider's data joins onto the SAME player ESPN's box scores already
     populated instead of forking a duplicate, historyless identity.
+
+    Bio fields (height/weight/jersey_number/college/age) follow the same
+    UPDATE-on-match pattern as resolve_or_create_team/resolve_or_create_player
+    above -- applied on BOTH match paths (an existing crosswalk hit, and a
+    fresh name match), not just on create. Unlike full_name/position, bio
+    data is a snapshot that legitimately drifts over time (a trade changes
+    jersey_number, a birthday changes age), so re-ingesting a season should
+    keep it current rather than freezing it at first-seen values. This is
+    also the mechanism by which an ESPN-only player (ESPN box scores never
+    carry bio data at all) gets backfilled with real bio data the first
+    time a balldontlie pipeline run resolves onto them by name.
     """
     existing = lookup_internal_id(conn, provider, ENTITY_PLAYER, external_id)
     if existing is not None:
+        _update_player_bio(
+            conn,
+            existing,
+            height=height,
+            weight=weight,
+            jersey_number=jersey_number,
+            college=college,
+            age=age,
+        )
         return existing
 
     by_name = find_player_by_name(conn, full_name)
     if by_name is not None:
         _insert_mapping(conn, provider, ENTITY_PLAYER, external_id, by_name)
+        _update_player_bio(
+            conn,
+            by_name,
+            height=height,
+            weight=weight,
+            jersey_number=jersey_number,
+            college=college,
+            age=age,
+        )
         return by_name
 
     row = conn.execute(
-        "INSERT INTO players (full_name, position) VALUES (%s, %s) RETURNING id",
-        (full_name, position),
+        "INSERT INTO players (full_name, position, height, weight, jersey_number, "
+        "college, age) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (full_name, position, height, weight, jersey_number, college, age),
     ).fetchone()
     assert row is not None
     player_id = int(row[0])

@@ -84,3 +84,23 @@ def test_missing_shot_zones_block_raises(balldontlie_player_shot_zones_payload):
     del mutated["data"][0]["stats"]["shot_zones"]
     with pytest.raises(ProviderValidationError):
         parse_player_shot_zone_stats(mutated)
+
+
+def test_parses_player_bio_fields(balldontlie_player_shot_zones_bio_payload):
+    # Real fixture (tests/fixtures/balldontlie_player_shot_zones_bio.json):
+    # A'ja Wilson has a full bio; Alexis Prince comes back with real JSON
+    # null for height/weight/college/age (not the "--" placeholder), only
+    # jersey_number populated -- confirms both null-shapes are handled.
+    stats = parse_player_shot_zone_stats(balldontlie_player_shot_zones_bio_payload)
+    wilson, prince = stats[0], stats[1]
+    assert wilson.player.height == "6' 4\""
+    assert wilson.player.weight == "195 lbs"
+    assert wilson.player.jersey_number == "22"
+    assert wilson.player.college == "South Carolina"
+    assert wilson.player.age == 29
+
+    assert prince.player.height is None
+    assert prince.player.weight is None
+    assert prince.player.jersey_number == "15"
+    assert prince.player.college is None
+    assert prince.player.age is None
