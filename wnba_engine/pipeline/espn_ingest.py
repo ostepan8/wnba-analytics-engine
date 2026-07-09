@@ -95,19 +95,20 @@ def _ingest_game(db: Database, client: EspnClient, game: ScoreboardGame) -> bool
         entity_repo.update_game_venue_info(
             conn, game_id, venue_name=summary.venue_name, attendance=summary.attendance
         )
+        stats_repo.replace_game_officials(conn, game_id=game_id, officials=summary.officials)
 
         team_ids = {game.home_team.external_id: home_id, game.away_team.external_id: away_id}
         for team_box in summary.teams:
-            team_id = team_ids.get(
-                team_box.team.external_id
-            ) or entity_repo.resolve_or_create_team(conn, SOURCE, team_box.team)
+            team_id = team_ids.get(team_box.team.external_id) or entity_repo.resolve_or_create_team(
+                conn, SOURCE, team_box.team
+            )
             stats_repo.upsert_team_game_stats(
                 conn, game_id=game_id, team_id=team_id, source=SOURCE, box=team_box
             )
         for line in summary.players:
-            team_id = team_ids.get(
-                line.team.external_id
-            ) or entity_repo.resolve_or_create_team(conn, SOURCE, line.team)
+            team_id = team_ids.get(line.team.external_id) or entity_repo.resolve_or_create_team(
+                conn, SOURCE, line.team
+            )
             player_id = entity_repo.resolve_or_create_player(conn, SOURCE, line.player)
             stats_repo.upsert_player_game_stats(
                 conn,

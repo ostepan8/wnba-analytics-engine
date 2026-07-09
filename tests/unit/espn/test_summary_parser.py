@@ -161,6 +161,62 @@ def test_game_info_not_a_mapping_fails_open(espn_summary_with_game_info_payload)
     assert box.attendance is None
 
 
+def test_officials_parsed_from_game_info(espn_summary_with_game_info_payload):
+    box = parse_summary(espn_summary_with_game_info_payload)
+    assert len(box.officials) == 3
+    names = [o.name for o in box.officials]
+    assert names == ["Tiara Cruse", "Paul Tuomey", "Catherine Chang"]
+    for official, expected_order in zip(box.officials, (1, 2, 3), strict=True):
+        assert official.role == "Referee"
+        assert official.order == expected_order
+
+
+def test_missing_game_info_leaves_officials_empty(espn_summary_payload):
+    """espn_summary.json (the original fixture) has no gameInfo key at all --
+    parse_summary must fail open to an empty officials tuple, not raise.
+    """
+    assert "gameInfo" not in espn_summary_payload
+    box = parse_summary(espn_summary_payload)
+    assert box.officials == ()
+
+
+def test_game_info_present_but_officials_missing_leaves_officials_empty(
+    espn_summary_with_game_info_payload,
+):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    del payload["gameInfo"]["officials"]
+    box = parse_summary(payload)
+    assert box.officials == ()
+    # venue/attendance still parse fine -- one missing sub-field must not
+    # affect the others.
+    assert box.venue_name == "Mohegan Sun Arena"
+    assert box.attendance == 7508
+
+
+def test_officials_not_a_list_fails_open(espn_summary_with_game_info_payload):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    payload["gameInfo"]["officials"] = "unexpected string shape"
+    box = parse_summary(payload)
+    assert box.officials == ()
+
+
+def test_official_entry_missing_name_is_skipped(espn_summary_with_game_info_payload):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    del payload["gameInfo"]["officials"][1]["fullName"]
+    box = parse_summary(payload)
+    assert len(box.officials) == 2
+    assert [o.name for o in box.officials] == ["Tiara Cruse", "Catherine Chang"]
+
+
+def test_official_entry_missing_position_leaves_role_none(espn_summary_with_game_info_payload):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    del payload["gameInfo"]["officials"][0]["position"]
+    box = parse_summary(payload)
+    first = next(o for o in box.officials if o.name == "Tiara Cruse")
+    assert first.role is None
+    assert first.order == 1
+
+
 def test_stats_labels_mismatch_raises(espn_summary_payload):
     broken = copy.deepcopy(espn_summary_payload)
     stats_block = broken["boxscore"]["players"][0]["statistics"][0]

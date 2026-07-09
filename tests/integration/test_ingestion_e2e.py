@@ -137,6 +137,8 @@ def test_espn_ingestion_end_to_end(clean_db):
         # key at all -- parse_summary fails open, so these stay NULL.
         venue = conn.execute("SELECT venue_name, attendance FROM games").fetchone()
         assert venue == (None, None)
+        officials_count = conn.execute("SELECT count(*) FROM game_officials").fetchone()
+        assert officials_count == (0,)
 
     # Re-ingestion is idempotent for canonical/stat tables (upserts).
     rerun = sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))
@@ -167,6 +169,34 @@ def test_espn_ingestion_persists_venue_and_attendance_from_game_info(clean_db):
     with clean_db.connection() as conn:
         venue = conn.execute("SELECT venue_name, attendance FROM games").fetchone()
         assert venue == ("Mohegan Sun Arena", 7508)
+
+
+def test_espn_ingestion_persists_officials_from_game_info(clean_db):
+    """The same real live-captured summary payload (tests/fixtures/
+    espn_summary_with_game_info.json) also carries gameInfo.officials --
+    all 3 must land in game_officials, in order, end to end.
+    """
+    result = sync_date(clean_db, FakeEspnClientWithGameInfo(), date(2025, 7, 6))
+    assert result.failures == 0
+    assert result.box_scores_ingested == 1
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT official_name, role, official_order FROM game_officials ORDER BY official_order"
+        ).fetchall()
+        assert rows == [
+            ("Tiara Cruse", "Referee", 1),
+            ("Paul Tuomey", "Referee", 2),
+            ("Catherine Chang", "Referee", 3),
+        ]
+
+    # Re-ingestion is idempotent: delete-then-reinsert must land at exactly
+    # 3 rows again, never accumulating duplicates.
+    rerun = sync_date(clean_db, FakeEspnClientWithGameInfo(), date(2025, 7, 6))
+    assert rerun.failures == 0
+    with clean_db.connection() as conn:
+        count = conn.execute("SELECT count(*) FROM game_officials").fetchone()
+        assert count == (3,)
 
 
 def test_espn_backfill_sweeps_date_range(clean_db):

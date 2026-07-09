@@ -70,14 +70,30 @@ class PlayerBoxLine:
 
 
 @dataclass(frozen=True, slots=True)
+class OfficialRef:
+    """One official (referee) assigned to a game, as reported by a
+    provider. `role` and `order` are nullable: ESPN's gameInfo.officials
+    entries reliably carry both in every real payload sampled so far, but
+    they're still enrichment fields on an enrichment feature, not part of
+    a required shape.
+    """
+
+    name: str
+    role: str | None
+    order: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class GameBoxScore:
     """Full box score for one game: two team totals + all player lines.
 
-    venue_name/attendance come from the summary payload's top-level
-    `gameInfo` block, which is separate from (and not always present
-    alongside) `header`/`boxscore` -- see espn/parser.py::_parse_game_info.
-    Both are None when gameInfo (or the specific field) is missing rather
-    than raising, since this is enrichment data, not a required shape.
+    venue_name/attendance/officials all come from the summary payload's
+    top-level `gameInfo` block, which is separate from (and not always
+    present alongside) `header`/`boxscore` -- see
+    espn/parser.py::_parse_game_info. venue_name/attendance are None, and
+    officials is an empty tuple, when gameInfo (or the specific field) is
+    missing rather than raising, since this is enrichment data, not a
+    required shape.
     """
 
     game_external_id: str
@@ -85,3 +101,4 @@ class GameBoxScore:
     players: tuple[PlayerBoxLine, ...]
     venue_name: str | None = None
     attendance: int | None = None
+    officials: tuple[OfficialRef, ...] = ()

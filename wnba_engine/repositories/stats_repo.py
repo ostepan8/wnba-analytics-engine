@@ -1,10 +1,15 @@
-"""Box score persistence: team_game_stats and player_game_stats upserts."""
+"""Box score persistence: team_game_stats and player_game_stats upserts,
+plus game_officials (also parsed from the summary payload -- see
+espn/parser.py::parse_summary).
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from psycopg import Connection
 
-from wnba_engine.models.box_scores import PlayerBoxLine, TeamBoxScore
+from wnba_engine.models.box_scores import OfficialRef, PlayerBoxLine, TeamBoxScore
 
 _UPSERT_TEAM_STATS = """
 INSERT INTO team_game_stats (
@@ -135,3 +140,33 @@ def upsert_player_game_stats(
             line.plus_minus,
         ),
     )
+
+
+_DELETE_GAME_OFFICIALS = "DELETE FROM game_officials WHERE game_id = %s"
+
+_INSERT_GAME_OFFICIAL = """
+INSERT INTO game_officials (game_id, official_name, role, official_order)
+VALUES (%s, %s, %s, %s)
+"""
+
+
+def replace_game_officials(
+    conn: Connection, *, game_id: int, officials: Sequence[OfficialRef]
+) -> None:
+    """Idempotently replace all officials for one game.
+
+    Officials are fully re-derivable from each summary re-fetch (see
+    espn/parser.py::parse_summary), and a game's crew is always a short
+    list (typically 3), so a delete-then-reinsert per game_id is simpler
+    than a multi-column upsert key -- re-running this for the same game_id
+    always ends at exactly the rows in `officials`, never accumulating
+    duplicates.
+    """
+    conn.execute(_DELETE_GAME_OFFICIALS, (game_id,))
+    if not officials:
+        return
+    with conn.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_GAME_OFFICIAL,
+            [(game_id, o.name, o.role, o.order) for o in officials],
+        )
