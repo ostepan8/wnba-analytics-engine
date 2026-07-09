@@ -1,0 +1,76 @@
+{
+  "events": [
+    {
+      "id": "401781604",
+      "date": "2025-07-20T00:30Z",
+      "name": "Team Collier TEAM COLLIER at Team Clark TEAM CLARK",
+      "season": {
+        "year": 2025,
+        "type": 2,
+        "slug": "regular-season"
+      },
+      "status": {
+        "clock": 0.0,
+        "displayClock": "0.0",
+        "period": 4,
+        "type": {
+          "id": "3",
+          "name": "STATUS_FINAL",
+          "state": "post",
+          "completed": true,
+          "description": "Final",
+          "detail": "Final",
+          "shortDetail": "Final"
+        }
+      },
+      "competitions": [
+        {
+          "id": "401781604",
+          "date": "2025-07-20T00:30Z",
+          "type": {
+            "id": "4",
+            "abbreviation": "ALLSTAR"
+          },
+          "competitors": [
+            {
+              "id": "131246",
+              "homeAway": "home",
+              "score": "131",
+              "winner": false,
+              "team": {
+                "id": "131246",
+                "displayName": "TEAM CLARK",
+                "abbreviation": "CLA"
+              }
+            },
+            {
+              "id": "131247",
+              "homeAway": "away",
+              "score": "151",
+              "winner": true,
+              "team": {
+                "id": "131247",
+                "displayName": "TEAM COLLIER",
+                "abbreviation": "COL"
+              }
+            }
+          ],
+          "status": {
+            "clock": 0.0,
+            "displayClock": "0.0",
+            "period": 4,
+            "type": {
+              "id": "3",
+              "name": "STATUS_FINAL",
+              "state": "post",
+              "completed": true,
+              "description": "Final",
+              "detail": "Final",
+              "shortDetail": "Final"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

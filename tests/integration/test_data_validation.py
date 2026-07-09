@@ -12,16 +12,21 @@ from datetime import UTC, datetime
 
 import pytest
 
-from wnba_engine.validation import bounds_checks, consistency_checks, crosswalk_checks
+from wnba_engine.validation import (
+    bounds_checks,
+    consistency_checks,
+    crosswalk_checks,
+    franchise_checks,
+)
 from wnba_engine.validation.runner import run_all_checks
 
 pytestmark = pytest.mark.integration
 
 
-def _seed_team(conn, name: str, abbreviation: str) -> int:
+def _seed_team(conn, name: str, abbreviation: str, *, is_franchise: bool = False) -> int:
     row = conn.execute(
-        "INSERT INTO teams (name, abbreviation) VALUES (%s, %s) RETURNING id",
-        (name, abbreviation),
+        "INSERT INTO teams (name, abbreviation, is_franchise) VALUES (%s, %s, %s) RETURNING id",
+        (name, abbreviation, is_franchise),
     ).fetchone()
     return int(row[0])
 
@@ -369,7 +374,71 @@ def test_team_shot_zone_bounds_detects_fgm_greater_than_fga(clean_db):
     assert result.violation_count == 1
 
 
+def _seed_regular_season_game(conn, *, home_is_franchise: bool, away_is_franchise: bool) -> int:
+    home_id = _seed_team(conn, "Home Team", "HME", is_franchise=home_is_franchise)
+    away_id = _seed_team(conn, "Away Team", "AWY", is_franchise=away_is_franchise)
+    row = conn.execute(
+        "INSERT INTO games (season, season_type, start_time, home_team_id, away_team_id, "
+        "status, home_score, away_score) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (
+            2025,
+            "regular-season",
+            datetime(2025, 7, 6, tzinfo=UTC),
+            home_id,
+            away_id,
+            "final",
+            70,
+            60,
+        ),
+    ).fetchone()
+    return int(row[0])
+
+
+def test_non_franchise_team_in_regular_season_detects_all_star_style_game(clean_db):
+    """Regression test for the actual bug found live: 4 WNBA All-Star games
+    (2022-2025) were ingested with season_type='regular-season' even though
+    their rosters ("Team Wilson", "Team Clark", ...) are exhibition squads,
+    not real franchises."""
+    with clean_db.connection() as conn:
+        _seed_regular_season_game(conn, home_is_franchise=True, away_is_franchise=False)
+        result = franchise_checks.check_non_franchise_team_in_regular_season(conn)
+    assert result.passed is False
+    assert result.violation_count == 1
+
+
+def test_non_franchise_team_in_regular_season_passes_for_two_real_franchises(clean_db):
+    with clean_db.connection() as conn:
+        _seed_regular_season_game(conn, home_is_franchise=True, away_is_franchise=True)
+        result = franchise_checks.check_non_franchise_team_in_regular_season(conn)
+    assert result.passed is True
+    assert result.violation_count == 0
+
+
+def test_non_franchise_team_in_regular_season_ignores_non_regular_season_games(clean_db):
+    """A non-franchise team (e.g. a preseason exhibition opponent) is fine
+    as long as the game isn't tagged regular-season."""
+    with clean_db.connection() as conn:
+        home_id = _seed_team(conn, "Home Team", "HME", is_franchise=True)
+        away_id = _seed_team(conn, "Brazil", "BRZL", is_franchise=False)
+        conn.execute(
+            "INSERT INTO games (season, season_type, start_time, home_team_id, away_team_id, "
+            "status, home_score, away_score) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                2025,
+                "preseason",
+                datetime(2025, 5, 3, tzinfo=UTC),
+                home_id,
+                away_id,
+                "final",
+                70,
+                60,
+            ),
+        )
+        result = franchise_checks.check_non_franchise_team_in_regular_season(conn)
+    assert result.passed is True
+
+
 def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 10
+    assert len(report.checks) == 11
     assert report.passed is True

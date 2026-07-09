@@ -106,3 +106,35 @@ def test_missing_season_type_raises(espn_scoreboard_payload):
     del broken["events"][0]["season"]["type"]
     with pytest.raises(ProviderValidationError, match="'type'"):
         parse_scoreboard(broken)
+
+
+def test_all_star_game_is_not_regular_season(espn_scoreboard_allstar_payload):
+    """Regression test: ESPN sends season.type=2 (regular-season) for the
+    All-Star game even though its rosters ("Team Clark", "Team Collier")
+    are captain-picked exhibition squads, not real franchises. This
+    previously let 4 All-Star games (2022-2025) get ingested as
+    regular-season, inflating team records. competitions[0].type is
+    ALLSTAR for this game (STD for every normal game), which is the signal
+    used to override season.type. Real trimmed ESPN payload, event
+    401781604 (2025 All-Star Game, Team Collier @ Team Clark)."""
+    game = parse_scoreboard(espn_scoreboard_allstar_payload)[0]
+    assert game.season_type is SeasonType.OTHER
+
+
+def test_non_standard_competition_type_missing_is_treated_as_standard(
+    espn_scoreboard_payload,
+):
+    """A competition with no `type` field at all (older trimmed fixtures,
+    or a shape ESPN hasn't sent yet) must fail open and keep the season.type
+    -derived classification rather than being misread as non-standard."""
+    game = parse_scoreboard(espn_scoreboard_payload)[0]
+    assert game.season_type is SeasonType.REGULAR_SEASON
+
+
+def test_standard_competition_type_does_not_override_season_type(
+    espn_scoreboard_payload,
+):
+    payload = copy.deepcopy(espn_scoreboard_payload)
+    payload["events"][0]["competitions"][0]["type"] = {"id": "1", "abbreviation": "STD"}
+    game = parse_scoreboard(payload)[0]
+    assert game.season_type is SeasonType.REGULAR_SEASON

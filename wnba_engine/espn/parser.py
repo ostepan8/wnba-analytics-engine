@@ -50,6 +50,14 @@ _SEASON_TYPE_MAP = {
     3: SeasonType.POSTSEASON,
 }
 
+# ESPN tags the All-Star game's season.type as 2 (regular-season) even
+# though its rosters ("Team Wilson", "Team Clark", ...) are captain-picked
+# exhibition squads, not real franchises -- their wins/losses must never
+# count toward a team's record. competitions[0].type is the reliable signal
+# ESPN provides to tell the two apart (id "1"/"STD" for a normal game vs
+# id "4"/"ALLSTAR" here); season.type alone can't distinguish them.
+_NON_STANDARD_COMPETITION_TYPES = {"ALLSTAR"}
+
 # ESPN box score player stat labels, in the order stats[] is aligned to.
 EXPECTED_PLAYER_LABELS = (
     "MIN", "PTS", "FG", "3PT", "FT", "REB", "AST",
@@ -78,9 +86,7 @@ def parse_scoreboard(payload: object) -> tuple[ScoreboardGame, ...]:
             PROVIDER, f"scoreboard payload must be an object, got {type(payload).__name__}"
         )
     events = require_sequence(payload, "events", PROVIDER, "scoreboard")
-    return tuple(
-        _parse_event(event, f"events[{i}]") for i, event in enumerate(events)
-    )
+    return tuple(_parse_event(event, f"events[{i}]") for i, event in enumerate(events))
 
 
 def _parse_event(event: object, context: str) -> ScoreboardGame:
@@ -105,9 +111,9 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
         raise ProviderValidationError(PROVIDER, "event has no competitions", context=context)
     competition = competitions[0]
     if not isinstance(competition, Mapping):
-        raise ProviderValidationError(
-            PROVIDER, "competition must be an object", context=context
-        )
+        raise ProviderValidationError(PROVIDER, "competition must be an object", context=context)
+    if _is_non_standard_competition(competition):
+        season_type = SeasonType.OTHER
     competitors = require_sequence(
         competition, "competitors", PROVIDER, f"{context}.competitions[0]"
     )
@@ -155,6 +161,19 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
         home_score=home_score,
         away_score=away_score,
     )
+
+
+def _is_non_standard_competition(competition: Mapping[str, object]) -> bool:
+    """True for competition types like the All-Star game (ALLSTAR) that
+    don't count as a real preseason/regular-season/post-season game.
+    Missing/malformed `type` is treated as standard (fail open) -- older
+    trimmed fixtures and any provider payload shape ESPN hasn't sent yet
+    must not be misclassified as non-standard."""
+    competition_type = competition.get("type")
+    if not isinstance(competition_type, Mapping):
+        return False
+    abbreviation = competition_type.get("abbreviation")
+    return isinstance(abbreviation, str) and abbreviation in _NON_STANDARD_COMPETITION_TYPES
 
 
 def _parse_status(event: Mapping[str, object], context: str) -> GameStatus:
@@ -243,9 +262,7 @@ def _parse_team_players(entry: object, context: str) -> tuple[PlayerBoxLine, ...
         return ()
     block = statistics[0]
     if not isinstance(block, Mapping):
-        raise ProviderValidationError(
-            PROVIDER, "statistics[0] must be an object", context=context
-        )
+        raise ProviderValidationError(PROVIDER, "statistics[0] must be an object", context=context)
     labels = tuple(require_sequence(block, "labels", PROVIDER, f"{context}.statistics[0]"))
     if labels != EXPECTED_PLAYER_LABELS:
         raise ProviderValidationError(
@@ -265,9 +282,7 @@ def _parse_athlete(entry: object, team: TeamRef, context: str) -> PlayerBoxLine:
         raise ProviderValidationError(PROVIDER, "athlete entry must be an object", context=context)
     athlete = require_mapping(entry, "athlete", PROVIDER, context)
     position = athlete.get("position")
-    position_abbr = (
-        position.get("abbreviation") if isinstance(position, Mapping) else None
-    )
+    position_abbr = position.get("abbreviation") if isinstance(position, Mapping) else None
     player = PlayerRef(
         external_id=require_str(athlete, "id", PROVIDER, f"{context}.athlete"),
         full_name=require_str(athlete, "displayName", PROVIDER, f"{context}.athlete"),
