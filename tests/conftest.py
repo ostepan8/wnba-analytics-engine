@@ -20,6 +20,11 @@ def espn_scoreboard_payload() -> object:
 
 
 @pytest.fixture
+def espn_scoreboard_allstar_payload() -> object:
+    return load_fixture("espn_scoreboard_allstar.json")
+
+
+@pytest.fixture
 def espn_summary_payload() -> object:
     return load_fixture("espn_summary.json")
 

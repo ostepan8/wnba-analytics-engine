@@ -11,7 +11,12 @@ from psycopg import Connection
 
 from wnba_engine.db.pool import Database
 from wnba_engine.models.validation import CheckResult, ValidationReport
-from wnba_engine.validation import bounds_checks, consistency_checks, crosswalk_checks
+from wnba_engine.validation import (
+    bounds_checks,
+    consistency_checks,
+    crosswalk_checks,
+    franchise_checks,
+)
 
 _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
     crosswalk_checks.check_orphaned_crosswalk_entries,
@@ -24,6 +29,7 @@ _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
     bounds_checks.check_market_price_bounds,
     bounds_checks.check_player_shot_zone_bounds,
     bounds_checks.check_team_shot_zone_bounds,
+    franchise_checks.check_non_franchise_team_in_regular_season,
 )
 
 
