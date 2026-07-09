@@ -83,23 +83,37 @@ def _parse_team_block(
 ) -> tuple[WaybackInjuryEntry, ...]:
     if not isinstance(block, Mapping):
         raise ProviderValidationError(PROVIDER, "team block must be an object", context=context)
-    logo = block.get("logo")
-    abbr_match = _LOGO_ABBR_RE.search(logo) if isinstance(logo, str) else None
-    if not abbr_match:
-        raise ProviderValidationError(
-            PROVIDER, f"could not extract team abbreviation from logo {logo!r}", context=context
-        )
-    raw_abbreviation = abbr_match.group(1).upper()
-    abbreviation = _LOGO_ABBREVIATION_ALIASES.get(raw_abbreviation, raw_abbreviation)
+    team_name = require_str(block, "displayName", PROVIDER, context)
+    abbreviation = _extract_abbreviation(block.get("logo"))
     items = require_sequence(block, "items", PROVIDER, context)
     return tuple(
-        _parse_item(item, abbreviation, f"{context}.items[{j}]", snapshot_captured_at)
+        _parse_item(item, team_name, abbreviation, f"{context}.items[{j}]", snapshot_captured_at)
         for j, item in enumerate(items)
     )
 
 
+def _extract_abbreviation(logo: object) -> str | None:
+    """Best-effort: the classic /teamlogos/wnba/<size>/<abbr>.png URL always
+    yields a reliable abbreviation. Some snapshots instead serve a newer
+    GUID-based logo URL with no abbreviation in it at all (observed
+    directly, real data) -- callers must fall back to team_name in that
+    case, not treat a missing abbreviation as an error.
+    """
+    if not isinstance(logo, str):
+        return None
+    match = _LOGO_ABBR_RE.search(logo)
+    if not match:
+        return None
+    raw_abbreviation = match.group(1).upper()
+    return _LOGO_ABBREVIATION_ALIASES.get(raw_abbreviation, raw_abbreviation)
+
+
 def _parse_item(
-    item: object, abbreviation: str, context: str, snapshot_captured_at: datetime
+    item: object,
+    team_name: str,
+    abbreviation: str | None,
+    context: str,
+    snapshot_captured_at: datetime,
 ) -> WaybackInjuryEntry:
     if not isinstance(item, Mapping):
         raise ProviderValidationError(PROVIDER, "injury item must be an object", context=context)
@@ -113,6 +127,7 @@ def _parse_item(
     description = description if isinstance(description, str) and description.strip() else None
     return WaybackInjuryEntry(
         player=player,
+        team_name=team_name,
         team_abbreviation=abbreviation,
         status=status,
         status_type=status_type,

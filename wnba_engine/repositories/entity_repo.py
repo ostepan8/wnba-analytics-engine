@@ -189,3 +189,16 @@ def find_team_by_abbreviation(conn: Connection, abbreviation: str) -> int | None
         "SELECT id FROM teams WHERE abbreviation = %s", (abbreviation,)
     ).fetchone()
     return int(row[0]) if row else None
+
+
+def find_team_by_name(conn: Connection, name: str) -> int | None:
+    """Read-only lookup by the canonical teams.name column (case-insensitive
+    exact match). Fallback for when a source's logo-derived abbreviation
+    couldn't be extracted at all (see wayback_injuries_parser) but the full
+    display name is present -- e.g. "Atlanta Dream". Never creates a team,
+    same reasoning as find_team_by_abbreviation.
+    """
+    row = conn.execute(
+        "SELECT id FROM teams WHERE name ILIKE %s", (name,)
+    ).fetchone()
+    return int(row[0]) if row else None

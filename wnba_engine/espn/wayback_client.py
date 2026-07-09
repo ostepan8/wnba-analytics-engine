@@ -14,10 +14,19 @@ from __future__ import annotations
 from datetime import date
 
 from wnba_engine.config import Settings
-from wnba_engine.http_client import JsonHttpClient
+from wnba_engine.http_client import RETRYABLE_STATUS_CODES, JsonHttpClient
 
 PROVIDER = "espn-wayback"
 TARGET_URL = "https://www.espn.com/wnba/injuries"
+
+# archive.org's raw snapshot endpoint has been observed, on real backfill
+# runs, to intermittently 403 on a snapshot the CDX index itself confirms
+# was captured successfully (statuscode 200) -- a serving-layer hiccup, not
+# the permanent per-day 403 baked into the CDX record when ESPN blocked the
+# original crawl. Retrying that specific case is worthwhile; see
+# JsonHttpClient's retryable_status_codes docstring for why this isn't the
+# global default.
+_RETRYABLE_STATUS_CODES = RETRYABLE_STATUS_CODES | {403}
 
 
 class WaybackClient:
@@ -28,6 +37,7 @@ class WaybackClient:
             base_url=settings.wayback_base_url,
             timeout_seconds=settings.request_timeout_seconds,
             min_request_interval_seconds=settings.wayback_min_request_interval_seconds,
+            retryable_status_codes=_RETRYABLE_STATUS_CODES,
         )
 
     def fetch_snapshot_timestamps(self, since: date, until: date) -> object:

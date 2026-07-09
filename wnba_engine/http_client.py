@@ -12,12 +12,7 @@ import time
 from collections.abc import Mapping
 
 import httpx
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from wnba_engine.errors import ProviderRequestError
 
@@ -50,14 +45,6 @@ class RateLimiter:
             self._last_request_at = time.monotonic()
 
 
-def _is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.TransportError):
-        return True
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code in RETRYABLE_STATUS_CODES
-    return False
-
-
 class JsonHttpClient:
     """Rate-limited, retrying JSON GET client bound to one provider base URL."""
 
@@ -69,8 +56,20 @@ class JsonHttpClient:
         timeout_seconds: float,
         min_request_interval_seconds: float,
         headers: Mapping[str, str] | None = None,
+        retryable_status_codes: frozenset[int] = RETRYABLE_STATUS_CODES,
     ) -> None:
+        """retryable_status_codes overrides the default set for providers
+        with unusual reliability characteristics -- e.g. archive.org's raw
+        snapshot endpoint (WaybackClient) has been observed to intermittently
+        403 on a snapshot the CDX index itself confirms was captured
+        successfully (a serving-layer hiccup, not the permanent per-day 403
+        that means ESPN blocked the original crawl). Treating 403 as
+        retryable everywhere else would be wrong -- for most providers a 403
+        means "not authorized," and retrying wastes calls without ever
+        succeeding -- so this is opt-in per client, not a global change.
+        """
         self._provider = provider
+        self._retryable_status_codes = retryable_status_codes
         self._rate_limiter = RateLimiter(min_request_interval_seconds)
         self._client = httpx.Client(
             base_url=base_url,
@@ -128,15 +127,28 @@ class JsonHttpClient:
             )
             raise ProviderRequestError(self._provider, url, f"invalid JSON body: {exc}") from exc
 
-    @retry(
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(MAX_ATTEMPTS),
-        wait=wait_exponential(multiplier=BACKOFF_MULTIPLIER_SECONDS, max=BACKOFF_MAX_SECONDS),
-        reraise=True,
-    )
+    def _is_retryable(self, exc: BaseException) -> bool:
+        if isinstance(exc, httpx.TransportError):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in self._retryable_status_codes
+        return False
+
     def _get_with_retry(
         self, path: str, params: Mapping[str, object] | None
     ) -> httpx.Response:
+        # A Retrying instance built per call (not a class-level @retry
+        # decorator) so the retry predicate can read this client's own
+        # retryable_status_codes, which varies per provider.
+        retrying = Retrying(
+            retry=retry_if_exception(self._is_retryable),
+            stop=stop_after_attempt(MAX_ATTEMPTS),
+            wait=wait_exponential(multiplier=BACKOFF_MULTIPLIER_SECONDS, max=BACKOFF_MAX_SECONDS),
+            reraise=True,
+        )
+        return retrying(self._do_get, path, params)
+
+    def _do_get(self, path: str, params: Mapping[str, object] | None) -> httpx.Response:
         self._rate_limiter.wait()
         response = self._client.get(path, params=dict(params or {}))
         response.raise_for_status()

@@ -16,10 +16,13 @@ import logging
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 
+from psycopg import Connection
+
 from wnba_engine.db.pool import Database
 from wnba_engine.errors import WnbaEngineError
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.espn.wayback_injuries_parser import parse_wayback_injuries_page
+from wnba_engine.models.injuries import WaybackInjuryEntry
 from wnba_engine.repositories import entity_repo, injury_repo
 
 logger = logging.getLogger(__name__)
@@ -89,24 +92,24 @@ def _ingest_snapshot(
     entries = parse_wayback_injuries_page(html, snapshot_captured_at=captured_at)
 
     player_id_by_external_id: dict[str, int] = {}
-    team_id_by_abbreviation: dict[str, int] = {}
+    team_id_by_key: dict[tuple[str | None, str], int] = {}
     unresolved = 0
 
     with db.connection() as conn:
         for entry in entries:
-            team_id = team_id_by_abbreviation.get(
-                entry.team_abbreviation
-            ) or entity_repo.find_team_by_abbreviation(conn, entry.team_abbreviation)
+            key = (entry.team_abbreviation, entry.team_name)
+            team_id = team_id_by_key.get(key) or _resolve_team(conn, entry)
             if team_id is None:
                 logger.warning(
-                    "unresolved team abbreviation=%s on wayback snapshot "
+                    "unresolved team abbreviation=%s name=%s on wayback snapshot "
                     "timestamp=%s -- skipping",
                     entry.team_abbreviation,
+                    entry.team_name,
                     timestamp,
                 )
                 unresolved += 1
                 continue
-            team_id_by_abbreviation[entry.team_abbreviation] = team_id
+            team_id_by_key[key] = team_id
             player_id_by_external_id[entry.player.external_id] = (
                 entity_repo.resolve_or_create_player(conn, CROSSWALK_PROVIDER, entry.player)
             )
@@ -115,12 +118,22 @@ def _ingest_snapshot(
             conn,
             entries,
             player_id_by_external_id=player_id_by_external_id,
-            team_id_by_abbreviation=team_id_by_abbreviation,
+            team_id_by_key=team_id_by_key,
             source=SOURCE,
         )
         conn.commit()
 
     return inserted, unresolved
+
+
+def _resolve_team(conn: Connection, entry: WaybackInjuryEntry) -> int | None:
+    """Abbreviation first (fast, precise); fall back to team_name when the
+    logo URL had none extractable (see wayback_injuries_parser)."""
+    if entry.team_abbreviation is not None:
+        team_id = entity_repo.find_team_by_abbreviation(conn, entry.team_abbreviation)
+        if team_id is not None:
+            return team_id
+    return entity_repo.find_team_by_name(conn, entry.team_name)
 
 
 def _parse_cdx_timestamps(payload: object) -> list[str]:
