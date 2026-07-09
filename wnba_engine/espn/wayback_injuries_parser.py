@@ -30,6 +30,16 @@ _PLAYERCARD_ID_RE = re.compile(r"/player/_/id/(\d+)/")
 _LOGO_ABBR_RE = re.compile(r"/teamlogos/wnba/\d+/([a-z]+)\.png", re.IGNORECASE)
 _SHORT_DATE_RE = re.compile(r"^([A-Za-z]{3})\s+(\d{1,2})$")
 
+# ESPN's team logo filenames don't always match the abbreviation used
+# elsewhere on the same site (and stored as our canonical teams.abbreviation).
+# Discovered from a real backfill run: ~1,300 entries across 540 snapshot
+# days were silently unresolved before this existed, all Connecticut Sun or
+# Golden State Valkyries.
+_LOGO_ABBREVIATION_ALIASES = {
+    "CONN": "CON",
+    "GSV": "GS",
+}
+
 _MONTHS = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
     "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
@@ -79,7 +89,8 @@ def _parse_team_block(
         raise ProviderValidationError(
             PROVIDER, f"could not extract team abbreviation from logo {logo!r}", context=context
         )
-    abbreviation = abbr_match.group(1).upper()
+    raw_abbreviation = abbr_match.group(1).upper()
+    abbreviation = _LOGO_ABBREVIATION_ALIASES.get(raw_abbreviation, raw_abbreviation)
     items = require_sequence(block, "items", PROVIDER, context)
     return tuple(
         _parse_item(item, abbreviation, f"{context}.items[{j}]", snapshot_captured_at)
