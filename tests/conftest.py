@@ -30,6 +30,11 @@ def espn_summary_payload() -> object:
 
 
 @pytest.fixture
+def espn_summary_with_game_info_payload() -> object:
+    return load_fixture("espn_summary_with_game_info.json")
+
+
+@pytest.fixture
 def kalshi_series_payload() -> object:
     return load_fixture("kalshi_series.json")
 

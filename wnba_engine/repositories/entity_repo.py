@@ -143,6 +143,38 @@ def upsert_game(
     return game_id
 
 
+def update_game_venue_info(
+    conn: Connection, game_id: int, *, venue_name: str | None, attendance: int | None
+) -> None:
+    """Persist venue_name/attendance parsed from a game's box score summary
+    (see espn/parser.py::parse_summary -> GameBoxScore.venue_name/
+    attendance). Separate from upsert_game because this data only exists
+    once a summary has been fetched and parsed -- upsert_game runs first,
+    off the scoreboard payload alone, before it's known whether a summary
+    will even be fetched (only final games get one).
+
+    Same update-on-change idiom as resolve_or_create_team/upsert_game:
+    IS DISTINCT FROM (not <>, since both columns are nullable and a plain
+    <> never matches a NULL against anything) skips the write entirely
+    when nothing changed, and never blind-overwrites a previously-known
+    value with NULL from a re-ingest whose payload happened to lack
+    gameInfo (fail-open parsing already turns "missing" into NULL at parse
+    time, so silently keeping the last-known-good value here is the right
+    default until/unless a source explicitly reports a change).
+    """
+    if venue_name is None and attendance is None:
+        return
+    conn.execute(
+        "UPDATE games SET "
+        "venue_name = COALESCE(%s, venue_name), "
+        "attendance = COALESCE(%s, attendance), "
+        "updated_at = now() "
+        "WHERE id = %s AND (venue_name IS DISTINCT FROM COALESCE(%s, venue_name) "
+        "OR attendance IS DISTINCT FROM COALESCE(%s, attendance))",
+        (venue_name, attendance, game_id, venue_name, attendance),
+    )
+
+
 _FIND_GAME_BY_TEAMS_SQL = """
 SELECT g.id
 FROM games g

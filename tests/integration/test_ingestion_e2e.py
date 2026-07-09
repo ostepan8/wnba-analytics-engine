@@ -71,6 +71,21 @@ class FakeEspnClient:
         return load_fixture("espn_summary.json")
 
 
+class FakeEspnClientWithGameInfo:
+    """Replays a summary fixture that has ESPN's `gameInfo` block (venue +
+    attendance) -- the plain FakeEspnClient's espn_summary.json fixture
+    predates this feature and has no gameInfo key at all.
+    """
+
+    def fetch_scoreboard(self, day: date) -> object:
+        payload = load_fixture("espn_scoreboard.json")
+        return {"events": [e for e in payload["events"] if e["id"] == "401736227"]}
+
+    def fetch_summary(self, event_id: str) -> object:
+        assert event_id == "401736227"
+        return load_fixture("espn_summary_with_game_info.json")
+
+
 class FakeKalshiClient:
     def fetch_sports_series(self) -> object:
         return load_fixture("kalshi_series.json")
@@ -118,6 +133,10 @@ def test_espn_ingestion_end_to_end(clean_db):
             "WHERE m.external_id = '3917453'"
         ).fetchone()
         assert dnp == (True, None, None)
+        # espn_summary.json (this fixture) predates gameInfo and has no such
+        # key at all -- parse_summary fails open, so these stay NULL.
+        venue = conn.execute("SELECT venue_name, attendance FROM games").fetchone()
+        assert venue == (None, None)
 
     # Re-ingestion is idempotent for canonical/stat tables (upserts).
     rerun = sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))
@@ -125,6 +144,29 @@ def test_espn_ingestion_end_to_end(clean_db):
     assert _count(clean_db, "games") == 1
     assert _count(clean_db, "player_game_stats") == 8
     assert _count(clean_db, "provider_entity_map") == 11
+
+
+def test_espn_ingestion_persists_venue_and_attendance_from_game_info(clean_db):
+    """A real live-captured summary payload (tests/fixtures/
+    espn_summary_with_game_info.json, curled from event 401736393 on
+    2026-07-09) has ESPN's gameInfo block -- venue_name/attendance must
+    land on the games row end to end.
+    """
+    result = sync_date(clean_db, FakeEspnClientWithGameInfo(), date(2025, 7, 6))
+    assert result.failures == 0
+    assert result.box_scores_ingested == 1
+
+    with clean_db.connection() as conn:
+        venue = conn.execute("SELECT venue_name, attendance FROM games").fetchone()
+        assert venue == ("Mohegan Sun Arena", 7508)
+
+    # Re-ingestion keeps the same real values (update-on-change, not a
+    # blind overwrite -- see entity_repo.update_game_venue_info).
+    rerun = sync_date(clean_db, FakeEspnClientWithGameInfo(), date(2025, 7, 6))
+    assert rerun.failures == 0
+    with clean_db.connection() as conn:
+        venue = conn.execute("SELECT venue_name, attendance FROM games").fetchone()
+        assert venue == ("Mohegan Sun Arena", 7508)
 
 
 def test_espn_backfill_sweeps_date_range(clean_db):

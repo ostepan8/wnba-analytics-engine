@@ -116,6 +116,51 @@ def test_missing_boxscore_raises():
         parse_summary({"header": {"id": "x"}})
 
 
+def test_venue_and_attendance_parsed_from_game_info(espn_summary_with_game_info_payload):
+    box = parse_summary(espn_summary_with_game_info_payload)
+    assert box.venue_name == "Mohegan Sun Arena"
+    assert box.attendance == 7508
+
+
+def test_missing_game_info_leaves_venue_and_attendance_none(espn_summary_payload):
+    """espn_summary.json (the original fixture) has no gameInfo key at all --
+    parse_summary must fail open rather than raise, since gameInfo is new
+    and optional data, not part of the original required payload shape.
+    """
+    assert "gameInfo" not in espn_summary_payload
+    box = parse_summary(espn_summary_payload)
+    assert box.venue_name is None
+    assert box.attendance is None
+
+
+def test_game_info_present_but_venue_missing_leaves_venue_none(
+    espn_summary_with_game_info_payload,
+):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    del payload["gameInfo"]["venue"]
+    box = parse_summary(payload)
+    assert box.venue_name is None
+    assert box.attendance == 7508
+
+
+def test_game_info_present_but_attendance_missing_leaves_attendance_none(
+    espn_summary_with_game_info_payload,
+):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    del payload["gameInfo"]["attendance"]
+    box = parse_summary(payload)
+    assert box.venue_name == "Mohegan Sun Arena"
+    assert box.attendance is None
+
+
+def test_game_info_not_a_mapping_fails_open(espn_summary_with_game_info_payload):
+    payload = copy.deepcopy(espn_summary_with_game_info_payload)
+    payload["gameInfo"] = "unexpected string shape"
+    box = parse_summary(payload)
+    assert box.venue_name is None
+    assert box.attendance is None
+
+
 def test_stats_labels_mismatch_raises(espn_summary_payload):
     broken = copy.deepcopy(espn_summary_payload)
     stats_block = broken["boxscore"]["players"][0]["statistics"][0]
