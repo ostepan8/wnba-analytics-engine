@@ -1,0 +1,83 @@
+{
+  "data": [
+    {
+      "player": {
+        "id": 750,
+        "first_name": "Aaliyah",
+        "last_name": "Nye",
+        "position": "G",
+        "position_abbreviation": "G",
+        "height": "6' 0\"",
+        "weight": "--",
+        "jersey_number": "32",
+        "college": "Alabama",
+        "age": 23,
+        "team": {
+          "id": 4,
+          "conference": "Eastern Conference",
+          "city": "Atlanta",
+          "name": "Dream",
+          "full_name": "Atlanta Dream",
+          "abbreviation": "ATL"
+        }
+      },
+      "status": "Out",
+      "return_date": "Jul 9",
+      "comment": "Jul 8: Nye (knee) is questionable for Thursday's game against the Storm."
+    },
+    {
+      "player": {
+        "id": 373,
+        "first_name": "Alyssa",
+        "last_name": "Thomas",
+        "position": "F",
+        "position_abbreviation": "F",
+        "height": "6' 2\"",
+        "weight": "203 lbs",
+        "jersey_number": "25",
+        "college": "Maryland",
+        "age": 34,
+        "team": {
+          "id": 10,
+          "conference": "Western Conference",
+          "city": "Phoenix",
+          "name": "Mercury",
+          "full_name": "Phoenix Mercury",
+          "abbreviation": "PHX"
+        }
+      },
+      "status": "Day-To-Day",
+      "return_date": "Jul 9",
+      "comment": "Jul 9: Thomas (foot) is listed as probable for Thursday's game against Indiana."
+    },
+    {
+      "player": {
+        "id": 602,
+        "first_name": "Satou",
+        "last_name": "Sabally",
+        "position": "F",
+        "position_abbreviation": "F",
+        "height": "6' 4\"",
+        "weight": "175 lbs",
+        "jersey_number": "0",
+        "college": "Oregon",
+        "age": 28,
+        "team": {
+          "id": 1,
+          "conference": "Eastern Conference",
+          "city": "New York",
+          "name": "Liberty",
+          "full_name": "New York Liberty",
+          "abbreviation": "NY"
+        }
+      },
+      "status": "Out",
+      "return_date": "Jul 11",
+      "comment": null
+    }
+  ],
+  "meta": {
+    "next_cursor": null,
+    "per_page": 100
+  }
+}

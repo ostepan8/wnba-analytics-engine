@@ -20,6 +20,7 @@ from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
+from wnba_engine.pipeline.balldontlie_injury_ingest import snapshot_current_injuries
 from wnba_engine.pipeline.balldontlie_odds_ingest import (
     backfill_date_range as backfill_odds_date_range,
 )
@@ -143,6 +144,24 @@ def snapshot_injuries() -> None:
     try:
         with EspnClient(settings) as client:
             click.echo(ingest_current_injury_report(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-balldontlie-injuries")
+def snapshot_balldontlie_injuries() -> None:
+    """Snapshot the current league-wide balldontlie injury report.
+
+    A second live current-state source alongside ESPN's, for
+    cross-validation -- see db/migrations/0016_balldontlie_injury_reports.sql.
+    Current-state only, same as snapshot-injuries: this endpoint has no
+    date/season filter, so there's no history to backfill.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(snapshot_current_injuries(db, client))
     finally:
         db.close()
 
