@@ -20,6 +20,8 @@ STANDINGS_PATH = "wnba/v1/standings"
 ODDS_PATH = "wnba/v1/odds"
 PLAYER_PROP_ODDS_PATH = "wnba/v1/odds/player_props"
 PLAYERS_PATH = "wnba/v1/players"
+PLAYER_STATS_PATH = "wnba/v1/player_stats"
+TEAM_STATS_PATH = "wnba/v1/team_stats"
 DEFAULT_PAGE_SIZE = 100
 # A full 4-quarter game has ~440 plays (verified live); this ceiling gives
 # OT games headroom while staying one request per game -- the endpoint
@@ -186,6 +188,40 @@ class BalldontlieClient:
         if cursor is not None:
             params["cursor"] = cursor
         return self._http.get_json(PLAYERS_PATH, params=params)
+
+    def fetch_player_stats_page(
+        self,
+        season: int,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/player_stats -- one cursor-paginated page of
+        TRADITIONAL per-player-per-game box score stats (points, rebounds,
+        assists, etc.), a different endpoint from
+        fetch_player_advanced_stats_page's offensive/defensive rating and
+        four factors. Same seasons[]/per_page/cursor contract as the other
+        cursor-paginated endpoints (verified live)."""
+        params: dict[str, object] = {"seasons[]": season, "per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(PLAYER_STATS_PATH, params=params)
+
+    def fetch_team_stats_page(
+        self,
+        season: int,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/team_stats -- one cursor-paginated page of
+        TRADITIONAL per-team-per-game box score stats. Same
+        seasons[]/per_page/cursor contract as fetch_player_stats_page
+        (verified live)."""
+        params: dict[str, object] = {"seasons[]": season, "per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(TEAM_STATS_PATH, params=params)
 
     def close(self) -> None:
         self._http.close()

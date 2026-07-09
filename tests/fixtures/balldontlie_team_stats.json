@@ -1,0 +1,72 @@
+{
+  "data": [
+    {
+      "team": {
+        "id": 4,
+        "conference": "Eastern Conference",
+        "city": "Atlanta",
+        "name": "Dream",
+        "full_name": "Atlanta Dream",
+        "abbreviation": "ATL"
+      },
+      "game": {
+        "id": 3858,
+        "date": "2025-05-16T23:30:00.000Z",
+        "season": 2025
+      },
+      "fgm": 30,
+      "fga": 74,
+      "fg_pct": 41,
+      "fg3m": 12,
+      "fg3a": 36,
+      "fg3_pct": 33,
+      "ftm": 18,
+      "fta": 27,
+      "ft_pct": 67,
+      "oreb": 15,
+      "dreb": 22,
+      "reb": 37,
+      "ast": 24,
+      "stl": 4,
+      "blk": 2,
+      "turnovers": 14,
+      "fouls": 22
+    },
+    {
+      "team": {
+        "id": 5,
+        "conference": "Eastern Conference",
+        "city": "Washington",
+        "name": "Mystics",
+        "full_name": "Washington Mystics",
+        "abbreviation": "WSH"
+      },
+      "game": {
+        "id": 3858,
+        "date": "2025-05-16T23:30:00.000Z",
+        "season": 2025
+      },
+      "fgm": 31,
+      "fga": 61,
+      "fg_pct": 51,
+      "fg3m": 9,
+      "fg3a": 18,
+      "fg3_pct": 50,
+      "ftm": 23,
+      "fta": 31,
+      "ft_pct": 74,
+      "oreb": 5,
+      "dreb": 21,
+      "reb": 26,
+      "ast": 18,
+      "stl": 7,
+      "blk": 4,
+      "turnovers": 7,
+      "fouls": 25
+    }
+  ],
+  "meta": {
+    "next_cursor": null,
+    "per_page": 2
+  }
+}

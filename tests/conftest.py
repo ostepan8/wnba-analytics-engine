@@ -112,3 +112,13 @@ def balldontlie_player_prop_odds_payload() -> object:
 @pytest.fixture
 def balldontlie_players_payload() -> object:
     return load_fixture("balldontlie_players.json")
+
+
+@pytest.fixture
+def balldontlie_player_stats_payload() -> object:
+    return load_fixture("balldontlie_player_stats.json")
+
+
+@pytest.fixture
+def balldontlie_team_stats_payload() -> object:
+    return load_fixture("balldontlie_team_stats.json")
