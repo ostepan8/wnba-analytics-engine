@@ -20,6 +20,12 @@ from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
+from wnba_engine.pipeline.balldontlie_odds_ingest import (
+    backfill_date_range as backfill_odds_date_range,
+)
+from wnba_engine.pipeline.balldontlie_player_prop_odds_ingest import (
+    backfill_season as backfill_player_prop_odds_season,
+)
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
 from wnba_engine.pipeline.balldontlie_standings_ingest import (
@@ -251,6 +257,52 @@ def backfill_standings(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_standings_season(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-odds")
+@click.option("--since", type=click.DateTime(["%Y-%m-%d"]), required=True)
+@click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
+def backfill_odds(since, until) -> None:
+    """Backfill balldontlie game-level sportsbook odds (moneyline/spread/
+    total) for every date in [since, until].
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. A
+    genuinely different concept from snapshot-kalshi/snapshot-polymarket
+    (real bookmaker odds, not peer-to-peer prediction-market contracts --
+    see db/migrations/0014_balldontlie_odds.sql). Date-ranged, not
+    --season, because the odds endpoint only carries a rolling recent
+    window, not full historical archives. Append-only: a re-run over an
+    unchanged window is a no-op; genuine line movement adds new rows.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_odds_date_range(db, client, since.date(), until.date()))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-player-prop-odds")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2026.")
+def backfill_player_prop_odds(season: int) -> None:
+    """Backfill balldontlie player-prop sportsbook odds for one season.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. Two
+    phases: resolve balldontlie's games to our canonical games (same
+    crosswalk backfill-advanced-stats uses), then query player-prop odds
+    per game -- games with no cached props return empty, not an error.
+    Players resolve via a straight crosswalk lookup only (this payload
+    carries no player name), so a player never seen by another balldontlie
+    pipeline is skipped. Append-only, same as backfill-odds.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_player_prop_odds_season(db, client, season))
     finally:
         db.close()
 

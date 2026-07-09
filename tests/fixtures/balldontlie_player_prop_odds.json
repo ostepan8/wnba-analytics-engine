@@ -1,0 +1,73 @@
+{
+  "data": [
+    {
+      "id": 8663418827,
+      "game_id": 24909,
+      "player_id": 468,
+      "vendor": "betrivers",
+      "prop_type": "assists",
+      "line_value": "3.5",
+      "market": {
+        "type": "milestone",
+        "odds": 107
+      },
+      "updated_at": "2026-07-08T00:17:10.667Z"
+    },
+    {
+      "id": 8663552235,
+      "game_id": 24909,
+      "player_id": 574,
+      "vendor": "draftkings",
+      "prop_type": "assists",
+      "line_value": "10.5",
+      "market": {
+        "type": "over_under",
+        "over_odds": 115,
+        "under_odds": -160
+      },
+      "updated_at": "2026-07-08T02:17:06.821Z"
+    },
+    {
+      "id": 8663418835,
+      "game_id": 24909,
+      "player_id": 574,
+      "vendor": "betrivers",
+      "prop_type": "points",
+      "line_value": "14.5",
+      "market": {
+        "type": "milestone",
+        "odds": 115
+      },
+      "updated_at": "2026-07-08T00:17:10.667Z"
+    },
+    {
+      "id": 8663418836,
+      "game_id": 24909,
+      "player_id": 591,
+      "vendor": "betrivers",
+      "prop_type": "points",
+      "line_value": "16.5",
+      "market": {
+        "type": "milestone",
+        "odds": 106
+      },
+      "updated_at": "2026-07-08T00:17:10.667Z"
+    },
+    {
+      "id": 8663418837,
+      "game_id": 24909,
+      "player_id": 552,
+      "vendor": "betrivers",
+      "prop_type": "points",
+      "line_value": "13.5",
+      "market": {
+        "type": "milestone",
+        "odds": 115
+      },
+      "updated_at": "2026-07-08T00:17:10.667Z"
+    }
+  ],
+  "meta": {
+    "per_page": 5
+  }
+}
