@@ -75,3 +75,52 @@ class PlayerAdvancedStats:
     misc_stats: dict[str, object]
     usage_stats: dict[str, object]
     scoring_stats: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class TeamAdvancedStats:
+    """Advanced per-team-per-game stats from balldontlie's
+    /wnba/v1/team_game_advanced_stats. Same "advanced" + "four_factors"
+    category shape as PlayerAdvancedStats (verified live) -- no player
+    dimension, since this is a team-level aggregate for the whole game.
+
+    One live difference from the player payload: the team-level "advanced"
+    category also carries an "estimated_team_turnover_percentage" field
+    that the player-level payload doesn't have. It's intentionally dropped
+    here, same as the "estimated_*" siblings (estimated_pace,
+    estimated_net_rating, ...) that PlayerAdvancedStats already drops --
+    kept the promoted-field set identical across both tables rather than
+    special-casing one extra estimated variant.
+    """
+
+    team: BdlTeamRef
+    game: BdlGameRef
+    minutes: str | None
+
+    offensive_rating: float | None
+    defensive_rating: float | None
+    net_rating: float | None
+    pace: float | None
+    possessions: int | None
+    true_shooting_percentage: float | None
+    effective_field_goal_percentage: float | None
+    usage_percentage: float | None
+    assist_percentage: float | None
+    assist_ratio: float | None
+    assist_to_turnover: float | None
+    turnover_ratio: float | None
+    rebound_percentage: float | None
+    offensive_rebound_percentage: float | None
+    defensive_rebound_percentage: float | None
+    pie: float | None
+
+    free_throw_attempt_rate: float | None
+    team_turnover_percentage: float | None
+    opp_effective_field_goal_percentage: float | None
+    opp_free_throw_attempt_rate: float | None
+    opp_team_turnover_percentage: float | None
+    opp_offensive_rebound_percentage: float | None
+
+    misc_stats: dict[str, object]
+    usage_stats: dict[str, object]
+    scoring_stats: dict[str, object]

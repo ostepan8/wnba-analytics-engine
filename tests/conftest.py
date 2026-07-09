@@ -65,6 +65,11 @@ def balldontlie_player_advanced_stats_bio_payload() -> object:
 
 
 @pytest.fixture
+def balldontlie_team_advanced_stats_payload() -> object:
+    return load_fixture("balldontlie_team_advanced_stats.json")
+
+
+@pytest.fixture
 def balldontlie_player_shot_zones_bio_payload() -> object:
     return load_fixture("balldontlie_player_shot_zones_bio.json")
 

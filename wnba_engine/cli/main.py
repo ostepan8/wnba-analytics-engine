@@ -22,6 +22,9 @@ from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
+from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
+    backfill_season as backfill_team_advanced_stats_season,
+)
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -166,6 +169,25 @@ def backfill_advanced_stats(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_season(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-team-advanced-stats")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_team_advanced_stats(season: int) -> None:
+    """Backfill balldontlie advanced team stats for one season.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY. Two
+    phases: resolve balldontlie's games to our canonical games via
+    team+date matching, then ingest per-team advanced stats using that
+    crosswalk. Upserted, safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_team_advanced_stats_season(db, client, season))
     finally:
         db.close()
 

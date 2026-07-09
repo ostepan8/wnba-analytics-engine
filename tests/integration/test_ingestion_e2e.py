@@ -27,6 +27,9 @@ from wnba_engine.models.games import GameStatus, ScoreboardGame, SeasonType, Tea
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
+from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
+    backfill_season as backfill_team_advanced_stats_season,
+)
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
@@ -1029,6 +1032,169 @@ def test_balldontlie_advanced_stats_backfill_end_to_end(clean_db):
             "SELECT count(*) FROM player_advanced_stats WHERE source = 'balldontlie'"
         ).fetchone()[0]
     assert count == 1
+
+
+class FakeBalldontlieTeamAdvancedStatsClient:
+    """One game matching the ESPN fixture's NY vs SEA, 2025-07-06 game, and
+    two team-advanced-stats rows (one per team) -- stats values are the
+    REAL payload captured live from /wnba/v1/team_game_advanced_stats
+    (tests/fixtures/balldontlie_team_advanced_stats.json, Washington
+    Mystics row), with team/game identifiers substituted so the row
+    resolves onto the SAME canonical game+teams ESPN's box score already
+    created (proving the crosswalk, same technique as
+    FakeBalldontlieClient above)."""
+
+    def fetch_games_page(self, season: int, *, cursor: int | None = None, per_page: int = 100):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 9001,
+                    "date": "2025-07-06T17:00:00.000Z",
+                    "home_team": {"id": 1, "full_name": "New York Liberty"},
+                    "visitor_team": {"id": 2, "full_name": "Seattle Storm"},
+                }
+            ],
+            "meta": {"next_cursor": None, "per_page": 1},
+        }
+
+    def fetch_team_advanced_stats_page(
+        self, season: int, *, cursor: int | None = None, per_page: int = 100
+    ):
+        del season, cursor, per_page
+        return {
+            "data": [
+                {
+                    "id": 600001,
+                    "team": {"id": 1, "abbreviation": "NY"},
+                    "game": {"id": 9001, "date": "2025-07-06T17:00:00.000Z", "season": 2025},
+                    "period": 0,
+                    "stats": {
+                        "misc": {"blocks": 4, "points_paint": 36},
+                        "usage": {"usage_percentage": 1},
+                        "scoring": {"percentage_points2pt": 0.468},
+                        "advanced": {
+                            "minutes": "200:00",
+                            "offensive_rating": 119,
+                            "defensive_rating": 113.9,
+                            "net_rating": 5.1,
+                            "pace": 94.8,
+                            "possessions": 79,
+                            "true_shooting_percentage": 0.63,
+                            "effective_field_goal_percentage": 0.582,
+                            "usage_percentage": 1,
+                            "assist_percentage": 0.581,
+                            "assist_ratio": 17,
+                            "assist_to_turnover": 2,
+                            "turnover_ratio": 11.4,
+                            "rebound_percentage": 0.422,
+                            "offensive_rebound_percentage": 0.273,
+                            "defensive_rebound_percentage": 0.52,
+                            "pie": 0.558,
+                        },
+                        "four_factors": {
+                            "free_throw_attempt_rate": 0.508,
+                            "team_turnover_percentage": 0.114,
+                            "opp_effective_field_goal_percentage": 0.486,
+                            "opp_free_throw_attempt_rate": 0.365,
+                            "opp_team_turnover_percentage": 0.203,
+                            "opp_offensive_rebound_percentage": 0.48,
+                        },
+                    },
+                },
+                {
+                    "id": 600002,
+                    "team": {"id": 2, "abbreviation": "SEA"},
+                    "game": {"id": 9001, "date": "2025-07-06T17:00:00.000Z", "season": 2025},
+                    "period": 0,
+                    "stats": {
+                        "misc": {"blocks": 2, "points_paint": 34},
+                        "usage": {"usage_percentage": 1},
+                        "scoring": {"percentage_points2pt": 0.4},
+                        "advanced": {
+                            "minutes": "200:00",
+                            "offensive_rating": 113.9,
+                            "defensive_rating": 119,
+                            "net_rating": -5.1,
+                            "pace": 94.8,
+                            "possessions": 79,
+                            "true_shooting_percentage": 0.524,
+                            "effective_field_goal_percentage": 0.486,
+                            "usage_percentage": 1,
+                            "assist_percentage": 0.8,
+                            "assist_ratio": 18.9,
+                            "assist_to_turnover": 1.5,
+                            "turnover_ratio": 20.3,
+                            "rebound_percentage": 0.578,
+                            "offensive_rebound_percentage": 0.48,
+                            "defensive_rebound_percentage": 0.727,
+                            "pie": 0.442,
+                        },
+                        "four_factors": {
+                            "free_throw_attempt_rate": 0.365,
+                            "team_turnover_percentage": 0.203,
+                            "opp_effective_field_goal_percentage": 0.582,
+                            "opp_free_throw_attempt_rate": 0.508,
+                            "opp_team_turnover_percentage": 0.114,
+                            "opp_offensive_rebound_percentage": 0.273,
+                        },
+                    },
+                },
+            ],
+            "meta": {"next_cursor": None, "per_page": 2},
+        }
+
+
+def test_balldontlie_team_advanced_stats_backfill_end_to_end(clean_db):
+    sync_date(clean_db, FakeEspnClient(), date(2025, 7, 6))  # seeds NY vs SEA
+
+    result = backfill_team_advanced_stats_season(
+        clean_db, FakeBalldontlieTeamAdvancedStatsClient(), 2025
+    )
+    assert result.games_seen == 1
+    assert result.games_resolved == 1
+    assert result.games_unresolved == 0
+    assert result.stat_rows_seen == 2
+    assert result.stat_rows_inserted == 2
+    assert result.unresolved_games_for_stats == 0
+    assert result.unresolved_teams_for_stats == 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT t.abbreviation, tas.offensive_rating, tas.true_shooting_percentage, "
+            "tas.pie, tas.misc_stats "
+            "FROM team_advanced_stats tas "
+            "JOIN teams t ON t.id = tas.team_id "
+            "WHERE tas.source = 'balldontlie' ORDER BY t.abbreviation"
+        ).fetchall()
+    assert len(rows) == 2
+    ny, sea = rows
+    assert ny[0] == "NY"
+    assert float(ny[1]) == pytest.approx(119)
+    assert float(ny[2]) == pytest.approx(0.63)
+    assert float(ny[3]) == pytest.approx(0.558)
+    assert ny[4] == {"blocks": 4, "points_paint": 36}
+    assert sea[0] == "SEA"
+    assert float(sea[1]) == pytest.approx(113.9)
+
+    # Crosswalk correctness: balldontlie's team abbreviation resolves via
+    # find_team_by_abbreviation onto the SAME canonical teams row ESPN's
+    # box score already created for this game -- team_advanced_stats has
+    # exactly the 2 teams from that one game, no forked duplicate identity.
+    with clean_db.connection() as conn:
+        team_count = conn.execute("SELECT count(*) FROM teams").fetchone()[0]
+    assert team_count == 2
+
+    # Upserted, not append-only: re-running updates the same rows.
+    rerun = backfill_team_advanced_stats_season(
+        clean_db, FakeBalldontlieTeamAdvancedStatsClient(), 2025
+    )
+    assert rerun.stat_rows_inserted == 2
+    with clean_db.connection() as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM team_advanced_stats WHERE source = 'balldontlie'"
+        ).fetchone()[0]
+    assert count == 2
 
 
 class FakeBalldontliePlaysClient:
