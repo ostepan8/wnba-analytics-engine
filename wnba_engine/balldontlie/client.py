@@ -14,6 +14,7 @@ TEAM_GAME_ADVANCED_STATS_PATH = "wnba/v1/team_game_advanced_stats"
 PLAYS_PATH = "wnba/v1/plays"
 PLAYER_SHOT_LOCATIONS_PATH = "wnba/v1/player_shot_locations"
 TEAM_SHOT_LOCATIONS_PATH = "wnba/v1/team_shot_locations"
+STANDINGS_PATH = "wnba/v1/standings"
 DEFAULT_PAGE_SIZE = 100
 # A full 4-quarter game has ~440 plays (verified live); this ceiling gives
 # OT games headroom while staying one request per game -- the endpoint
@@ -120,6 +121,14 @@ class BalldontlieClient:
         if cursor is not None:
             params["cursor"] = cursor
         return self._http.get_json(TEAM_SHOT_LOCATIONS_PATH, params=params)
+
+    def fetch_standings(self, season: int) -> object:
+        """GET /wnba/v1/standings -- every team's current standing for one
+        season in a single response (confirmed live: top-level keys are
+        just {"data": [...]}, no "meta"/pagination wrapper -- one row per
+        team, ~13 rows for the whole league, so there's nothing to
+        paginate)."""
+        return self._http.get_json(STANDINGS_PATH, params={"season": season})
 
     def close(self) -> None:
         self._http.close()

@@ -29,6 +29,7 @@ _TABLES = (
     "player_shot_zone_stats",
     "team_shot_zone_stats",
     "player_advanced_stats",
+    "team_standings",
     "player_game_stats",
     "team_game_stats",
     "provider_entity_map",

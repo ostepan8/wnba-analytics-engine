@@ -22,6 +22,9 @@ from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.balldontlie_plays_ingest import backfill_season_plays
 from wnba_engine.pipeline.balldontlie_shot_zone_ingest import backfill_season_shot_zones
+from wnba_engine.pipeline.balldontlie_standings_ingest import (
+    backfill_season as backfill_standings_season,
+)
 from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
@@ -227,6 +230,27 @@ def backfill_shot_zones(season: int) -> None:
     try:
         with BalldontlieClient(settings) as client:
             click.echo(backfill_season_shot_zones(db, client, season))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-standings")
+@click.option("--season", type=int, required=True, help="Season year, e.g. 2024.")
+def backfill_standings(season: int) -> None:
+    """Backfill balldontlie official standings for one season.
+
+    Paid API (GOAT tier) -- requires WNBA_ENGINE_BALLDONTLIE_API_KEY.
+    Season-level only (no game dimension): fetches the season's current
+    standings in a single request and resolves each row's team via
+    find_team_by_abbreviation. Upserted, safe to re-run -- standings values
+    change on every re-fetch, so a re-run corrects the same row rather than
+    accumulating history.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with BalldontlieClient(settings) as client:
+            click.echo(backfill_standings_season(db, client, season))
     finally:
         db.close()
 
