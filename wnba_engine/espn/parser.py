@@ -9,7 +9,8 @@ Summary payload shape (.../summary?event=<id>):
   header.id, boxscore.teams[] (team + statistics[] of named totals),
   boxscore.players[] (one per team; statistics[0].labels positionally
   aligned with each athlete's stats[] array), gameInfo.venue.fullName +
-  gameInfo.attendance (optional -- see _parse_game_info).
+  gameInfo.attendance + gameInfo.officials[] (all optional -- see
+  _parse_game_info).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from wnba_engine.errors import ProviderValidationError
 from wnba_engine.models.box_scores import (
     GameBoxScore,
+    OfficialRef,
     PlayerBoxLine,
     PlayerRef,
     ShootingLine,
@@ -214,7 +216,7 @@ def parse_summary(payload: object) -> GameBoxScore:
     for i, entry in enumerate(raw_players):
         players.extend(_parse_team_players(entry, f"boxscore.players[{i}]"))
 
-    venue_name, attendance = _parse_game_info(payload.get("gameInfo"))
+    venue_name, attendance, officials = _parse_game_info(payload.get("gameInfo"))
 
     return GameBoxScore(
         game_external_id=game_id,
@@ -222,14 +224,15 @@ def parse_summary(payload: object) -> GameBoxScore:
         players=tuple(players),
         venue_name=venue_name,
         attendance=attendance,
+        officials=officials,
     )
 
 
-def _parse_game_info(game_info: object) -> tuple[str | None, int | None]:
-    """Extract venue name + attendance from the summary payload's top-level
-    `gameInfo` block. Also carries officials (a separate, not-yet-built
-    feature) -- kept as a small dedicated helper so a future officials
-    parser can extend it without re-deriving the gameInfo access pattern.
+def _parse_game_info(
+    game_info: object,
+) -> tuple[str | None, int | None, tuple[OfficialRef, ...]]:
+    """Extract venue name + attendance + officials from the summary
+    payload's top-level `gameInfo` block.
 
     Fail-open by design, unlike the require_*/parse_* helpers used
     elsewhere in this module: gameInfo is enrichment data absent from
@@ -238,7 +241,7 @@ def _parse_game_info(game_info: object) -> tuple[str | None, int | None]:
     of the box score itself.
     """
     if not isinstance(game_info, Mapping):
-        return None, None
+        return None, None, ()
 
     venue = game_info.get("venue")
     venue_name = venue.get("fullName") if isinstance(venue, Mapping) else None
@@ -255,7 +258,41 @@ def _parse_game_info(game_info: object) -> tuple[str | None, int | None]:
         # aborting the whole game's box score over one bad field.
         attendance = None
 
-    return venue_name, attendance
+    officials = _parse_officials(game_info.get("officials"))
+
+    return venue_name, attendance, officials
+
+
+def _parse_officials(raw_officials: object) -> tuple[OfficialRef, ...]:
+    """Extract the officiating crew from gameInfo.officials[]. Each entry
+    observed live (fullName, position.displayName, order -- see
+    0019_game_officials.sql for the real games sampled) parses to an
+    OfficialRef; a malformed individual entry (not a mapping, or missing
+    a usable name) is skipped rather than aborting the whole list, same
+    fail-open spirit as venue_name/attendance above -- one bad official
+    entry must not cost the other two.
+    """
+    if not isinstance(raw_officials, Sequence) or isinstance(raw_officials, (str, bytes)):
+        return ()
+
+    officials: list[OfficialRef] = []
+    for entry in raw_officials:
+        if not isinstance(entry, Mapping):
+            continue
+        name = entry.get("fullName")
+        if not isinstance(name, str) or not name.strip():
+            continue
+
+        position = entry.get("position")
+        role = position.get("displayName") if isinstance(position, Mapping) else None
+        role = role if isinstance(role, str) and role.strip() else None
+
+        order_raw = entry.get("order")
+        is_plain_int = isinstance(order_raw, int) and not isinstance(order_raw, bool)
+        order = order_raw if is_plain_int else None
+
+        officials.append(OfficialRef(name=name, role=role, order=order))
+    return tuple(officials)
 
 
 def _parse_team_box(entry: object, context: str) -> TeamBoxScore:

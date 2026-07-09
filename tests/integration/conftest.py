@@ -35,6 +35,7 @@ _TABLES = (
     "player_advanced_stats",
     "team_standings_history",
     "team_standings",
+    "game_officials",
     "player_game_stats",
     "team_game_stats",
     "provider_entity_map",
