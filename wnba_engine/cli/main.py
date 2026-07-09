@@ -7,6 +7,7 @@ separate, later task.
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import date, timedelta
 
 import click
@@ -27,6 +28,7 @@ from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.polymarket.client import PolymarketClient
+from wnba_engine.validation.runner import run_all_checks
 
 
 @click.group()
@@ -217,6 +219,33 @@ def snapshot_polymarket() -> None:
             click.echo(ingest_polymarket_wnba_markets(db, client))
     finally:
         db.close()
+
+
+@cli.command("validate")
+def validate() -> None:
+    """Run every data-quality check against the real database.
+
+    Cross-source consistency (ESPN box score vs scoreboard, balldontlie
+    plays vs ESPN score, ...), crosswalk integrity, and plausibility
+    bounds -- see wnba_engine/validation/. Exits non-zero if any check
+    fails, so this is safe to wire into a cron/CI gate later.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        report = run_all_checks(db)
+    finally:
+        db.close()
+
+    for check in report.checks:
+        status = "PASS" if check.passed else "FAIL"
+        click.echo(f"[{status}] {check.name}: {check.violation_count} violation(s)")
+        click.echo(f"       {check.description}")
+        for sample in check.sample_violations:
+            click.echo(f"       - {sample}")
+
+    if not report.passed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
