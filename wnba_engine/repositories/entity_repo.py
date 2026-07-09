@@ -174,3 +174,18 @@ def find_game_id_by_teams(
         ),
     ).fetchone()
     return int(row[0]) if row else None
+
+
+def find_team_by_abbreviation(conn: Connection, abbreviation: str) -> int | None:
+    """Read-only lookup by the canonical teams.abbreviation column.
+
+    Used where a source identifies teams by abbreviation only (no id, no
+    full name) -- e.g. archived Wayback injury-report pages, which encode
+    only a team logo URL. Never creates a team: an abbreviation alone is
+    too thin to safely originate a new canonical row, so an unresolved
+    abbreviation is the caller's problem to log and skip.
+    """
+    row = conn.execute(
+        "SELECT id FROM teams WHERE abbreviation = %s", (abbreviation,)
+    ).fetchone()
+    return int(row[0]) if row else None

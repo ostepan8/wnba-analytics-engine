@@ -8,6 +8,7 @@ from wnba_engine.config import (
     DEFAULT_ESPN_BASE_URL,
     DEFAULT_KALSHI_BASE_URL,
     DEFAULT_POLYMARKET_GAMMA_BASE_URL,
+    DEFAULT_WAYBACK_BASE_URL,
     load_settings,
 )
 
@@ -18,6 +19,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch):
         "WNBA_ENGINE_ESPN_BASE_URL",
         "WNBA_ENGINE_KALSHI_BASE_URL",
         "WNBA_ENGINE_POLYMARKET_GAMMA_BASE_URL",
+        "WNBA_ENGINE_WAYBACK_BASE_URL",
         "WNBA_ENGINE_KALSHI_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -25,8 +27,10 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch):
     assert settings.espn_base_url == DEFAULT_ESPN_BASE_URL
     assert settings.kalshi_base_url == DEFAULT_KALSHI_BASE_URL
     assert settings.polymarket_gamma_base_url == DEFAULT_POLYMARKET_GAMMA_BASE_URL
+    assert settings.wayback_base_url == DEFAULT_WAYBACK_BASE_URL
     assert settings.kalshi_api_key is None
     assert settings.min_request_interval_seconds == 0.5
+    assert settings.wayback_min_request_interval_seconds == 1.5
 
 
 def test_env_overrides(monkeypatch: pytest.MonkeyPatch):

@@ -32,6 +32,7 @@ from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
+from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.repositories import entity_repo
 
 pytestmark = pytest.mark.integration
@@ -41,6 +42,10 @@ _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 def load_fixture(name: str) -> object:
     return json.loads((_FIXTURES_DIR / name).read_text())
+
+
+def load_text_fixture(name: str) -> str:
+    return (_FIXTURES_DIR / name).read_text()
 
 _TABLES = (
     "injury_reports",
@@ -349,3 +354,86 @@ def test_injury_ingestion_end_to_end(clean_db):
     with clean_db.connection() as conn:
         count = conn.execute("SELECT count(*) FROM injury_reports").fetchone()[0]
     assert count == 4
+
+
+_WAYBACK_TIMESTAMP = "20260101120000"
+
+
+class FakeWaybackClient:
+    def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
+        del since, until
+        return [
+            ["urlkey", "timestamp", "original", "mimetype", "statuscode", "digest", "length"],
+            [
+                "com,espn)/wnba/injuries",
+                _WAYBACK_TIMESTAMP,
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "ABC123",
+                "314579",
+            ],
+        ]
+
+    def fetch_snapshot_html(self, timestamp: str) -> str:
+        assert timestamp == _WAYBACK_TIMESTAMP
+        return load_text_fixture("espn_wayback_injuries.html")
+
+
+def test_wayback_injury_backfill_end_to_end(clean_db):
+    # Only pre-seed Chicago Sky (abbreviation "CHI"), matching how a real
+    # team would already be known from box-score ingestion. Connecticut Sun
+    # ("CON") is deliberately left unknown to exercise the unresolved-team
+    # skip path in the same run.
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="11", name="Chicago Sky", abbreviation="CHI")
+        )
+        conn.commit()
+
+    result = backfill_injury_history(
+        clean_db, FakeWaybackClient(), date(2026, 1, 1), date(2026, 1, 1)
+    )
+    assert result.snapshots_available == 1
+    assert result.snapshots_processed == 1
+    assert result.snapshots_already_captured == 0
+    assert result.failures == 0
+    assert result.entries_inserted == 2  # only Chicago Sky's two entries resolved
+    assert result.unresolved_teams == 2  # Connecticut Sun's two entries, skipped
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT p.full_name, ir.status, ir.source, ir.injury_type, ir.short_comment "
+            "FROM injury_reports ir JOIN players p ON p.id = ir.player_id "
+            "ORDER BY p.full_name"
+        ).fetchall()
+    assert rows[0][0] == "Angel Reese"
+    assert rows[0][1] == "Out"
+    assert rows[0][2] == "espn-wayback"
+    assert rows[0][3] is None  # no structured injury_type in this page format
+    assert "Reese (back)" in rows[0][4]
+
+    # Resumable: rerunning the same range does no network re-fetch and adds
+    # nothing new, since the snapshot's captured_at is already recorded.
+    rerun = backfill_injury_history(
+        clean_db, FakeWaybackClient(), date(2026, 1, 1), date(2026, 1, 1)
+    )
+    assert rerun.snapshots_already_captured == 1
+    assert rerun.snapshots_processed == 0
+    with clean_db.connection() as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM injury_reports WHERE source = 'espn-wayback'"
+        ).fetchone()[0]
+    assert count == 2
+
+    # Crosswalk correctness: the Wayback-resolved player must reuse the
+    # SAME canonical player id as the live 'espn' provider, not fork a
+    # parallel identity under 'espn-wayback'.
+    with clean_db.connection() as conn:
+        live_id = entity_repo.lookup_internal_id(conn, "espn", "player", "4433402")
+        wayback_row_player_id = conn.execute(
+            "SELECT player_id FROM injury_reports WHERE source = 'espn-wayback' "
+            "AND espn_injury_id LIKE 'wayback:4433402:%'"
+        ).fetchone()
+    assert live_id is not None
+    assert wayback_row_player_id[0] == live_id
