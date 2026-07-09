@@ -10,6 +10,7 @@ from wnba_engine.http_client import JsonHttpClient
 PROVIDER = "balldontlie"
 GAMES_PATH = "wnba/v1/games"
 PLAYER_GAME_ADVANCED_STATS_PATH = "wnba/v1/player_game_advanced_stats"
+TEAM_GAME_ADVANCED_STATS_PATH = "wnba/v1/team_game_advanced_stats"
 PLAYS_PATH = "wnba/v1/plays"
 PLAYER_SHOT_LOCATIONS_PATH = "wnba/v1/player_shot_locations"
 TEAM_SHOT_LOCATIONS_PATH = "wnba/v1/team_shot_locations"
@@ -66,6 +67,21 @@ class BalldontlieClient:
         if cursor is not None:
             params["cursor"] = cursor
         return self._http.get_json(PLAYER_GAME_ADVANCED_STATS_PATH, params=params)
+
+    def fetch_team_advanced_stats_page(
+        self,
+        season: int,
+        *,
+        cursor: int | None = None,
+        per_page: int = DEFAULT_PAGE_SIZE,
+    ) -> object:
+        """GET /wnba/v1/team_game_advanced_stats -- one cursor-paginated
+        page. Same seasons[]/per_page/cursor contract as
+        fetch_player_advanced_stats_page (verified live)."""
+        params: dict[str, object] = {"seasons[]": season, "per_page": per_page}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._http.get_json(TEAM_GAME_ADVANCED_STATS_PATH, params=params)
 
     def fetch_plays(self, game_id: int) -> object:
         """GET /wnba/v1/plays -- every play for one game in a single
