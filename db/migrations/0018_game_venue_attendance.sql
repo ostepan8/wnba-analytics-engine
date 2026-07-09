@@ -1,0 +1,27 @@
+-- ESPN's summary endpoint (.../summary?event=<id>) carries a top-level
+-- `gameInfo` block for final games that this repo never read -- only
+-- `header` and `boxscore` were parsed. gameInfo.venue.fullName and
+-- gameInfo.attendance are plain, already-canonical values (confirmed live
+-- against several real games spanning 2022-2025, including preseason and
+-- the 2026 All-Star game -- gameInfo was present on every one sampled).
+--
+-- venue_name only, not city/state: gameInfo.venue.address does carry
+-- city/state, but nothing in this repo consumes them yet and an unused,
+-- never-queried column is worse than adding it later alongside whatever
+-- actually needs it (e.g. if/when a venues table or geo-based analysis
+-- shows up). Easy to add in a follow-up migration.
+--
+-- No separate `venues` table: gameInfo.venue carries only a name + city/
+-- state + a numeric ESPN venue id/guid this repo doesn't otherwise need
+-- (no capacity, coordinates, or other relational data in the real
+-- payload) -- a whole table would just be (id, name, city, state) with a
+-- 1:1 relationship to nothing else, so a nullable column directly on
+-- games is the simpler fit for what ESPN actually sends.
+--
+-- Nullable: this is enrichment parsed from `gameInfo`, which is fetched
+-- (and parsed) only for finished games, and even then fails open when
+-- missing (see espn/parser.py::_parse_game_info) -- older rows and any
+-- game whose payload lacks gameInfo simply have NULLs here until a
+-- re-sync repopulates them.
+ALTER TABLE games ADD COLUMN venue_name TEXT;
+ALTER TABLE games ADD COLUMN attendance INT;

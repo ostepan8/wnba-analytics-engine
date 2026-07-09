@@ -71,8 +71,17 @@ class PlayerBoxLine:
 
 @dataclass(frozen=True, slots=True)
 class GameBoxScore:
-    """Full box score for one game: two team totals + all player lines."""
+    """Full box score for one game: two team totals + all player lines.
+
+    venue_name/attendance come from the summary payload's top-level
+    `gameInfo` block, which is separate from (and not always present
+    alongside) `header`/`boxscore` -- see espn/parser.py::_parse_game_info.
+    Both are None when gameInfo (or the specific field) is missing rather
+    than raising, since this is enrichment data, not a required shape.
+    """
 
     game_external_id: str
     teams: tuple[TeamBoxScore, ...]
     players: tuple[PlayerBoxLine, ...]
+    venue_name: str | None = None
+    attendance: int | None = None

@@ -8,7 +8,8 @@ Scoreboard payload shape (site.api.espn.com .../scoreboard?dates=YYYYMMDD):
 Summary payload shape (.../summary?event=<id>):
   header.id, boxscore.teams[] (team + statistics[] of named totals),
   boxscore.players[] (one per team; statistics[0].labels positionally
-  aligned with each athlete's stats[] array).
+  aligned with each athlete's stats[] array), gameInfo.venue.fullName +
+  gameInfo.attendance (optional -- see _parse_game_info).
 """
 
 from __future__ import annotations
@@ -213,7 +214,48 @@ def parse_summary(payload: object) -> GameBoxScore:
     for i, entry in enumerate(raw_players):
         players.extend(_parse_team_players(entry, f"boxscore.players[{i}]"))
 
-    return GameBoxScore(game_external_id=game_id, teams=teams, players=tuple(players))
+    venue_name, attendance = _parse_game_info(payload.get("gameInfo"))
+
+    return GameBoxScore(
+        game_external_id=game_id,
+        teams=teams,
+        players=tuple(players),
+        venue_name=venue_name,
+        attendance=attendance,
+    )
+
+
+def _parse_game_info(game_info: object) -> tuple[str | None, int | None]:
+    """Extract venue name + attendance from the summary payload's top-level
+    `gameInfo` block. Also carries officials (a separate, not-yet-built
+    feature) -- kept as a small dedicated helper so a future officials
+    parser can extend it without re-deriving the gameInfo access pattern.
+
+    Fail-open by design, unlike the require_*/parse_* helpers used
+    elsewhere in this module: gameInfo is enrichment data absent from
+    older/trimmed payloads (e.g. tests/fixtures/espn_summary.json), so a
+    missing block or missing/malformed sub-field must not abort parsing
+    of the box score itself.
+    """
+    if not isinstance(game_info, Mapping):
+        return None, None
+
+    venue = game_info.get("venue")
+    venue_name = venue.get("fullName") if isinstance(venue, Mapping) else None
+    if not isinstance(venue_name, str) or not venue_name.strip():
+        venue_name = None
+
+    try:
+        attendance = optional_int(
+            game_info.get("attendance"), PROVIDER, "summary.gameInfo.attendance"
+        )
+    except ProviderValidationError:
+        # Malformed (not missing) attendance -- e.g. a future payload shape
+        # ESPN hasn't sent yet. Enrichment data fails open rather than
+        # aborting the whole game's box score over one bad field.
+        attendance = None
+
+    return venue_name, attendance
 
 
 def _parse_team_box(entry: object, context: str) -> TeamBoxScore:

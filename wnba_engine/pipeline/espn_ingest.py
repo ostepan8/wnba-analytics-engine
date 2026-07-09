@@ -92,6 +92,10 @@ def _ingest_game(db: Database, client: EspnClient, game: ScoreboardGame) -> bool
             conn.commit()
             return False
 
+        entity_repo.update_game_venue_info(
+            conn, game_id, venue_name=summary.venue_name, attendance=summary.attendance
+        )
+
         team_ids = {game.home_team.external_id: home_id, game.away_team.external_id: away_id}
         for team_box in summary.teams:
             team_id = team_ids.get(
