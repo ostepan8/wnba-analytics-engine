@@ -27,6 +27,7 @@ import pytest
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
+from wnba_engine.errors import ProviderRequestError
 from wnba_engine.models.games import TeamRef
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
@@ -496,3 +497,129 @@ def test_wayback_injury_backfill_falls_back_to_team_name_when_logo_unparseable(c
             "WHERE ir.source = 'espn-wayback'"
         ).fetchone()
     assert row[0] == "Chicago Sky"
+
+
+_DAY_WITH_BROKEN_FIRST_CANDIDATE = "20240425010921"
+_DAY_WITH_WORKING_SECOND_CANDIDATE = "20240425171335"
+
+
+class FakeWaybackClientSameDayFallback:
+    """Real observed case: the day's first CDX-confirmed-200 timestamp
+    fails at actual fetch time (archive.org backend issue on that specific
+    file), but a later same-day capture works fine. The pipeline must try
+    the second candidate rather than counting the whole day as failed."""
+
+    def __init__(self) -> None:
+        self.attempted: list[str] = []
+
+    def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
+        del since, until
+        return [
+            ["urlkey", "timestamp", "original", "mimetype", "statuscode", "digest", "length"],
+            [
+                "com,espn)/wnba/injuries",
+                _DAY_WITH_BROKEN_FIRST_CANDIDATE,
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "BROKEN123",
+                "50000",
+            ],
+            [
+                "com,espn)/wnba/injuries",
+                _DAY_WITH_WORKING_SECOND_CANDIDATE,
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "WORKING456",
+                "50000",
+            ],
+        ]
+
+    def fetch_snapshot_html(self, timestamp: str) -> str:
+        self.attempted.append(timestamp)
+        if timestamp == _DAY_WITH_BROKEN_FIRST_CANDIDATE:
+            raise ProviderRequestError(
+                "espn-wayback", "https://web.archive.org/...", "403 (simulated backend failure)"
+            )
+        assert timestamp == _DAY_WITH_WORKING_SECOND_CANDIDATE
+        return (
+            "<script>window['__espnfitt__']={\"page\": {\"content\": {\"injuries\": ["
+            '{"displayName": "Chicago Sky", '
+            '"logo": "https://a.espncdn.com/i/teamlogos/wnba/500/chi.png", '
+            '"items": [{"type": {"name": "INJURY_STATUS_OUT"}, '
+            '"athlete": {"name": "Angel Reese", '
+            '"href": "https://www.espn.com/wnba/player/_/id/4433402/angel-reese", '
+            '"position": "F"}, "statusDesc": "Out", '
+            '"date": "Jun 6", "description": "Reese (back) is out."}]}'
+            "]}}};</script>"
+        )
+
+
+def test_wayback_injury_backfill_tries_same_day_alternate_when_first_candidate_fails(clean_db):
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id="11", name="Chicago Sky", abbreviation="CHI")
+        )
+        conn.commit()
+
+    fake_client = FakeWaybackClientSameDayFallback()
+    result = backfill_injury_history(
+        clean_db, fake_client, date(2024, 4, 25), date(2024, 4, 25)
+    )
+    assert fake_client.attempted == [
+        _DAY_WITH_BROKEN_FIRST_CANDIDATE,
+        _DAY_WITH_WORKING_SECOND_CANDIDATE,
+    ]
+    assert result.snapshots_available == 1  # one DAY, not one per candidate
+    assert result.snapshots_processed == 1
+    assert result.failures == 0
+    assert result.entries_inserted == 1
+
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT captured_at FROM injury_reports WHERE source = 'espn-wayback'"
+        ).fetchone()
+    # captured_at reflects the candidate that actually succeeded, not the
+    # broken first one.
+    assert row[0].strftime("%Y%m%d%H%M%S") == _DAY_WITH_WORKING_SECOND_CANDIDATE
+
+
+class FakeWaybackClientAllCandidatesFail:
+    def fetch_snapshot_timestamps(self, since: date, until: date) -> object:
+        del since, until
+        return [
+            ["urlkey", "timestamp", "original", "mimetype", "statuscode", "digest", "length"],
+            [
+                "com,espn)/wnba/injuries",
+                "20240425010921",
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "BROKEN1",
+                "50000",
+            ],
+            [
+                "com,espn)/wnba/injuries",
+                "20240425171335",
+                "https://www.espn.com/wnba/injuries",
+                "text/html",
+                "200",
+                "BROKEN2",
+                "50000",
+            ],
+        ]
+
+    def fetch_snapshot_html(self, timestamp: str) -> str:
+        raise ProviderRequestError(
+            "espn-wayback", "https://web.archive.org/...", "403 (simulated backend failure)"
+        )
+
+
+def test_wayback_injury_backfill_counts_one_failure_when_all_same_day_candidates_fail(clean_db):
+    result = backfill_injury_history(
+        clean_db, FakeWaybackClientAllCandidatesFail(), date(2024, 4, 25), date(2024, 4, 25)
+    )
+    assert result.snapshots_available == 1
+    assert result.failures == 1  # one failure for the DAY, not one per exhausted candidate
+    assert result.snapshots_processed == 0

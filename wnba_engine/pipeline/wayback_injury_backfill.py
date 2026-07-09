@@ -5,16 +5,23 @@ live /injuries API has none (see 0005_injury_reports.sql). Each Wayback
 snapshot of espn.com/wnba/injuries is a genuine point-in-time record of
 what ESPN's page showed on that date.
 
-Resumable: a day already captured (exact captured_at + source match) is
-skipped before any network fetch, so an interrupted run can restart without
-re-fetching everything from archive.org.
+Resumable: a day with any row already captured is skipped before any
+network fetch, so an interrupted run can restart without re-fetching
+everything from archive.org.
+
+Same-day fallback: a CDX-confirmed 200 can still fail at actual fetch time
+(observed live: a "revisit" record pointing to a differently-timestamped
+capture that was failing on archive.org's own storage backend). Rather than
+counting the whole day as failed after one bad candidate, every 200-status
+timestamp for that day is tried in order until one actually works.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from psycopg import Connection
 
@@ -36,8 +43,10 @@ logger = logging.getLogger(__name__)
 SOURCE = "espn-wayback"
 CROSSWALK_PROVIDER = "espn"
 
-_SELECT_ALREADY_CAPTURED_SQL = """
-SELECT 1 FROM injury_reports WHERE source = %s AND captured_at = %s LIMIT 1
+_SELECT_ALREADY_CAPTURED_FOR_DAY_SQL = """
+SELECT 1 FROM injury_reports
+WHERE source = %s AND captured_at >= %s AND captured_at < %s
+LIMIT 1
 """
 
 
@@ -55,13 +64,15 @@ def backfill_injury_history(
     db: Database, client: WaybackClient, since: date, until: date
 ) -> WaybackBackfillResult:
     timestamps = _parse_cdx_timestamps(client.fetch_snapshot_timestamps(since, until))
-    result = WaybackBackfillResult(snapshots_available=len(timestamps))
+    candidates_by_day = _group_by_day(timestamps)
+    result = WaybackBackfillResult(snapshots_available=len(candidates_by_day))
 
-    for timestamp in timestamps:
-        captured_at = _parse_wayback_timestamp(timestamp)
+    for day in sorted(candidates_by_day):
+        day_start = datetime.strptime(day, "%Y%m%d").replace(tzinfo=UTC)
         with db.connection() as conn:
             already_captured = conn.execute(
-                _SELECT_ALREADY_CAPTURED_SQL, (SOURCE, captured_at)
+                _SELECT_ALREADY_CAPTURED_FOR_DAY_SQL,
+                (SOURCE, day_start, day_start + timedelta(days=1)),
             ).fetchone()
         if already_captured:
             result = replace(
@@ -69,13 +80,12 @@ def backfill_injury_history(
             )
             continue
 
-        try:
-            inserted, unresolved = _ingest_snapshot(db, client, timestamp, captured_at)
-        except WnbaEngineError:
-            logger.exception("failed to ingest wayback snapshot timestamp=%s", timestamp)
+        outcome = _ingest_day(db, client, day, candidates_by_day[day])
+        if outcome is None:
             result = replace(result, failures=result.failures + 1)
             continue
 
+        inserted, unresolved = outcome
         result = replace(
             result,
             snapshots_processed=result.snapshots_processed + 1,
@@ -83,6 +93,38 @@ def backfill_injury_history(
             unresolved_teams=result.unresolved_teams + unresolved,
         )
     return result
+
+
+def _ingest_day(
+    db: Database, client: WaybackClient, day: str, candidates: list[str]
+) -> tuple[int, int] | None:
+    """Try each same-day candidate timestamp in order; returns the first
+    one that actually succeeds, or None if every candidate failed."""
+    last_error: WnbaEngineError | None = None
+    for timestamp in candidates:
+        captured_at = _parse_wayback_timestamp(timestamp)
+        try:
+            return _ingest_snapshot(db, client, timestamp, captured_at)
+        except WnbaEngineError as exc:
+            last_error = exc
+            logger.warning(
+                "wayback candidate timestamp=%s (day=%s) failed, trying next "
+                "same-day alternate if any: %s",
+                timestamp,
+                day,
+                exc,
+            )
+    logger.error(
+        "all %d candidate(s) for day=%s failed; last error: %s", len(candidates), day, last_error
+    )
+    return None
+
+
+def _group_by_day(timestamps: list[str]) -> dict[str, list[str]]:
+    by_day: dict[str, list[str]] = defaultdict(list)
+    for ts in sorted(timestamps):
+        by_day[ts[:8]].append(ts)
+    return dict(by_day)
 
 
 def _ingest_snapshot(
