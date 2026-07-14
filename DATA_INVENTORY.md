@@ -17,6 +17,7 @@ canonical crosswalk). This doc is the what.
 - [Manually curated reference data](#manually-curated-reference-data)
 - [Kalshi](#kalshi-regulated-prediction-market)
 - [Polymarket](#polymarket-prediction-market)
+- [the-odds-api](#the-odds-api-paid-high-quota-plan)
 - [Known but NOT integrated](#known-but-not-integrated)
 - [Canonical schema & crosswalk](#canonical-schema--crosswalk)
 - [Data quality / validation](#data-quality--validation)
@@ -59,7 +60,7 @@ with known/documented non-zero results that are **not bugs** — see
 | Kalshi | Free (public API) | Regulated prediction-market prices (games, spreads/totals, player props) | 2h snapshot |
 | Polymarket | Free (public API) | Prediction-market prices (games, spreads/totals, player props) | 2h snapshot |
 | Manual research | N/A | Season award winners (ground truth for the award markets above) | One-off, re-run as new seasons conclude |
-| the-odds-api | N/A | **Not integrated** — see below | — |
+| the-odds-api | Paid (high-quota plan) | 32-book sportsbook odds (current + REAL historical archive, 2022–present), final-score cross-check | 2h current-odds + score snapshot; historical backfill is a manual one-off |
 
 ---
 
@@ -263,18 +264,51 @@ CLI: `snapshot-polymarket`.
 
 ---
 
+## the-odds-api (paid, high-quota plan)
+
+Requires `WNBA_ENGINE_ODDS_API_KEY` (`.env`, gitignored) -- sent as a
+query-string `apiKey=` param, not a header, so `wnba_engine/http_client.py`
+carries a `redact_query_param_keys` mechanism to keep it out of logs/error
+messages. Folds this repo's Phase 0 companion pipeline (see `ROADMAP.md`)
+in as a real, integrated source rather than a separate personal project.
+
+- **`sportsbook_game_odds`** (`source = 'the_odds_api'`) — REUSES the same
+  table balldontlie's odds live in (structurally identical once requested
+  in American odds format -- the-odds-api's default is decimal, which
+  would NOT fit this table's INT columns). Two ingestion modes:
+  - `snapshot-odds-api` — current odds for every listed event (2h cadence).
+  - `backfill-odds-api-history --since --until` — REAL historical odds
+    back to at least 2022-06-01 (verified live), unlike balldontlie's
+    /odds (rolling recent window only). For every canonical game in the
+    date range, queries the historical endpoint at T-7d / T-24h / T-1h /
+    closing checkpoints (matching the line-movement cadence documented for
+    the private Phase 0 pipeline this is modeled on). A manual/one-off
+    command, not on the recurring schedule (a historical call costs ~10x
+    a current-odds call).
+  - `external_id` is `"{event_id}:{vendor}"`, not the bare event id --
+    the-odds-api's own event `id` is per-EVENT (shared by every bookmaker
+    quoting it), so using it alone as `external_id` under
+    `UNIQUE(external_id, captured_at)` risked silently dropping a second
+    bookmaker's row.
+- **`odds_api_game_scores`** — a second, INDEPENDENT final-score source,
+  captured purely as a data-quality cross-check
+  (`odds_api_score_matches_game_score` validation check) against
+  `games.home_score/away_score` -- never written back into that column.
+  `db/migrations/0001_canonical_entities.sql` documents that the-odds-api
+  is *intended* to eventually outrank ESPN for final scores; that
+  precedence switch is a deliberate, separate decision this integration
+  does not make.
+- Games resolve via the same team+date crosswalk pattern
+  Kalshi/Polymarket/balldontlie use (`entity_repo.find_game_id_by_teams`),
+  since the-odds-api's event id is a new external id space.
+
+CLI: `snapshot-odds-api`, `backfill-odds-api-history --since --until`,
+`snapshot-odds-api-scores [--days-from]`.
+
+---
+
 ## Known but NOT integrated
 
-- **the-odds-api.com (Phase 0)** — a separate, private, personal
-  data-hoarding pipeline that predates and inspired this repo (see
-  `ROADMAP.md`). Real data that already exists: **four seasons of WNBA
-  historical odds (2022–present) across 32 sportsbooks**, with
-  line-movement snapshots (T-7d / T-24h / T-1h / closing, not just a single
-  closing price), plus final scores for ~100% of completed games. Per
-  `db/migrations/0001_canonical_entities.sql`'s precedence comment, this
-  source is intended to outrank ESPN for final scores once folded in.
-  **Not currently joined to anything in this database** — folding it in is
-  a deliberate later decision, not a blocker.
 - **Referee/officiating quality data** — we now have *who* officiated
   (`game_officials`), but nothing about foul-call tendencies or
   official-level analytics. Not investigated.
@@ -291,8 +325,11 @@ CLI: `snapshot-polymarket`.
   team/player/game IDs, balldontlie's own numeric IDs, Kalshi event
   tickers, Polymarket event IDs, ...), so onboarding a new source never
   means a new table.
-- Score precedence: ESPN is currently the sole score source. the-odds-api
-  (not yet integrated — see above) is documented to outrank it once it is.
+- Score precedence: ESPN is currently the sole source written into
+  `games.home_score/away_score`. the-odds-api's scores are now captured
+  (`odds_api_game_scores`) and cross-checked against ESPN's, but do NOT
+  yet outrank it — `db/migrations/0001_canonical_entities.sql` documents
+  that as a deliberate, separate future decision.
 - **Known crosswalk quirk (verified benign, not a bug):** balldontlie
   itself sometimes issues a *different* player id for the same real
   person across its own separate endpoints (advanced-stats vs.
@@ -307,8 +344,8 @@ CLI: `snapshot-polymarket`.
 
 ## Data quality / validation
 
-`wnba_engine/validation/` — 11 checks, run via `wnba-engine validate`
-(exits non-zero on any failure). As of last update: **9 pass with 0
+`wnba_engine/validation/` — 12 checks, run via `wnba-engine validate`
+(exits non-zero on any failure). As of last update: **10 pass with 0
 violations, 2 have known/documented non-zero results that are real but
 not bugs** (details below):
 
@@ -343,6 +380,11 @@ not bugs** (details below):
 9. `non_franchise_team_in_regular_season` — no `regular-season` game
    involves a team that isn't a real recognized franchise (the All-Star
    Game bug class — see ESPN section above). **Clean.**
+10. `odds_api_score_matches_game_score` — the-odds-api's latest captured
+    final score vs. `games.home_score/away_score` (ESPN) -- a cross-check
+    only, never a precedence change (see the-odds-api section above).
+    **Clean as of last update**, but this check surfaces real
+    disagreements as signal, not something to hide if it starts failing.
 
 ---
 
@@ -356,13 +398,13 @@ present on that machine.
 | Job | Cadence | What |
 |---|---|---|
 | `espn-sync.sh` | Daily | Trailing-window ESPN re-sync (catches scheduled→final transitions; also picks up venue/attendance/officials automatically) |
-| `market-and-injury-snapshot.sh` | Every 2h | Kalshi + Polymarket snapshots, ESPN injuries, balldontlie standings + odds (both are rolling-window/frequently-changing — a missed capture is lost, not just stale) |
+| `market-and-injury-snapshot.sh` | Every 2h | Kalshi + Polymarket snapshots, ESPN injuries, balldontlie standings + odds, the-odds-api current odds + score cross-check (all rolling-window/frequently-changing — a missed capture is lost, not just stale) |
 | `balldontlie-season-sync.sh` | Weekly | Advanced stats, team advanced stats, plays, shot zones, player-prop odds, for the current season |
 
 Historical backfills (`--season 2022` etc., transactions, awards seeding,
-full `/players` sweep) are run manually/by agent, not on a recurring
-schedule — the recurring jobs only cover the current season plus
-rolling-window data.
+full `/players` sweep, `backfill-odds-api-history`) are run manually/by
+agent, not on a recurring schedule — the recurring jobs only cover the
+current season plus rolling-window data.
 
 ---
 
@@ -391,6 +433,9 @@ Run via `uv run wnba-engine <command>` from the repo root.
 | `backfill-standings --season` | balldontlie | Official standings (current + history) |
 | `backfill-odds --since --until` | balldontlie | Game-level sportsbook odds |
 | `backfill-player-prop-odds --season` | balldontlie | Player-prop sportsbook odds |
+| `snapshot-odds-api` | the-odds-api | Current game-level sportsbook odds |
+| `backfill-odds-api-history --since --until` | the-odds-api | REAL historical odds, T-7d/T-24h/T-1h/closing checkpoints per game |
+| `snapshot-odds-api-scores [--days-from]` | the-odds-api | Final-score cross-check vs. `games.home_score/away_score` |
 | `python -m wnba_engine.pipeline.season_awards_seed` | Manual research | Season award winners (not a `wnba-engine` subcommand) |
 | `validate` | — | Run all data-quality checks |
 
@@ -426,7 +471,8 @@ union all select 'sportsbook_game_odds', count(*) from sportsbook_game_odds
 union all select 'sportsbook_player_prop_odds', count(*) from sportsbook_player_prop_odds
 union all select 'season_awards', count(*) from season_awards
 union all select 'game_officials', count(*) from game_officials
-union all select 'player_transactions', count(*) from player_transactions;
+union all select 'player_transactions', count(*) from player_transactions
+union all select 'odds_api_game_scores', count(*) from odds_api_game_scores;
 "
 
 # Full migration history (source of truth for schema)

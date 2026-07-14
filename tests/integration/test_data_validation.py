@@ -482,5 +482,5 @@ def test_non_franchise_team_in_regular_season_ignores_non_regular_season_games(c
 
 def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 11
+    assert len(report.checks) == 12
     assert report.passed is True

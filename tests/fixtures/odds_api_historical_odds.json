@@ -1,0 +1,123 @@
+{
+  "timestamp": "2023-06-01T11:55:39Z",
+  "previous_timestamp": "2023-06-01T11:50:39Z",
+  "next_timestamp": "2023-06-01T12:00:39Z",
+  "data": [
+    {
+      "id": "cc2fc346e45b367f6fc79fdf44ab28ab",
+      "sport_key": "basketball_wnba",
+      "sport_title": "WNBA",
+      "commence_time": "2023-06-02T00:00:00Z",
+      "home_team": "Minnesota Lynx",
+      "away_team": "Connecticut Sun",
+      "bookmakers": [
+        {
+          "key": "lowvig",
+          "title": "LowVig.ag",
+          "last_update": "2023-06-01T11:53:33Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2023-06-01T11:53:33Z",
+              "outcomes": [
+                {
+                  "name": "Connecticut Sun",
+                  "price": -325
+                },
+                {
+                  "name": "Minnesota Lynx",
+                  "price": 270
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2023-06-01T11:53:33Z",
+              "outcomes": [
+                {
+                  "name": "Connecticut Sun",
+                  "price": -121,
+                  "point": -7.0
+                },
+                {
+                  "name": "Minnesota Lynx",
+                  "price": 105,
+                  "point": 7.0
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2023-06-01T11:53:33Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -108,
+                  "point": 161.5
+                },
+                {
+                  "name": "Under",
+                  "price": -108,
+                  "point": 161.5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "williamhill_us",
+          "title": "William Hill (US)",
+          "last_update": "2023-06-01T11:54:50Z",
+          "markets": [
+            {
+              "key": "h2h",
+              "last_update": "2023-06-01T11:54:50Z",
+              "outcomes": [
+                {
+                  "name": "Connecticut Sun",
+                  "price": -345
+                },
+                {
+                  "name": "Minnesota Lynx",
+                  "price": 270
+                }
+              ]
+            },
+            {
+              "key": "spreads",
+              "last_update": "2023-06-01T11:54:50Z",
+              "outcomes": [
+                {
+                  "name": "Connecticut Sun",
+                  "price": -110,
+                  "point": -7.5
+                },
+                {
+                  "name": "Minnesota Lynx",
+                  "price": -110,
+                  "point": 7.5
+                }
+              ]
+            },
+            {
+              "key": "totals",
+              "last_update": "2023-06-01T11:54:50Z",
+              "outcomes": [
+                {
+                  "name": "Over",
+                  "price": -110,
+                  "point": 161.5
+                },
+                {
+                  "name": "Under",
+                  "price": -110,
+                  "point": 161.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
