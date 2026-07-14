@@ -24,6 +24,7 @@ _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
     consistency_checks.check_team_box_score_matches_final_score,
     consistency_checks.check_team_totals_match_player_sums,
     consistency_checks.check_plays_final_score_matches_game_score,
+    consistency_checks.check_odds_api_score_matches_game_score,
     bounds_checks.check_team_stat_bounds,
     bounds_checks.check_player_stat_bounds,
     bounds_checks.check_market_price_bounds,

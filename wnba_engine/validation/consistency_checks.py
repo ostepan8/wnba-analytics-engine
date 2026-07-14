@@ -116,3 +116,45 @@ def check_plays_final_score_matches_game_score(conn: Connection) -> CheckResult:
             f"game={r[0]} games_score={r[1]}-{r[2]} plays_final_score={r[3]}-{r[4]}"
         ),
     )
+
+
+_ODDS_API_SCORE_VS_GAME_SCORE_SQL = """
+WITH latest_odds_api_score AS (
+    SELECT DISTINCT ON (game_id) game_id, home_score, away_score
+    FROM odds_api_game_scores
+    ORDER BY game_id, captured_at DESC
+)
+SELECT g.id, g.home_score, g.away_score, oas.home_score, oas.away_score
+FROM games g
+JOIN latest_odds_api_score oas ON oas.game_id = g.id
+WHERE g.status = 'final'
+AND (g.home_score <> oas.home_score OR g.away_score <> oas.away_score)
+"""
+
+
+def check_odds_api_score_matches_game_score(conn: Connection) -> CheckResult:
+    """the-odds-api's own final score (odds_api_game_scores, see
+    db/migrations/0021_odds_api_game_scores.sql) must match
+    games.home_score/away_score (currently ESPN-sourced) -- a cross-check
+    ONLY, not a precedence rule: db/migrations/0001_canonical_entities.sql
+    documents that the-odds-api is intended to eventually outrank ESPN for
+    final scores, but that switch is a deliberate, separate decision this
+    check does not make. A mismatch here is a real signal worth reviewing
+    (a genuine scoring discrepancy between two independent providers, or a
+    crosswalk mismatch), not something to silently resolve by overwriting
+    games.home_score/away_score.
+
+    Compares against the MOST RECENT the-odds-api capture per game
+    (DISTINCT ON ... ORDER BY captured_at DESC), since a game can have
+    multiple captures over time (see the migration's UNIQUE(external_id,
+    captured_at) -- a genuine correction lands as a new row, not an
+    overwrite) and only the latest one reflects the provider's current
+    belief about the final score.
+    """
+    rows = conn.execute(_ODDS_API_SCORE_VS_GAME_SCORE_SQL).fetchall()
+    return build_check_result(
+        name="odds_api_score_matches_game_score",
+        description="odds_api_game_scores' latest capture matches games.home_score/away_score",
+        rows=rows,
+        formatter=lambda r: f"game={r[0]} games_score={r[1]}-{r[2]} odds_api_score={r[3]}-{r[4]}",
+    )

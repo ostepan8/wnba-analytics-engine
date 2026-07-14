@@ -1,0 +1,234 @@
+[
+  {
+    "id": "bbda183d9dc2a8ed43f79f82ef0ac320",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-10T00:00:00Z",
+    "home_team": "Atlanta Dream",
+    "away_team": "Seattle Storm",
+    "bookmakers": [
+      {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "last_update": "2026-07-09T20:39:38Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Atlanta Dream",
+                "price": -700
+              },
+              {
+                "name": "Seattle Storm",
+                "price": 470
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Atlanta Dream",
+                "price": -114,
+                "point": -11.5
+              },
+              {
+                "name": "Seattle Storm",
+                "price": -106,
+                "point": 11.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -108,
+                "point": 168.5
+              },
+              {
+                "name": "Under",
+                "price": -112,
+                "point": 168.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "fanatics",
+        "title": "Fanatics",
+        "last_update": "2026-07-09T20:39:01Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Atlanta Dream",
+                "price": -650
+              },
+              {
+                "name": "Seattle Storm",
+                "price": 460
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Atlanta Dream",
+                "price": -105,
+                "point": -12.5
+              },
+              {
+                "name": "Seattle Storm",
+                "price": -115,
+                "point": 12.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -105,
+                "point": 169.5
+              },
+              {
+                "name": "Under",
+                "price": -115,
+                "point": 169.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "803d077d9e5f6f5b156f4a2be5ad2ec5",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-10T02:00:00Z",
+    "home_team": "Portland Fire",
+    "away_team": "Las Vegas Aces",
+    "bookmakers": [
+      {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "last_update": "2026-07-09T20:39:38Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Las Vegas Aces",
+                "price": -400
+              },
+              {
+                "name": "Portland Fire",
+                "price": 300
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Las Vegas Aces",
+                "price": -110,
+                "point": -8.5
+              },
+              {
+                "name": "Portland Fire",
+                "price": -110,
+                "point": 8.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-07-09T20:39:38Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -108,
+                "point": 174.5
+              },
+              {
+                "name": "Under",
+                "price": -112,
+                "point": 174.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "fanatics",
+        "title": "Fanatics",
+        "last_update": "2026-07-09T20:39:01Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Las Vegas Aces",
+                "price": -400
+              },
+              {
+                "name": "Portland Fire",
+                "price": 310
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Las Vegas Aces",
+                "price": -115,
+                "point": -8.5
+              },
+              {
+                "name": "Portland Fire",
+                "price": -105,
+                "point": 8.5
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-07-09T20:39:01Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": -110,
+                "point": 175.0
+              },
+              {
+                "name": "Under",
+                "price": -110,
+                "point": 175.0
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

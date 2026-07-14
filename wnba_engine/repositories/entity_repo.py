@@ -379,6 +379,27 @@ def _update_player_bio(
     )
 
 
+_LIST_GAMES_IN_RANGE_SQL = """
+SELECT id, start_time FROM games
+WHERE start_time BETWEEN %s AND %s
+ORDER BY start_time
+"""
+
+
+def list_games_in_range(
+    conn: Connection, since: datetime, until: datetime
+) -> tuple[tuple[int, datetime], ...]:
+    """Every canonical game whose start_time falls in [since, until]
+    (inclusive both ends). Used by backfill sweeps anchored on OUR games
+    table rather than a provider's own schedule -- e.g. the-odds-api
+    historical-odds checkpoint backfill, which computes T-7d/T-24h/T-1h/
+    closing checkpoints per game from games.start_time (see
+    wnba_engine/pipeline/odds_api_ingest.py).
+    """
+    rows = conn.execute(_LIST_GAMES_IN_RANGE_SQL, (since, until)).fetchall()
+    return tuple((int(row[0]), row[1]) for row in rows)
+
+
 def resolve_or_create_player_by_name(
     conn: Connection,
     provider: str,

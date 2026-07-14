@@ -1,0 +1,73 @@
+[
+  {
+    "id": "1fbe348b23c9f547e63ce18ccf0888db",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-06T23:32:43Z",
+    "completed": true,
+    "home_team": "Washington Mystics",
+    "away_team": "Golden State Valkyries",
+    "scores": [
+      {
+        "name": "Washington Mystics",
+        "score": "49"
+      },
+      {
+        "name": "Golden State Valkyries",
+        "score": "62"
+      }
+    ],
+    "last_update": "2026-07-07T09:22:48Z"
+  },
+  {
+    "id": "9c39120f2059c1fee0df606e5979d967",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-07T00:02:00Z",
+    "completed": true,
+    "home_team": "Minnesota Lynx",
+    "away_team": "Connecticut Sun",
+    "scores": [
+      {
+        "name": "Minnesota Lynx",
+        "score": "89"
+      },
+      {
+        "name": "Connecticut Sun",
+        "score": "90"
+      }
+    ],
+    "last_update": "2026-07-07T09:22:48Z"
+  },
+  {
+    "id": "4db4df7b4890e0ebc6a85982f4a85115",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-07T02:07:44Z",
+    "completed": true,
+    "home_team": "Los Angeles Sparks",
+    "away_team": "Seattle Storm",
+    "scores": [
+      {
+        "name": "Los Angeles Sparks",
+        "score": "64"
+      },
+      {
+        "name": "Seattle Storm",
+        "score": "82"
+      }
+    ],
+    "last_update": "2026-07-07T09:22:48Z"
+  },
+  {
+    "id": "bbda183d9dc2a8ed43f79f82ef0ac320",
+    "sport_key": "basketball_wnba",
+    "sport_title": "WNBA",
+    "commence_time": "2026-07-10T00:00:00Z",
+    "completed": false,
+    "home_team": "Atlanta Dream",
+    "away_team": "Seattle Storm",
+    "scores": null,
+    "last_update": null
+  }
+]

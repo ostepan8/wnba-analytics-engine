@@ -19,6 +19,7 @@ from wnba_engine.db.pool import Database
 from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
 from wnba_engine.kalshi.client import KalshiClient
+from wnba_engine.odds_api.client import OddsApiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
 from wnba_engine.pipeline.balldontlie_injury_ingest import snapshot_current_injuries
 from wnba_engine.pipeline.balldontlie_odds_ingest import (
@@ -45,6 +46,11 @@ from wnba_engine.pipeline.espn_transactions_ingest import (
 )
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
+from wnba_engine.pipeline.odds_api_ingest import backfill_history as backfill_odds_api_history
+from wnba_engine.pipeline.odds_api_ingest import snapshot_current_odds as snapshot_odds_api_odds
+from wnba_engine.pipeline.odds_api_scores_ingest import (
+    snapshot_current_scores as snapshot_odds_api_scores,
+)
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.polymarket.client import PolymarketClient
@@ -54,6 +60,16 @@ from wnba_engine.validation.runner import run_all_checks
 @click.group()
 def cli() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    # httpx logs "HTTP Request: GET <full url incl. query string>" at INFO
+    # for every request. For header-auth providers that's harmless, but
+    # for a query-param-auth provider (the-odds-api's apiKey=...) it would
+    # print the raw API key in cleartext to stdout/logs -- our own
+    # JsonHttpClient redacts it (see redact_query_param_keys), but httpx's
+    # own internal logger is a separate code path that bypasses that
+    # entirely. Silencing it here is a global, defense-in-depth fix, not
+    # specific to the-odds-api -- any future query-param-auth provider
+    # would have the same problem otherwise.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @cli.command()
@@ -417,6 +433,77 @@ def snapshot_polymarket() -> None:
     try:
         with PolymarketClient(settings) as client:
             click.echo(ingest_polymarket_wnba_markets(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-odds-api")
+def snapshot_odds_api() -> None:
+    """Snapshot current the-odds-api sportsbook odds (moneyline/spread/
+    total) for every currently-listed WNBA event.
+
+    Paid API (high-quota plan) -- requires WNBA_ENGINE_ODDS_API_KEY. Writes
+    into the SAME sportsbook_game_odds table balldontlie's odds pipeline
+    uses, with source='the_odds_api' (see
+    db/migrations/0014_balldontlie_odds.sql). Games resolve via the same
+    team+date crosswalk pattern Kalshi/Polymarket/balldontlie use.
+    Append-only but idempotent: UNIQUE(external_id, captured_at) makes an
+    unchanged re-run a no-op.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(snapshot_odds_api_odds(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-odds-api-history")
+@click.option("--since", type=click.DateTime(["%Y-%m-%d"]), required=True)
+@click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
+def backfill_odds_api_history_cmd(since, until) -> None:
+    """Backfill REAL historical the-odds-api odds for every canonical game
+    in [since, until] (games.start_time), at T-7d/T-24h/T-1h/closing
+    checkpoints per game (matching the line-movement cadence ROADMAP.md
+    documents for the private Phase 0 pipeline this is modeled on).
+
+    Paid API (high-quota plan) -- requires WNBA_ENGINE_ODDS_API_KEY. A
+    historical call costs ~10x a current-odds call (verified live) -- this
+    is a manual/one-off command, not on the recurring schedule, same
+    convention as balldontlie's --season backfills. Date-ranged over OUR
+    games table, not a provider schedule, since checkpoints are computed
+    per canonical game. Idempotent, safe to re-run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(backfill_odds_api_history(db, client, since.date(), until.date()))
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-odds-api-scores")
+@click.option(
+    "--days-from",
+    type=int,
+    default=3,
+    show_default=True,
+    help="How many trailing days of completed games to check.",
+)
+def snapshot_odds_api_scores_cmd(days_from: int) -> None:
+    """Snapshot the-odds-api's own final scores for recently-completed
+    games -- a cross-check ONLY (see
+    db/migrations/0021_odds_api_game_scores.sql and the
+    odds_api_score_matches_game_score validation check). Never writes to
+    games.home_score/away_score.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(snapshot_odds_api_scores(db, client, days_from=days_from))
     finally:
         db.close()
 

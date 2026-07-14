@@ -28,6 +28,7 @@ _TABLES = (
     "balldontlie_injury_reports",
     "injury_reports",
     "market_price_snapshots",
+    "odds_api_game_scores",
     "sportsbook_player_prop_odds",
     "sportsbook_game_odds",
     "game_plays",
