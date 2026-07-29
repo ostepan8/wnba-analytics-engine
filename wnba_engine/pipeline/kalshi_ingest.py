@@ -62,11 +62,18 @@ def ingest_kalshi_wnba_markets(
     *,
     series_tickers: Sequence[str] | None = None,
     status: str = "open",
+    captured_at: datetime | None = None,
 ) -> KalshiIngestResult:
     """Snapshot current prices for every WNBA market.
 
     series_tickers overrides discovery (useful to snapshot just
     KXWNBAGAME); by default all WNBA series are discovered from /series.
+
+    captured_at defaults to now, which is correct for a live snapshot.
+    REPLAY must pass the payload's real capture time instead (see
+    wnba_engine/market_capture/): stamping a file recorded three days ago
+    with today's clock would silently corrupt the price time series into
+    claiming every historical observation happened at ingest.
     """
     if series_tickers is None:
         series = parse_series_list(client.fetch_sports_series())
@@ -74,7 +81,7 @@ def ingest_kalshi_wnba_markets(
     else:
         tickers = tuple(series_tickers)
 
-    captured_at = datetime.now(UTC)
+    captured_at = captured_at or datetime.now(UTC)
     result = KalshiIngestResult()
     for ticker in tickers:
         try:

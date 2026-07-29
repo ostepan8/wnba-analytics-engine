@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 import click
 
@@ -46,6 +47,7 @@ from wnba_engine.pipeline.espn_transactions_ingest import (
 )
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
+from wnba_engine.pipeline.market_capture_ingest import ingest_captures
 from wnba_engine.pipeline.odds_api_ingest import backfill_history as backfill_odds_api_history
 from wnba_engine.pipeline.odds_api_ingest import snapshot_current_odds as snapshot_odds_api_odds
 from wnba_engine.pipeline.odds_api_player_props_ingest import (
@@ -439,6 +441,43 @@ def snapshot_polymarket() -> None:
     try:
         with PolymarketClient(settings) as client:
             click.echo(ingest_polymarket_wnba_markets(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("ingest-market-captures")
+@click.option(
+    "--dir",
+    "directory",
+    default="~/wnba-market-capture",
+    show_default=True,
+    help="Capture root, containing kalshi/ and polymarket/ subdirectories.",
+)
+@click.option(
+    "--all",
+    "replay_all",
+    is_flag=True,
+    help="Re-read the whole archive, ignoring the already-ingested high-water mark.",
+)
+def ingest_market_captures_cmd(directory: str, replay_all: bool) -> None:
+    """Load raw Kalshi/Polymarket captures recorded on the always-on host.
+
+    Replays each captured payload through the same pipeline a live
+    snapshot uses, stamped with the file's OWN capture time rather than
+    now -- so a file recorded three days ago lands in the time series
+    where it actually belongs.
+
+    Idempotent: files older than what's already stored are skipped, and
+    (provider, market_external_id, captured_at) is UNIQUE, so re-running
+    after an interrupted sync inserts nothing new. Use --all to rebuild
+    the archive through an improved parser.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(
+            ingest_captures(db, Path(directory).expanduser(), replay_all=replay_all)
+        )
     finally:
         db.close()
 

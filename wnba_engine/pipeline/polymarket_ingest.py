@@ -50,10 +50,21 @@ class PolymarketIngestResult:
 
 
 def ingest_polymarket_wnba_markets(
-    db: Database, client: PolymarketClient, *, include_closed: bool = False
+    db: Database,
+    client: PolymarketClient,
+    *,
+    include_closed: bool = False,
+    captured_at: datetime | None = None,
 ) -> PolymarketIngestResult:
-    """Snapshot current prices for every WNBA-tagged Polymarket market."""
-    captured_at = datetime.now(UTC)
+    """Snapshot current prices for every WNBA-tagged Polymarket market.
+
+    captured_at defaults to now, which is correct for a live snapshot.
+    REPLAY must pass the payload's real capture time instead (see
+    wnba_engine/market_capture/) -- otherwise a file recorded three days
+    ago is stamped with today's clock and the price time series silently
+    becomes a lie.
+    """
+    captured_at = captured_at or datetime.now(UTC)
     events_seen = 0
     inserted = 0
     for _ in range(MAX_PAGES):
