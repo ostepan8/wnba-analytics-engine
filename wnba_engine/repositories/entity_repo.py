@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from psycopg import Connection
 
+from wnba_engine import player_aliases
 from wnba_engine.models.box_scores import PlayerRef
 from wnba_engine.models.games import ScoreboardGame, TeamRef
 
@@ -300,7 +301,14 @@ def find_player_by_name(
     pair, so multi-word surnames survive: "Delle Donne Elena" -> "Elena
     Delle Donne". It runs only after both earlier strategies miss, so it
     can never override a name that already resolves.
+
+    Resolution order: exact -> diacritic-folded -> curated alias
+    (wnba_engine/player_aliases.py, for name changes and provider
+    misspellings) -> reversed order, if opted in. Leading/trailing
+    whitespace is stripped up front: providers really do emit
+    " Ezi Magbegor" and "Satou Sabally ".
     """
+    full_name = full_name.strip()
     row = conn.execute("SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)).fetchone()
     if row is not None:
         return int(row[0])
@@ -310,6 +318,15 @@ def find_player_by_name(
     for player_id, candidate in candidates:
         if _fold_diacritics(candidate).lower() == folded_target:
             return int(player_id)
+
+    # Curated aliases are exact, individually-verified mappings, so unlike
+    # the reversed heuristic below they're safe for every caller.
+    aliased = player_aliases.canonical_name(full_name)
+    if aliased is not None:
+        folded_alias = _fold_diacritics(aliased).lower()
+        for player_id, candidate in candidates:
+            if _fold_diacritics(candidate).lower() == folded_alias:
+                return int(player_id)
 
     if not allow_reversed:
         return None

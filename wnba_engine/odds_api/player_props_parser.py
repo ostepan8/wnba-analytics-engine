@@ -181,7 +181,10 @@ def _parse_market(
     # keeping output order stable for tests.
     sides: dict[tuple[str, float], dict[str, int]] = {}
     for k, outcome in enumerate(outcomes):
-        name, player, point, price = _parse_outcome(outcome, f"{context}.outcomes[{k}]")
+        parsed = _parse_outcome(outcome, f"{context}.outcomes[{k}]")
+        if parsed is None:
+            continue  # no player attached -- unusable, see _parse_outcome
+        name, player, point, price = parsed
         side_key = (player, point)
         sides.setdefault(side_key, {})
         if name == OUTCOME_OVER:
@@ -231,14 +234,30 @@ def _prop_external_id(event_id: str, vendor: str, prop_type: str, player: str, l
     return f"{event_id}:{vendor}:{prop_type}:{player}:{line}"
 
 
-def _parse_outcome(outcome: object, context: str) -> tuple[str, str, float, int]:
+def _parse_outcome(outcome: object, context: str) -> tuple[str, str, float, int] | None:
+    """One Over/Under side, or None when no player is attached.
+
+    `description` IS the player, and some outcomes genuinely arrive
+    without one -- verified live: certain 2023 draftkings player_points /
+    player_rebounds outcomes carry a name/price/point but no description
+    at all, so there is no way to attribute the line to anybody. Raising
+    on that killed a real multi-season backfill mid-run; the row is
+    unusable either way, so it's skipped like an unknown market key
+    rather than treated as a malformed payload.
+
+    Everything else stays strict: a non-object outcome, or a missing
+    name/point/price, is still a parse error.
+    """
     if not isinstance(outcome, Mapping):
         raise ProviderValidationError(PROVIDER, "outcome must be an object", context=context)
+    player = outcome.get("description")
+    if not isinstance(player, str) or not player.strip():
+        return None
     name = require_str(outcome, "name", PROVIDER, context)
-    player = require_str(outcome, "description", PROVIDER, context)
     point = parse_float(require(outcome, "point", PROVIDER, context), PROVIDER, context)
     price = parse_int(require(outcome, "price", PROVIDER, context), PROVIDER, context)
-    return name, player, point, price
+    # Providers really do emit " Ezi Magbegor" / "Satou Sabally ".
+    return name, player.strip(), point, price
 
 
 def latest_update(event: ParsedPropEvent) -> datetime | None:

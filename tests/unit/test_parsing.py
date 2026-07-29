@@ -95,3 +95,24 @@ def test_optional_str_placeholder_dashes_become_none():
 def test_optional_str_returns_stripped_text():
     assert optional_str("  Notre Dame  ", "p", "ctx") == "Notre Dame"
     assert optional_str("22", "p", "ctx") == "22"
+
+
+def test_player_alias_map_is_exact_and_case_insensitive():
+    """Aliases are curated exact mappings, not fuzzy rules -- the lookup
+    normalizes case/whitespace but never guesses."""
+    from wnba_engine.player_aliases import canonical_name
+
+    assert canonical_name("Skylar Diggins-Smith") == "Skylar Diggins"
+    assert canonical_name("  skylar DIGGINS-smith ") == "Skylar Diggins"
+    assert canonical_name("Cheyenne Parker") == "Cheyenne Parker-Tyus"
+    assert canonical_name("Napeesha Collier") == "Napheesa Collier"
+
+
+def test_player_alias_map_refuses_ambiguous_names():
+    """"Collier N." matches both Napheesa and Charli Collier, so it must
+    stay unresolved rather than be guessed."""
+    from wnba_engine.player_aliases import canonical_name
+
+    assert canonical_name("Collier N.") is None
+    assert canonical_name("Candace Parker") is None
+    assert canonical_name("Someone Unknown") is None

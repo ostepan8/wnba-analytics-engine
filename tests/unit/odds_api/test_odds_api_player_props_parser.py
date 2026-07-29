@@ -178,11 +178,45 @@ def test_rejects_historical_payload_without_data():
         parse_historical_event_props({"timestamp": "2025-08-15T17:55:38Z"})
 
 
-def test_rejects_outcome_missing_player_description(odds_api_player_props_payload):
-    """description IS the player -- a missing one is unparseable, not a
-    row to silently drop."""
+def test_outcome_without_player_description_is_skipped_not_fatal(
+    odds_api_player_props_payload,
+):
+    """Verified live: some 2023 draftkings prop outcomes carry
+    name/price/point but NO description, so the line can't be attributed
+    to anybody. Raising killed a real multi-season backfill mid-run.
+    """
     payload = copy.deepcopy(odds_api_player_props_payload)
-    del payload["bookmakers"][0]["markets"][0]["outcomes"][0]["description"]
+    market = payload["bookmakers"][0]["markets"][0]
+    before = len(parse_current_event_props(payload).props)
+    del market["outcomes"][0]["description"]
+    del market["outcomes"][1]["description"]
+
+    parsed = parse_current_event_props(payload)
+
+    # The unattributable line is gone; everything else survived.
+    assert len(parsed.props) == before - 1
+    assert all(p.player_name for p in parsed.props)
+
+
+def test_still_rejects_outcome_missing_price(odds_api_player_props_payload):
+    """Only the no-player case is tolerated -- a genuinely malformed
+    outcome must still fail loudly."""
+    payload = copy.deepcopy(odds_api_player_props_payload)
+    del payload["bookmakers"][0]["markets"][0]["outcomes"][0]["price"]
 
     with pytest.raises(ProviderValidationError):
         parse_current_event_props(payload)
+
+
+def test_player_names_are_whitespace_stripped(odds_api_player_props_payload):
+    """Providers emit " Ezi Magbegor" and "Satou Sabally " -- untrimmed
+    names silently fail to resolve against players.full_name."""
+    payload = copy.deepcopy(odds_api_player_props_payload)
+    outcomes = payload["bookmakers"][0]["markets"][0]["outcomes"]
+    original = outcomes[0]["description"]
+    outcomes[0]["description"] = f"  {original} "
+
+    parsed = parse_current_event_props(payload)
+
+    assert all(p.player_name == p.player_name.strip() for p in parsed.props)
+    assert any(p.player_name == original for p in parsed.props)
