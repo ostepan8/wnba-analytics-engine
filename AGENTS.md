@@ -56,6 +56,7 @@ wnba_engine/
   repositories/      SQL. All of it. Nothing else touches the database.
   pipeline/          orchestration: fetch -> parse -> resolve -> persist
   validation/        data-quality checks + individually-acknowledged violations
+  features/          composable, point-in-time-guarded preprocessing (see its README)
   market_capture/    off-box capture of unrecoverable feeds, and replay
   cli/main.py        one command per ingest path
 db/migrations/       numbered, append-only, heavily commented SQL
@@ -171,6 +172,25 @@ Safe as-of anchors: `games.start_time`, and `captured_at` on
 `market_price_snapshots`, `sportsbook_game_odds`,
 `sportsbook_player_prop_odds`, `injury_reports`,
 `team_standings_history`.
+
+**Do not hand-roll this.** `wnba_engine/features/` enforces all of the
+above -- `feature_repo` refuses the leaky tables/columns by name and
+refuses any query without an `%(as_of)s` filter, and `LeakageGuard` runs
+after every step. Read `wnba_engine/features/README.md` before adding
+feature extraction anywhere else.
+
+Two hazards that table does NOT cover, both found while building that
+package and both worth knowing anywhere else you join time series:
+
+- **"Latest snapshot at or before as_of" is still a leak.** Joined onto a
+  full-season frame it gives a May game the standings as they stood in
+  July. A snapshot join has to be per ROW, against that row's own
+  `start_time`, not per frame.
+- **`games` has no `result_known_at`.** `start_time` says when a game
+  began, not when we learned the score, so a boundary shortly after
+  tip-off can consume a final score nobody had. The features package
+  works around it with a 4-hour completion margin; a real column would be
+  better.
 
 ### Providers are inconsistent in specific, documented ways
 

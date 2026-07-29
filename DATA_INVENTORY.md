@@ -784,6 +784,7 @@ Run via `uv run wnba-engine <command>` from the repo root.
 | `backfill-odds-api-props-history --since --until` | the-odds-api | REAL historical player props, same 4 checkpoints. **~200 units/game** — see quota note above |
 | `python -m wnba_engine.pipeline.season_awards_seed` | Manual research | Season award winners (not a `wnba-engine` subcommand) |
 | `ingest-market-captures [--dir] [--all]` | capture host | Replay raw Kalshi/Polymarket captures recorded off-box; `--all` rebuilds through the current parser |
+| `build-features --as-of --strategy` | — | Build a point-in-time-correct feature frame (read-only). `--strategy` is one of `situational_baseline`/`team_form`/`player_form`; `--out` writes CSV. See `wnba_engine/features/README.md` |
 | `validate` | — | Run all data-quality checks |
 
 ---
