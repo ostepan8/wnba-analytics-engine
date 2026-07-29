@@ -688,6 +688,51 @@ as "ran and ingested." `launchctl list` looking healthy is therefore not
 evidence that data is arriving — only `max(captured_at)` is (see [How to
 refresh this doc](#how-to-refresh-this-doc)).
 
+### Off-box market capture (the always-on host)
+
+Kalshi/Polymarket prices are the one stream that **cannot be recovered
+after the fact** — no historical endpoint exists, so an observation
+missed is gone. A laptop that sleeps is the wrong place to own it, as
+the July 2026 outage proved by destroying two thirds of every
+prediction-market price ever collected.
+
+So capture runs on an always-on host (`mac-studio`, reachable over
+Tailscale), **every 30 minutes**, and this machine loads from it:
+
+| Piece | Where | What |
+|---|---|---|
+| `com.ostepan.wnba-market-capture` | capture host | LaunchAgent, every 30 min, `RunAtLoad` |
+| `wnba_engine/market_capture/capture.py` | deployed to host | stdlib-only, no repo/uv/DB/secrets |
+| `~/wnba-market-capture/data/` | capture host | `<provider>/<YYYYMMDDTHHMMSSZ>.json.gz` |
+| `scripts/deploy-capture-host.sh` | here | pushes the script + agent (idempotent) |
+| `scripts/sync-market-captures.sh` | here | rsync, then `ingest-market-captures` |
+
+**It records RAW PROVIDER PAYLOADS, not canonical rows.** `games.id` and
+`players.id` are generated per-database, so a `market_price_snapshots`
+row written on another machine carries a `game_id` that means something
+different here. Any cross-machine transfer would have to re-resolve ids
+on arrival — so the remote side never produces them. It captures JSON;
+this side resolves, using the same pipeline a live snapshot uses.
+
+Consequences worth knowing:
+
+- **Captures are re-ingestible.** `ingest-market-captures --all` rebuilds
+  the archive through the current parser, so a matcher improvement can be
+  applied retroactively instead of only helping future data.
+- **`captured_at` comes from the file, never the ingest clock.** A file
+  loaded three days late lands where it actually belongs in the series.
+- **Idempotent twice over:** a high-water mark skips already-loaded
+  files, and `UNIQUE(provider, market_external_id, captured_at)`
+  (migration 0022) rejects anything that slips past it. Re-running a
+  sync, or syncing twice, inserts nothing.
+- **Volume:** ~530 KB per run across both providers, so roughly 25 MB/day
+  or ~9 GB/year at the 30-minute cadence. Trivial against the host's
+  378 GB free, but not nothing — worth a retention policy eventually.
+- The laptop's own 2h `snapshot-kalshi`/`snapshot-polymarket` are
+  **deliberately left running** as a fallback: a snapshot taken here at a
+  different instant is a genuinely distinct observation, not a duplicate,
+  and it keeps some coverage if the capture host is ever down.
+
 The realistic failure mode is Postgres being unreachable, and the
 realistic cause of *that* is **Docker's VM disk filling up** — it took
 down ingestion for 14 days in July 2026. Keep `diskSizeMiB` in
@@ -728,6 +773,7 @@ Run via `uv run wnba-engine <command>` from the repo root.
 | `snapshot-odds-api-props` | the-odds-api | Current player props, per listed event (5 units/event) |
 | `backfill-odds-api-props-history --since --until` | the-odds-api | REAL historical player props, same 4 checkpoints. **~200 units/game** — see quota note above |
 | `python -m wnba_engine.pipeline.season_awards_seed` | Manual research | Season award winners (not a `wnba-engine` subcommand) |
+| `ingest-market-captures [--dir] [--all]` | capture host | Replay raw Kalshi/Polymarket captures recorded off-box; `--all` rebuilds through the current parser |
 | `validate` | — | Run all data-quality checks |
 
 ---

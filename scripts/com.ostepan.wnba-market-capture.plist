@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Records raw Kalshi + Polymarket WNBA payloads every 30 minutes on the
+  always-on capture host. See wnba_engine/market_capture/ for why this
+  runs off-box at all: these prices have no historical endpoint, so an
+  observation not recorded at the time is gone permanently.
+
+  Installed by scripts/deploy-capture-host.sh -- do not hand-edit on the
+  host, or the next deploy silently reverts it.
+
+  StartInterval rather than StartCalendarInterval: the cadence matters,
+  the wall-clock alignment doesn't, and StartInterval keeps firing across
+  a reload without needing 48 explicit entries.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ostepan.wnba-market-capture</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>PLACEHOLDER_HOME/wnba-market-capture/bin/capture.py</string>
+        <string>--root</string>
+        <string>PLACEHOLDER_HOME/wnba-market-capture/data</string>
+    </array>
+
+    <!-- 30 minutes. -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <!-- Capture immediately on load/reboot rather than waiting out a
+         full interval; a missed window is unrecoverable. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/capture.log</string>
+    <key>StandardErrorPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/capture.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture</string>
+</dict>
+</plist>
