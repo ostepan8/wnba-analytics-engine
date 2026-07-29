@@ -29,25 +29,40 @@ canonical crosswalk). This doc is the what.
 
 ## Snapshot
 
-Real row counts as of last update (see bottom of this doc for the query
+Real row counts as of 2026-07-29 (see bottom of this doc for the query
 to get current numbers):
 
 | Table | Rows | Table | Rows |
 |---|---:|---|---:|
-| `game_plays` | 485,375 | `market_price_snapshots` | 14,792 |
-| `player_game_stats` | 58,065 | `injury_reports` | 22,625 |
-| `player_advanced_stats` | 27,650 | `sportsbook_player_prop_odds` | 8,097 |
-| `team_game_stats` | 5,094 | `players` | 1,004 |
-| `team_advanced_stats` | 2,460 | `games` | 1,310 |
+| `game_plays` | 489,461 | `sportsbook_game_odds` | 117,874 |
+| `market_price_snapshots` | 60,540 | `player_game_stats` | 58,475 |
+| `player_advanced_stats` | 27,862 | `injury_reports` | 23,842 |
+| `sportsbook_player_prop_odds` | 9,377 | `provider_entity_map` | 5,292 |
+| `team_game_stats` | 5,128 | `game_officials` | 4,021 |
+| `team_advanced_stats` | 2,478 | `games` | 1,327 |
+| `players` | 1,005 | `player_shot_zone_stats` | 873 |
 | `player_transactions` | 506 | `season_awards` | 129 |
-| `player_shot_zone_stats` | 870 | `sportsbook_game_odds` | 66 |
-| `team_standings_history` | 65 | `team_standings` | 64 |
+| `team_standings_history` | 118 | `team_standings` | 64 |
 | `team_shot_zone_stats` | 64 | `balldontlie_injury_reports` | 43 |
-| `game_officials` | 24 | `teams` | 26 (15 real franchises) |
+| `teams` | 26 (15 real franchises) | `odds_api_game_scores` | 13 |
 
-20 tables total. `uv run wnba-engine validate` (11 checks): 9 clean, 2
-with known/documented non-zero results that are **not bugs** — see
-[Data quality](#data-quality--validation).
+23 tables total — the 21 above plus `schema_versions` (migration
+bookkeeping, 21 rows). `uv run wnba-engine validate` (12 checks): **all
+12 pass**, with 10 individually-acknowledged known-benign violations
+still reported — see [Data quality](#data-quality--validation).
+
+Two counts worth reading twice:
+
+- **`sportsbook_game_odds` jumped 66 → 117,874** since the previous
+  snapshot: that's `backfill-odds-api-history` having run across the
+  historical archive, not a counting change.
+- **`odds_api_game_scores` is only 13 rows** against 1,327 games. The
+  scores endpoint is a trailing-window feed (`daysFrom`), so it only
+  ever captures recent games — the
+  `odds_api_score_matches_game_score` cross-check is therefore
+  currently validating ~1% of the schedule, not all of it. It passes,
+  but treat "clean" there as a much weaker statement than the other
+  checks until this table is denser.
 
 ---
 
@@ -290,6 +305,14 @@ in as a real, integrated source rather than a separate personal project.
     quoting it), so using it alone as `external_id` under
     `UNIQUE(external_id, captured_at)` risked silently dropping a second
     bookmaker's row.
+  - **the-odds-api event ids are not stable for a game's whole life.**
+    Observed once (game 226): the provider re-issued the id partway
+    through, so one game accumulated odds under two event ids with the
+    line continuing unbroken across the switch. Nothing downstream
+    should treat an event id as a durable game key — resolve through
+    the crosswalk to the canonical `game_id` instead. See the
+    `duplicate_crosswalk_mappings` notes in [Data
+    quality](#data-quality--validation) for how this was verified.
 - **`odds_api_game_scores`** — a second, INDEPENDENT final-score source,
   captured purely as a data-quality cross-check
   (`odds_api_score_matches_game_score` validation check) against
@@ -298,6 +321,12 @@ in as a real, integrated source rather than a separate personal project.
   is *intended* to eventually outrank ESPN for final scores; that
   precedence switch is a deliberate, separate decision this integration
   does not make.
+  **Currently sparse: 13 rows against 1,327 games.** The endpoint is a
+  trailing-window feed (`daysFrom`, defaulting to 3 here — see
+  `DEFAULT_DAYS_FROM`), so `snapshot-odds-api-scores` only ever sees
+  recent games, and no historical scores backfill exists. Coverage grows
+  only going forward, from the 2h recurring job. The cross-check is real
+  but currently thin — see the caveat on check #10 below.
 - Games resolve via the same team+date crosswalk pattern
   Kalshi/Polymarket/balldontlie use (`entity_repo.find_game_id_by_teams`),
   since the-odds-api's event id is a new external id space.
@@ -330,31 +359,87 @@ CLI: `snapshot-odds-api`, `backfill-odds-api-history --since --until`,
   (`odds_api_game_scores`) and cross-checked against ESPN's, but do NOT
   yet outrank it — `db/migrations/0001_canonical_entities.sql` documents
   that as a deliberate, separate future decision.
-- **Known crosswalk quirk (verified benign, not a bug):** balldontlie
-  itself sometimes issues a *different* player id for the same real
-  person across its own separate endpoints (advanced-stats vs.
-  traditional-box-score) — observed for 3 players so far. Our name-match
-  crosswalk correctly merges these onto one canonical player; the
-  `duplicate_crosswalk_mappings` validation check still flags them (its
-  job is to surface anything suspicious for review), but each has been
-  individually verified via matching `team_id` across both appearances.
-  See that check's docstring for how to re-verify if new ones appear.
+- **Known crosswalk quirks (verified benign, not bugs).** Two providers
+  reuse or re-issue their own ids in ways that make one canonical row
+  carry two external ids. Both are acknowledged individually in
+  `wnba_engine/validation/acknowledged.py` (see [Data
+  quality](#data-quality--validation)) rather than suppressed as a
+  class, so a *new* instance of either still fails the check:
+  - **balldontlie player ids** — balldontlie sometimes issues a
+    *different* player id for the same real person across its own
+    separate endpoints (advanced-stats vs. traditional-box-score),
+    observed for 3 players. Our name-match crosswalk correctly merges
+    these onto one canonical player. Re-verify a new one by confirming
+    both external_ids appear under the same `team_id`.
+  - **the-odds-api event ids** — the-odds-api re-issues an event id
+    partway through a game's quoting life, observed once (game 226).
+    Re-verify a new one by ordering that game's `sportsbook_game_odds`
+    by `captured_at` and checking the line hands over continuously
+    across the id switch.
 
 ---
 
 ## Data quality / validation
 
 `wnba_engine/validation/` — 12 checks, run via `wnba-engine validate`
-(exits non-zero on any failure). As of last update: **10 pass with 0
-violations, 2 have known/documented non-zero results that are real but
-not bugs** (details below):
+(exits non-zero on any *unacknowledged* failure). As of 2026-07-29:
+**all 12 pass**, with 10 violations individually acknowledged as
+known-benign.
+
+### Acknowledged violations
+
+Some violations are real, permanent, and not bugs — an upstream provider
+is internally inconsistent in a way we can observe but not fix. Left
+alone they made `validate` exit non-zero forever, which destroys its
+value as a gate: a command that is always red teaches everyone to ignore
+it, including when it goes red for a *new* reason.
+
+`wnba_engine/validation/acknowledged.py` holds one entry per verified
+violation, with the evidence that cleared it and the date it was checked.
+Deliberately not a per-check "ignore" switch:
+
+- The key encodes the **actual values**, not just the row's identity, so
+  a change re-raises the failure. A third external_id joining an
+  acknowledged pair, or either provider revising a score, fails again
+  and forces re-verification.
+- A **new** violation of an acknowledged check still fails. Only the
+  exact listed one is muted.
+- Acknowledged violations are still counted and still printed, tagged
+  `[ack]` with their reason. Muted, not hidden.
+- An entry that stops matching anything is reported as **stale** at the
+  end of the run, so the file can't rot into a list of things that
+  stopped being true. Stale entries are never auto-removed — dropping
+  an acknowledgement is a human decision.
+
+Current acknowledgements: 4 on `duplicate_crosswalk_mappings` (3
+balldontlie player-id duplicates + 1 the-odds-api event-id re-issue) and
+6 on `plays_final_score_matches_game_score` (1–2 point provider
+disagreements). Both are detailed in their check sections below.
+
+### The checks
 
 1. `orphaned_crosswalk_entries` — every `provider_entity_map.internal_id`
    references a real row (no FK possible; it's polymorphic). **Clean.**
 2. `duplicate_crosswalk_mappings` — one provider's external_id never maps
    many:1 onto a canonical row (catches bad name-match merges).
-   **3 known-benign violations** — see the crosswalk-quirk note above;
-   verified real people, not bad merges.
+   **4 acknowledged violations, 0 unacknowledged.** Two distinct
+   provider-side causes, both verified:
+   - **3× balldontlie player-id duplicates** — see the crosswalk-quirk
+     note above; verified real people, not bad merges.
+   - **1× the-odds-api event-id re-issue** (game 226, 2022-07-14
+     Liberty vs Aces). the-odds-api quoted this game under
+     `90172a3f…` through 2022-07-13 02:20, then under `c28ae79b…`
+     from 2022-07-13 23:47 — two ids, one game. Verified benign by the
+     line handing over unbroken across the switch: fanduel's last quote
+     on the old id and its first on the new id are identical (ml
+     235/-303, spread 6.5, total 172.5). Crucially this is **not** the
+     team+date matcher collapsing two games: these same two teams also
+     met on 2022-07-12 (game 221), and that game has its own distinct
+     event id `b36b5bcb…`. To triage a future one the same way, order
+     the game's `sportsbook_game_odds` by `captured_at` and look at the
+     handover — a genuine two-games-merged bug looks different, with the
+     other game holding no event id of its own and prices jumping
+     discontinuously.
 3. `team_box_score_matches_final_score` — SUM(player points) vs.
    `games.home_score/away_score`, two different ESPN endpoints. **Clean.**
 4. `team_totals_match_player_sums` — team box score totals vs. SUM of
@@ -368,9 +453,14 @@ not bugs** (details below):
    final score vs. ESPN's scoreboard. Anchored on the `"End Game"` play
    type, not `MAX(sequence)` — balldontlie's own `order` field isn't
    reliably monotonic (verified live: a period-1 jumpball can carry a
-   spuriously high sequence number). **6 known-genuine violations** — 1-2
-   point disagreements out of 1,239 games (0.48%), real upstream noise
-   between two independent providers, not a bug.
+   spuriously high sequence number). **6 acknowledged violations, 0
+   unacknowledged** — 1-2 point disagreements out of ~1,240 games
+   (0.48%), real upstream noise between two independent providers with
+   no shared upstream, not a bug. ESPN stays the source of record for
+   `games.home_score/away_score`; nothing is written back from
+   play-by-play to "resolve" these. The acknowledgement keys include
+   both scores, so if either provider revises a number the game is
+   re-surfaced for review rather than staying muted.
 6. `team_stat_bounds`, `player_stat_bounds` — no makes-exceed-attempts,
    `oreb + dreb == rebounds`. **Clean.**
 7. `market_price_bounds` — probabilities/bid/ask stay in `[0, 1]`.
@@ -383,8 +473,12 @@ not bugs** (details below):
 10. `odds_api_score_matches_game_score` — the-odds-api's latest captured
     final score vs. `games.home_score/away_score` (ESPN) -- a cross-check
     only, never a precedence change (see the-odds-api section above).
-    **Clean as of last update**, but this check surfaces real
-    disagreements as signal, not something to hide if it starts failing.
+    **Clean**, but read that with a caveat: `odds_api_game_scores` holds
+    only 13 rows against 1,327 games, because the scores endpoint is a
+    trailing-window feed. This check is currently validating ~1% of the
+    schedule. It surfaces real disagreements as signal, not something to
+    hide if it starts failing — but "clean" here is a much weaker
+    statement than for the checks that cover every game.
 
 ---
 
@@ -472,7 +566,10 @@ union all select 'sportsbook_player_prop_odds', count(*) from sportsbook_player_
 union all select 'season_awards', count(*) from season_awards
 union all select 'game_officials', count(*) from game_officials
 union all select 'player_transactions', count(*) from player_transactions
-union all select 'odds_api_game_scores', count(*) from odds_api_game_scores;
+union all select 'odds_api_game_scores', count(*) from odds_api_game_scores
+union all select 'provider_entity_map', count(*) from provider_entity_map
+union all select 'schema_versions', count(*) from schema_versions
+order by 2 desc;
 "
 
 # Full migration history (source of truth for schema)
@@ -484,3 +581,13 @@ grep -n '@cli.command' wnba_engine/cli/main.py
 # Data quality status
 uv run wnba-engine validate
 ```
+
+Use `count(*)` as above, not `pg_stat_user_tables.n_live_tup`: those
+statistics are reset by a crash-recovery restart and will read 0 across
+every table until the next `ANALYZE`, which looks alarming and is
+meaningless.
+
+If `validate` reports **stale acknowledgements** at the end of its
+output, an entry in `wnba_engine/validation/acknowledged.py` no longer
+matches any violation — the upstream data changed or was fixed. Confirm
+it's genuinely gone, then delete that entry.
