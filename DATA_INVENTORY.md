@@ -146,7 +146,7 @@ doc](#how-to-refresh-this-doc) is the fastest way to spot one.
 | Kalshi | Free (public API) | Regulated prediction-market prices (games, spreads/totals, player props) | 2h snapshot |
 | Polymarket | Free (public API) | Prediction-market prices (games, spreads/totals, player props) | 2h snapshot |
 | Manual research | N/A | Season award winners (ground truth for the award markets above) | One-off, re-run as new seasons conclude |
-| the-odds-api | Paid (high-quota plan) | 32-book sportsbook odds (current + REAL historical archive, 2022–present), final-score cross-check | 2h current-odds + score snapshot; historical backfill is a manual one-off |
+| the-odds-api | Paid (high-quota plan) | 32-book sportsbook odds (current + REAL historical archive, 2022–present), player props (2023–present), final-score cross-check | 2h current-odds + score snapshot; historical backfills are manual one-offs |
 
 ---
 
@@ -406,12 +406,49 @@ in as a real, integrated source rather than a separate personal project.
   recent games, and no historical scores backfill exists. Coverage grows
   only going forward, from the 2h recurring job. The cross-check is real
   but currently thin — see the caveat on check #10 below.
+- **`sportsbook_player_prop_odds`** (`source = 'the_odds_api'`) — player
+  props, sharing balldontlie's table AND its `prop_type` vocabulary
+  (`points`, `rebounds`, `assists`, `threes`,
+  `points_rebounds_assists`), so a query filtering `prop_type='points'`
+  sees both providers rather than half the data. Five markets requested;
+  alternate-line markets are deliberately not, since they multiply quota
+  cost and restate the same player at many numbers.
+  - **Props are NOT on the bulk odds endpoint.** They exist only at
+    `/events/{eventId}/odds` and its historical counterpart, one event
+    per call. That is why this table was balldontlie-only (2026, ~200
+    games) until this integration landed — the game-level ingestion
+    requests `markets=h2h,spreads,totals` and no market list would have
+    made the bulk endpoint return props.
+  - **Historical props start May 2023**, a year later than featured
+    markets' May 2022 (the-odds-api's own documented split). Ranges
+    before that return nothing.
+  - **Quota, verified live via `x-requests-last`:** 1 unit per market
+    per region for current props, **10 units** for historical. With 5
+    markets and 4 checkpoints that is **200 units per game** — by far
+    the most expensive thing in this repo. A full 2023-present sweep is
+    ~209k units. Both entry points report `units_estimated` to
+    reconcile against `x-requests-used`.
+  - **Historical props resolve event ids from `provider_entity_map`**,
+    not a paid event-list call, so `backfill-odds-api-history` must have
+    run for the same range first; games without a mapped event id are
+    skipped and counted in `games_without_event_id`.
+  - **A per-event historical call 404s when that event wasn't listed
+    yet** at the requested timestamp. This is routine, not an error —
+    T-7d checkpoints on games books post late 404 constantly (all 3
+    games in the first live day did). It's absorbed as
+    `checkpoints_absent`; anything other than a 404 still raises.
+  - Players resolve **by name only** — the-odds-api carries no player
+    identifier anywhere in a prop payload, just a free-text
+    `description` per outcome. Unresolved names are logged and skipped,
+    never created: a sportsbook's spelling is far too thin a basis to
+    originate a canonical player, and a typo would silently fork one.
 - Games resolve via the same team+date crosswalk pattern
   Kalshi/Polymarket/balldontlie use (`entity_repo.find_game_id_by_teams`),
   since the-odds-api's event id is a new external id space.
 
 CLI: `snapshot-odds-api`, `backfill-odds-api-history --since --until`,
-`snapshot-odds-api-scores [--days-from]`.
+`snapshot-odds-api-scores [--days-from]`, `snapshot-odds-api-props`,
+`backfill-odds-api-props-history --since --until`.
 
 ---
 
@@ -623,6 +660,8 @@ Run via `uv run wnba-engine <command>` from the repo root.
 | `snapshot-odds-api` | the-odds-api | Current game-level sportsbook odds |
 | `backfill-odds-api-history --since --until` | the-odds-api | REAL historical odds, T-7d/T-24h/T-1h/closing checkpoints per game |
 | `snapshot-odds-api-scores [--days-from]` | the-odds-api | Final-score cross-check vs. `games.home_score/away_score` |
+| `snapshot-odds-api-props` | the-odds-api | Current player props, per listed event (5 units/event) |
+| `backfill-odds-api-props-history --since --until` | the-odds-api | REAL historical player props, same 4 checkpoints. **~200 units/game** — see quota note above |
 | `python -m wnba_engine.pipeline.season_awards_seed` | Manual research | Season award winners (not a `wnba-engine` subcommand) |
 | `validate` | — | Run all data-quality checks |
 

@@ -400,6 +400,32 @@ def list_games_in_range(
     return tuple((int(row[0]), row[1]) for row in rows)
 
 
+_LIST_EXTERNAL_IDS_SQL = """
+SELECT external_id
+FROM provider_entity_map
+WHERE provider = %s AND entity_type = %s AND internal_id = %s
+ORDER BY external_id
+"""
+
+
+def list_external_ids(
+    conn: Connection, provider: str, entity_type: str, internal_id: int
+) -> tuple[str, ...]:
+    """The reverse of lookup_internal_id: every external id one provider
+    holds for a canonical row.
+
+    Returns a tuple rather than a single id because the mapping is
+    legitimately one-to-many for at least one provider -- the-odds-api
+    re-issues an event id partway through a game's quoting life, leaving
+    two ids for one game (see DATA_INVENTORY.md's crosswalk quirks). A
+    caller that needs "the event id for this game" must be prepared to try
+    each, since only one of them is valid at any given historical
+    timestamp.
+    """
+    rows = conn.execute(_LIST_EXTERNAL_IDS_SQL, (provider, entity_type, internal_id)).fetchall()
+    return tuple(str(row[0]) for row in rows)
+
+
 def resolve_or_create_player_by_name(
     conn: Connection,
     provider: str,

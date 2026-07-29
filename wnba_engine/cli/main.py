@@ -48,6 +48,12 @@ from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.odds_api_ingest import backfill_history as backfill_odds_api_history
 from wnba_engine.pipeline.odds_api_ingest import snapshot_current_odds as snapshot_odds_api_odds
+from wnba_engine.pipeline.odds_api_player_props_ingest import (
+    backfill_props_history as backfill_odds_api_props_history,
+)
+from wnba_engine.pipeline.odds_api_player_props_ingest import (
+    snapshot_current_props as snapshot_odds_api_props,
+)
 from wnba_engine.pipeline.odds_api_scores_ingest import (
     snapshot_current_scores as snapshot_odds_api_scores,
 )
@@ -480,6 +486,56 @@ def backfill_odds_api_history_cmd(since, until) -> None:
     try:
         with OddsApiClient(settings) as client:
             click.echo(backfill_odds_api_history(db, client, since.date(), until.date()))
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-odds-api-props")
+def snapshot_odds_api_props_cmd() -> None:
+    """Snapshot CURRENT the-odds-api player props for every listed event.
+
+    Props are unavailable on the bulk odds endpoint this repo's game-level
+    ingestion uses -- they exist only per-event, which is why
+    sportsbook_player_prop_odds was balldontlie-only before this command.
+
+    Costs 1 quota unit per market per event (5 markets requested), so a
+    typical slate is tens of units, not thousands. Safe on a recurring
+    schedule alongside snapshot-odds-api.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(snapshot_odds_api_props(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-odds-api-props-history")
+@click.option("--since", type=click.DateTime(["%Y-%m-%d"]), required=True)
+@click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
+def backfill_odds_api_props_history_cmd(since, until) -> None:
+    """Backfill REAL historical player props for every canonical game in
+    [since, until], at the same T-7d/T-24h/T-1h/closing checkpoints the
+    game-odds backfill uses.
+
+    EXPENSIVE -- the most quota-hungry command in this repo. Historical
+    props cost 10 units per market per event per checkpoint, so with 5
+    markets and 4 checkpoints that is ~200 units per game (a full
+    2023-present sweep is ~209k units). The result's units_estimated can
+    be reconciled against the-odds-api's x-requests-used header.
+
+    Props only exist in the archive from May 2023 -- earlier ranges return
+    nothing (featured markets go back to May 2022, props do not). Requires
+    backfill-odds-api-history to have run first for the same range: event
+    ids come from provider_entity_map rather than a paid event-list call,
+    and games without one are skipped and reported.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(backfill_odds_api_props_history(db, client, since.date(), until.date()))
     finally:
         db.close()
 

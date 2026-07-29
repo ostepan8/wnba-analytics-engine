@@ -93,3 +93,60 @@ def test_get_json_without_redact_keys_leaves_other_params_untouched(monkeypatch,
         assert "2024" in caplog.text
     finally:
         client.close()
+
+
+def _client_raising(status: int, monkeypatch) -> JsonHttpClient:
+    client = JsonHttpClient(
+        provider="test_provider",
+        base_url="https://example.test",
+        timeout_seconds=1.0,
+        min_request_interval_seconds=0.0,
+    )
+    request = httpx.Request("GET", "https://example.test/v1/thing")
+    response = httpx.Response(status, request=request, text="")
+
+    def fake_do_get(path: str, params: object) -> httpx.Response:
+        raise httpx.HTTPStatusError(f"status {status}", request=request, response=response)
+
+    monkeypatch.setattr(client, "_do_get", fake_do_get)
+    return client
+
+
+def test_get_json_optional_returns_none_for_an_absent_status(monkeypatch):
+    """the-odds-api 404s a per-event historical request when the event
+    wasn't listed at that timestamp -- a real answer, not a failure."""
+    client = _client_raising(404, monkeypatch)
+    try:
+        assert client.get_json_optional("v1/thing", absent_statuses={404}) is None
+    finally:
+        client.close()
+
+
+def test_get_json_optional_still_raises_for_other_statuses(monkeypatch):
+    """Deliberately narrow: an auth failure must not be silently read as
+    "no data"."""
+    client = _client_raising(401, monkeypatch)
+    try:
+        with pytest.raises(ProviderRequestError):
+            client.get_json_optional("v1/thing", absent_statuses={404})
+    finally:
+        client.close()
+
+
+def test_get_json_optional_returns_body_on_success(monkeypatch):
+    client = JsonHttpClient(
+        provider="test_provider",
+        base_url="https://example.test",
+        timeout_seconds=1.0,
+        min_request_interval_seconds=0.0,
+    )
+    request = httpx.Request("GET", "https://example.test/v1/thing")
+    monkeypatch.setattr(
+        client,
+        "_do_get",
+        lambda path, params: httpx.Response(200, request=request, json={"ok": True}),
+    )
+    try:
+        assert client.get_json_optional("v1/thing", absent_statuses={404}) == {"ok": True}
+    finally:
+        client.close()
