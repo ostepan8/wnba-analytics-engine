@@ -11,6 +11,7 @@ canonical crosswalk). This doc is the what.
 
 ## Table of contents
 - [Snapshot](#snapshot)
+- [Coverage boundaries](#coverage-boundaries--whats-missing-and-why)
 - [Sources at a glance](#sources-at-a-glance)
 - [ESPN](#espn-free-public-site-api)
 - [balldontlie.io](#balldontlieio-paid-goat-tier)
@@ -34,35 +35,105 @@ to get current numbers):
 
 | Table | Rows | Table | Rows |
 |---|---:|---|---:|
-| `game_plays` | 489,461 | `sportsbook_game_odds` | 117,874 |
-| `market_price_snapshots` | 60,540 | `player_game_stats` | 58,475 |
-| `player_advanced_stats` | 27,862 | `injury_reports` | 23,842 |
-| `sportsbook_player_prop_odds` | 9,377 | `provider_entity_map` | 5,292 |
-| `team_game_stats` | 5,128 | `game_officials` | 4,021 |
-| `team_advanced_stats` | 2,478 | `games` | 1,327 |
-| `players` | 1,005 | `player_shot_zone_stats` | 873 |
-| `player_transactions` | 506 | `season_awards` | 129 |
-| `team_standings_history` | 118 | `team_standings` | 64 |
-| `team_shot_zone_stats` | 64 | `balldontlie_injury_reports` | 43 |
-| `teams` | 26 (15 real franchises) | `odds_api_game_scores` | 13 |
+| `game_plays` | 504,231 | `sportsbook_game_odds` | 123,412 |
+| `market_price_snapshots` | 62,069 | `player_game_stats` | 60,333 |
+| `player_advanced_stats` | 28,751 | `injury_reports` | 24,037 |
+| `sportsbook_player_prop_odds` | 12,652 | `provider_entity_map` | 5,387 |
+| `team_game_stats` | 5,284 | `game_officials` | 4,111 |
+| `team_advanced_stats` | 2,552 | `games` | 1,357 |
+| `players` | 1,005 | `player_shot_zone_stats` | 878 |
+| `player_transactions` | 506 | `team_standings_history` | 133 |
+| `season_awards` | 129 | `balldontlie_injury_reports` | 79 |
+| `team_standings` | 64 | `team_shot_zone_stats` | 64 |
+| `teams` | 28 (15 real franchises) | `odds_api_game_scores` | 18 |
 
 23 tables total — the 21 above plus `schema_versions` (migration
 bookkeeping, 21 rows). `uv run wnba-engine validate` (12 checks): **all
 12 pass**, with 10 individually-acknowledged known-benign violations
 still reported — see [Data quality](#data-quality--validation).
 
-Two counts worth reading twice:
+`odds_api_game_scores` (18 rows against 1,357 games) is the one table
+that looks alarmingly sparse and is *supposed* to be: the scores
+endpoint is a trailing-window feed with no historical backfill, so the
+`odds_api_score_matches_game_score` cross-check validates only the last
+few days of the schedule. It passes, but that's a far weaker statement
+than the checks covering every game.
 
-- **`sportsbook_game_odds` jumped 66 → 117,874** since the previous
-  snapshot: that's `backfill-odds-api-history` having run across the
-  historical archive, not a counting change.
-- **`odds_api_game_scores` is only 13 rows** against 1,327 games. The
-  scores endpoint is a trailing-window feed (`daysFrom`), so it only
-  ever captures recent games — the
-  `odds_api_score_matches_game_score` cross-check is therefore
-  currently validating ~1% of the schedule, not all of it. It passes,
-  but treat "clean" there as a much weaker statement than the other
-  checks until this table is denser.
+---
+
+## Coverage boundaries — what's missing and why
+
+Read this before "fixing" an apparent gap. Most holes in this database
+are upstream boundaries that no amount of backfilling will close, and
+one is a real operational failure worth recognizing quickly.
+
+### Sportsbook odds coverage (`the_odds_api`)
+
+Every **regular-season and post-season** game 2022–present has
+historical odds, **except one contiguous block**:
+
+| Season | Reg. season | Post-season | Missing |
+|---|---:|---:|---|
+| 2022 | 217 | 23 | **33** (all 2022-05-06 → 2022-05-21) |
+| 2023 | 241 | 20 | 0 |
+| 2024 | 241 | 22 | 0 |
+| 2025 | 287 | 24 | 0 |
+| 2026 | 208 | — | 0 |
+
+**Those 33 games are permanently unobtainable.** the-odds-api's own WNBA
+page states historical odds for featured markets (moneyline, spreads,
+totals) are available **from May 2022** — and the earliest capture that
+exists anywhere in this database is 2022-05-21. The 2022 WNBA season
+opened 2022-05-06, so the first ~two weeks predate the vendor's archive
+entirely. This is not a backfill gap and re-running
+`backfill-odds-api-history` over that range will not help. (Related: the
+same page puts *non*-featured markets — player props, quarter/half — at
+**May 2023**, so pre-2023 prop history does not exist either.)
+
+### Preseason and All-Star games have no sportsbook odds — by design
+
+Preseason accounts for most of what naively looks "missing": sportsbooks
+largely don't price WNBA preseason, and the exhibition slate includes
+**non-franchise opponents** (national teams like JAPAN, club sides like
+Toyota Antelopes) that no book quotes at all. All-Star games
+(`season_type = 'other'`) are likewise unpriced here, and their rosters
+create non-franchise team rows — "TEAM CLARK", "TEAM COLLIER", "TEAM
+SPOON", "TEAM COOP". All are correctly flagged `is_franchise = false`
+and excluded from real standings by the
+`non_franchise_team_in_regular_season` check.
+
+**When measuring odds coverage, filter to
+`season_type IN ('regular-season','post-season')`.** Counting preseason
+and All-Star games as gaps produces a scary-looking number that means
+nothing.
+
+### The 2026-07-16 → 2026-07-29 outage
+
+Ingestion stopped entirely for ~14 days. Root cause was **not** the
+pipeline: Docker's VM disk hit its 60 GiB ceiling, Postgres crash-looped
+on `could not write lock file: No space left on device`, and the
+LaunchAgent jobs correctly no-oped against an unreachable database. The
+VM disk has since been raised to 160 GiB. `Docker.raw` is sparse, so a
+high ceiling costs no host disk until actually used — keep it generous.
+
+What that outage cost, and what recovered:
+
+| Data | Recoverable? | How |
+|---|---|---|
+| ESPN games, box scores, venue, officials | Yes | `backfill-espn --since --until` |
+| Sportsbook odds | Yes | `backfill-odds-api-history` — this is exactly what the historical archive is for |
+| balldontlie stats, plays, shot zones, props | Yes | `backfill-*  --season` |
+| ESPN injuries | Partly | `backfill-injuries-wayback` — limited to days archive.org actually crawled (4 of 14 here) |
+| Standings | Yes | Current-state upsert, self-heals on next run |
+| **Kalshi / Polymarket prices** | **No** | Rolling window. A missed capture is gone permanently. |
+| **balldontlie game-level odds** | **No** | Same rolling-window property. |
+
+The permanent losses are the reason the market/injury snapshot job runs
+every 2h rather than daily. **An outage longer than a few hours is a
+real, unrecoverable data loss** for the prediction-market series, so
+treat Postgres being down as urgent rather than cosmetic. Checking
+`max(captured_at)` across the tables in [How to refresh this
+doc](#how-to-refresh-this-doc) is the fastest way to spot one.
 
 ---
 
@@ -292,14 +363,22 @@ in as a real, integrated source rather than a separate personal project.
   in American odds format -- the-odds-api's default is decimal, which
   would NOT fit this table's INT columns). Two ingestion modes:
   - `snapshot-odds-api` — current odds for every listed event (2h cadence).
-  - `backfill-odds-api-history --since --until` — REAL historical odds
-    back to at least 2022-06-01 (verified live), unlike balldontlie's
-    /odds (rolling recent window only). For every canonical game in the
-    date range, queries the historical endpoint at T-7d / T-24h / T-1h /
-    closing checkpoints (matching the line-movement cadence documented for
-    the private Phase 0 pipeline this is modeled on). A manual/one-off
-    command, not on the recurring schedule (a historical call costs ~10x
-    a current-odds call).
+  - `backfill-odds-api-history --since --until` — REAL historical odds,
+    unlike balldontlie's /odds (rolling recent window only). For every
+    canonical game in the date range, queries the historical endpoint at
+    T-7d / T-24h / T-1h / closing checkpoints (matching the line-movement
+    cadence documented for the private Phase 0 pipeline this is modeled
+    on). A manual/one-off command, not on the recurring schedule (a
+    historical call costs ~10x a current-odds call).
+    **The archive starts May 2022 — there is no earlier data to fetch.**
+    the-odds-api's WNBA page documents featured markets (moneyline,
+    spreads, totals) as available from May 2022 and other markets
+    (player props, quarter/half) from May 2023; the earliest capture in
+    this database is 2022-05-21. Since the 2022 season opened 2022-05-06,
+    its first ~two weeks are permanently unobtainable — see [Coverage
+    boundaries](#coverage-boundaries--whats-missing-and-why). Because
+    this command is date-ranged over OUR games table, it will happily
+    re-query that range and return nothing; that's a no-op, not a bug.
   - `external_id` is `"{event_id}:{vendor}"`, not the bare event id --
     the-odds-api's own event `id` is per-EVENT (shared by every bookmaker
     quoting it), so using it alone as `external_id` under
@@ -500,6 +579,20 @@ full `/players` sweep, `backfill-odds-api-history`) are run manually/by
 agent, not on a recurring schedule — the recurring jobs only cover the
 current season plus rolling-window data.
 
+**These jobs fail silently by design.** Every script no-ops if the
+project, Postgres, or `.env` isn't present on that machine, so a
+launchd job reporting exit 0 means "ran and did nothing" just as often
+as "ran and ingested." `launchctl list` looking healthy is therefore not
+evidence that data is arriving — only `max(captured_at)` is (see [How to
+refresh this doc](#how-to-refresh-this-doc)).
+
+The realistic failure mode is Postgres being unreachable, and the
+realistic cause of *that* is **Docker's VM disk filling up** — it took
+down ingestion for 14 days in July 2026. Keep `diskSizeMiB` in
+`~/Library/Group Containers/group.com.docker/settings.json` generous
+(160 GiB as of this writing); the underlying `Docker.raw` is sparse, so
+headroom is close to free until used.
+
 ---
 
 ## CLI command reference
@@ -580,6 +673,38 @@ grep -n '@cli.command' wnba_engine/cli/main.py
 
 # Data quality status
 uv run wnba-engine validate
+```
+
+**Is ingestion actually running?** The single most useful health query —
+every one of these should be within a day or two of now. If they all
+stop on the same date, ingestion died then (see the outage note under
+[Coverage boundaries](#coverage-boundaries--whats-missing-and-why)):
+
+```bash
+docker exec -i wnba-analytics-engine-postgres-1 psql -U wnba -d wnba_engine -c "
+select 'market_price_snapshots' t, max(captured_at)::date last_data from market_price_snapshots
+union all select 'sportsbook_game_odds', max(captured_at)::date from sportsbook_game_odds
+union all select 'injury_reports', max(reported_at)::date from injury_reports
+union all select 'team_standings_history', max(captured_at)::date from team_standings_history
+union all select 'games (latest final)', max(start_time)::date from games where status='final';
+"
+```
+
+Odds coverage, filtered to games books actually price (see [Coverage
+boundaries](#coverage-boundaries--whats-missing-and-why) — counting
+preseason and All-Star games here produces a meaningless number):
+
+```bash
+docker exec -i wnba-analytics-engine-postgres-1 psql -U wnba -d wnba_engine -c "
+select g.season, count(*) games,
+       count(*) filter (where not exists (
+         select 1 from sportsbook_game_odds o
+         where o.game_id = g.id and o.source = 'the_odds_api')) as missing
+from games g
+where g.status = 'final'
+  and g.season_type in ('regular-season','post-season')
+group by 1 order by 1;
+"
 ```
 
 Use `count(*)` as above, not `pg_stat_user_tables.n_live_tup`: those
