@@ -8,6 +8,7 @@ and the mapping in one transaction-scoped step and return the internal id.
 from __future__ import annotations
 
 import unicodedata
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 from psycopg import Connection
@@ -304,38 +305,47 @@ def find_player_by_name(
 
     Resolution order: exact -> diacritic-folded -> curated alias
     (wnba_engine/player_aliases.py, for name changes and provider
-    misspellings) -> reversed order, if opted in. Leading/trailing
-    whitespace is stripped up front: providers really do emit
-    " Ezi Magbegor" and "Satou Sabally ".
+    misspellings) -> reversed order, then reversed-AND-aliased, if opted
+    in. Leading/trailing whitespace is stripped up front: providers really
+    do emit " Ezi Magbegor" and "Satou Sabally ".
     """
     full_name = full_name.strip()
     row = conn.execute("SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)).fetchone()
     if row is not None:
         return int(row[0])
 
-    folded_target = _fold_diacritics(full_name).lower()
     candidates = conn.execute("SELECT id, full_name FROM players").fetchall()
-    for player_id, candidate in candidates:
-        if _fold_diacritics(candidate).lower() == folded_target:
-            return int(player_id)
-
+    attempts: list[str | None] = [full_name]
     # Curated aliases are exact, individually-verified mappings, so unlike
     # the reversed heuristic below they're safe for every caller.
-    aliased = player_aliases.canonical_name(full_name)
-    if aliased is not None:
-        folded_alias = _fold_diacritics(aliased).lower()
-        for player_id, candidate in candidates:
-            if _fold_diacritics(candidate).lower() == folded_alias:
-                return int(player_id)
+    attempts.append(player_aliases.canonical_name(full_name))
 
-    if not allow_reversed:
-        return None
-    reversed_name = _reverse_name_order(full_name)
-    if reversed_name is None:
-        return None
-    folded_reversed = _fold_diacritics(reversed_name).lower()
+    if allow_reversed:
+        reversed_name = _reverse_name_order(full_name)
+        attempts.append(reversed_name)
+        if reversed_name is not None:
+            # Reversal and aliasing must COMPOSE: bovada wrote "Durr Asia",
+            # which reverses to "Asia Durr" -- itself an alias for the
+            # canonical "AD Durr". Without this step a name needing BOTH
+            # transforms stays silently unresolved.
+            attempts.append(player_aliases.canonical_name(reversed_name))
+
+    for attempt in attempts:
+        if attempt:
+            matched = _match_folded(candidates, attempt)
+            if matched is not None:
+                return matched
+    return None
+
+
+def _match_folded(candidates: Sequence[tuple[int, str]], target: str) -> int | None:
+    """Diacritic-insensitive exact match of `target` against candidate
+    full_names -- Postgres ILIKE is accent-sensitive, and this stays
+    Python-side (small player count, only runs on a miss) rather than
+    requiring the unaccent extension."""
+    folded_target = _fold_diacritics(target).lower()
     for player_id, candidate in candidates:
-        if _fold_diacritics(candidate).lower() == folded_reversed:
+        if _fold_diacritics(candidate).lower() == folded_target:
             return int(player_id)
     return None
 

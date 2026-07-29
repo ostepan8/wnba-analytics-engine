@@ -635,6 +635,22 @@ def test_find_player_by_name_strips_surrounding_whitespace(clean_db):
         assert entity_repo.find_player_by_name(conn, "Ezi Magbegor ") == player_id
 
 
+def test_find_player_by_name_composes_reversal_with_aliases(clean_db):
+    """bovada wrote "Durr Asia": reversing gives "Asia Durr", which is
+    itself an alias for the canonical "AD Durr". A name needing BOTH
+    transforms must still resolve."""
+    with clean_db.connection() as conn:
+        player_id = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="d1", full_name="AD Durr", position="G")
+        )
+        conn.commit()
+
+        assert entity_repo.find_player_by_name(conn, "Asia Durr") == player_id  # alias only
+        assert (
+            entity_repo.find_player_by_name(conn, "Durr Asia", allow_reversed=True) == player_id
+        )
+
+
 def test_find_player_by_name_reversed_fallback_is_opt_in(clean_db):
     """Real gap found live: bovada writes some player props "Last First"
     ("Austin Shakira"), inconsistently and only for some players in the
