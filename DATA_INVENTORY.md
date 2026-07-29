@@ -442,6 +442,27 @@ in as a real, integrated source rather than a separate personal project.
     `description` per outcome. Unresolved names are logged and skipped,
     never created: a sportsbook's spelling is far too thin a basis to
     originate a canonical player, and a typo would silently fork one.
+    Two real complications, both found live:
+    - **bovada writes some props "Last First"** ("Austin Shakira",
+      "Delle Donne Elena") while every other book uses "First Last" —
+      and it's inconsistent *within a single response*, naming some
+      players correctly and reversing others. Handled by an opt-in
+      reversed-order fallback in `find_player_by_name`
+      (`allow_reversed=True`), which moves the LAST token to the front
+      so multi-word surnames survive. It dropped unresolved names from
+      44 to 6 on a three-day 2023 sample. Opt-in on purpose: the same
+      helper serves ESPN's transactions pipeline, which extracts names
+      best-effort from free text where a reversed retry would
+      manufacture matches out of noise.
+    - **Players change their names.** The residual misses are real
+      people under a former name — e.g. 2023 props say "Cheyenne
+      Parker", but the canonical row is "Cheyenne Parker-Tyus" (she
+      changed it in 2024). Deliberately NOT fuzzy-matched away:
+      "Cheyenne Parker" and "Candace Parker" are different people, and
+      loose surname matching on a sportsbook feed would silently
+      mis-attribute props. If this grows past a handful across the full
+      backfill, the right fix is an explicit alias table, not a looser
+      matcher.
 - Games resolve via the same team+date crosswalk pattern
   Kalshi/Polymarket/balldontlie use (`entity_repo.find_game_id_by_teams`),
   since the-odds-api's event id is a new external id space.

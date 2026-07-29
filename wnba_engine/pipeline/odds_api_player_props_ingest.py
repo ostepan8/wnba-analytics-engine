@@ -249,7 +249,11 @@ def _persist_props(db: Database, game_id: int, parsed: ParsedPropEvent) -> tuple
     unresolved_names: set[str] = set()
     with db.connection() as conn:
         for prop in parsed.props:
-            player_id = entity_repo.find_player_by_name(conn, prop.player_name)
+            # allow_reversed: bovada writes some props "Last First" while
+            # every other book uses "First Last" -- see find_player_by_name.
+            player_id = entity_repo.find_player_by_name(
+                conn, prop.player_name, allow_reversed=True
+            )
             if player_id is None:
                 unresolved += 1
                 unresolved_names.add(prop.player_name)
