@@ -35,22 +35,29 @@ to get current numbers):
 
 | Table | Rows | Table | Rows |
 |---|---:|---|---:|
-| `game_plays` | 504,231 | `sportsbook_game_odds` | 123,412 |
-| `market_price_snapshots` | 62,069 | `player_game_stats` | 60,333 |
-| `player_advanced_stats` | 28,751 | `injury_reports` | 24,037 |
-| `sportsbook_player_prop_odds` | 12,652 | `provider_entity_map` | 5,387 |
+| `game_plays` | 504,231 | `sportsbook_player_prop_odds` | 303,055 |
+| `sportsbook_game_odds` | 123,494 | `market_price_snapshots` | 63,599 |
+| `player_game_stats` | 60,333 | `player_advanced_stats` | 28,751 |
+| `injury_reports` | 24,073 | `provider_entity_map` | 5,414 |
 | `team_game_stats` | 5,284 | `game_officials` | 4,111 |
-| `team_advanced_stats` | 2,552 | `games` | 1,357 |
+| `team_advanced_stats` | 2,552 | `games` | 1,369 |
 | `players` | 1,005 | `player_shot_zone_stats` | 878 |
-| `player_transactions` | 506 | `team_standings_history` | 133 |
+| `player_transactions` | 506 | `team_standings_history` | 138 |
 | `season_awards` | 129 | `balldontlie_injury_reports` | 79 |
 | `team_standings` | 64 | `team_shot_zone_stats` | 64 |
 | `teams` | 28 (15 real franchises) | `odds_api_game_scores` | 18 |
 
-23 tables total — the 21 above plus `schema_versions` (migration
+23 tables total — the 22 above plus `schema_versions` (migration
 bookkeeping, 21 rows). `uv run wnba-engine validate` (12 checks): **all
 12 pass**, with 10 individually-acknowledged known-benign violations
 still reported — see [Data quality](#data-quality--validation).
+
+`sportsbook_player_prop_odds` is now the second-largest table at
+**303,055 rows** (290,403 the-odds-api + 12,652 balldontlie), covering
+2023–present. It was 12,652 rows and balldontlie-only until the
+the-odds-api prop integration landed — see
+[the-odds-api](#the-odds-api-paid-high-quota-plan) for per-season
+coverage and the quota cost of rebuilding it.
 
 `odds_api_game_scores` (18 rows against 1,357 games) is the one table
 that looks alarmingly sparse and is *supposed* to be: the scores
@@ -454,15 +461,52 @@ in as a real, integrated source rather than a separate personal project.
       helper serves ESPN's transactions pipeline, which extracts names
       best-effort from free text where a reversed retry would
       manufacture matches out of noise.
-    - **Players change their names.** The residual misses are real
-      people under a former name — e.g. 2023 props say "Cheyenne
-      Parker", but the canonical row is "Cheyenne Parker-Tyus" (she
-      changed it in 2024). Deliberately NOT fuzzy-matched away:
-      "Cheyenne Parker" and "Candace Parker" are different people, and
-      loose surname matching on a sportsbook feed would silently
-      mis-attribute props. If this grows past a handful across the full
-      backfill, the right fix is an explicit alias table, not a looser
-      matcher.
+    - **Players change their names, and books misspell them.** The full
+      backfill's unresolved set was just **11 distinct names** across
+      four seasons, each recurring thousands of times (2025's entire
+      2,119-row miss was one player: "Skylar Diggins-Smith", canonically
+      "Skylar Diggins"). Handled by `wnba_engine/player_aliases.py` —
+      exact, individually-verified mappings covering former names
+      (Parker/-Tyus, Laney/-Hamilton, Asia Durr/AD Durr) and consistent
+      book misspellings (Napeesha Collier, Alisha Gray, Natisha
+      Heideman). Applied for **every** caller, since an exact curated
+      mapping can't manufacture a false match the way a heuristic could;
+      that also fixes the two `season_awards` misses noted above, which
+      were this same Diggins problem.
+      Aliasing and the reversed-order fallback **compose** — bovada's
+      "Durr Asia" reverses to "Asia Durr", itself an alias for "AD
+      Durr".
+
+### Prop coverage, and what it cost
+
+Per season, after the 2023–2026 historical sweep:
+
+| Season | Prop rows | Games | Coverage |
+|---|---:|---:|---|
+| 2023 | 33,022 | 258 | 05-20 → 10-19 |
+| 2024 | 73,833 | 263 | 05-14 → 10-21 |
+| 2025 | 106,671 | 311 | 05-16 → 10-11 |
+| 2026 | 76,877 | 214 | 05-08 → ongoing |
+
+Real spend was **~256k quota units across two passes** (~128k per full
+sweep), against a ~209k single-pass estimate — absent T-7d checkpoints
+come in cheaper than budgeted, and the second pass existed only to
+recover what the first pass's bugs dropped.
+
+**What remains unresolved is correct, not outstanding work.** Three
+names survive, all deliberately:
+
+- `Collier N.` (67 rows) — abbreviated, and BOTH Napheesa Collier and
+  Charli Collier are real players here. Genuinely ambiguous.
+- `Megan DiLeo` (5 rows) — no such player in `players` at all; not
+  invented from a sportsbook string.
+- Assorted single rows for players who never appear in a box score.
+
+**Lesson for the next backfill of this kind:** a three-day sample
+validated the pipeline and caught one real bug, but three further
+defects — a crash on player-less outcomes, untrimmed names, and the
+alias problem — only surfaced once a *full season* ran. Run one complete
+season before committing to all of them.
 - Games resolve via the same team+date crosswalk pattern
   Kalshi/Polymarket/balldontlie use (`entity_repo.find_game_id_by_teams`),
   since the-odds-api's event id is a new external id space.
