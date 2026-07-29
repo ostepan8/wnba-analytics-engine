@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
+from typing import NoReturn
 
 import httpx
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
@@ -143,16 +144,60 @@ class JsonHttpClient:
         try:
             response = self._get_with_retry(path, params)
         except (httpx.HTTPError, ValueError) as exc:
-            safe_params = self._redacted_params(params)
-            safe_error = self._redact(str(exc), params)
-            logger.error(
-                "request failed provider=%s url=%s params=%s error=%s",
-                self._provider,
-                url,
-                safe_params,
-                safe_error,
-            )
-            raise ProviderRequestError(self._provider, url, safe_error) from exc
+            self._raise_request_error(url, params, exc)
+        return self._decode_json(response, url)
+
+    def get_json_optional(
+        self,
+        path: str,
+        params: Mapping[str, object] | None = None,
+        *,
+        absent_statuses: Collection[int],
+    ) -> object | None:
+        """As get_json, but returns None for the listed statuses instead of
+        raising.
+
+        For endpoints where a status is a legitimate "this doesn't exist"
+        answer rather than a failure -- e.g. the-odds-api's per-event
+        historical odds 404s when the event id wasn't listed yet at the
+        requested timestamp, which is the normal case for a T-7d checkpoint
+        on a game the provider posted later. Deliberately narrow: only the
+        named statuses are absorbed, so auth failures and server errors
+        still surface as ProviderRequestError rather than being silently
+        read as "no data".
+        """
+        url = f"{self._client.base_url.join(path)}"
+        try:
+            response = self._get_with_retry(path, params)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in absent_statuses:
+                logger.info(
+                    "treating status as absent provider=%s url=%s status=%s",
+                    self._provider,
+                    url,
+                    exc.response.status_code,
+                )
+                return None
+            self._raise_request_error(url, params, exc)
+        except (httpx.HTTPError, ValueError) as exc:
+            self._raise_request_error(url, params, exc)
+        return self._decode_json(response, url)
+
+    def _raise_request_error(
+        self, url: str, params: Mapping[str, object] | None, exc: Exception
+    ) -> NoReturn:
+        safe_params = self._redacted_params(params)
+        safe_error = self._redact(str(exc), params)
+        logger.error(
+            "request failed provider=%s url=%s params=%s error=%s",
+            self._provider,
+            url,
+            safe_params,
+            safe_error,
+        )
+        raise ProviderRequestError(self._provider, url, safe_error) from exc
+
+    def _decode_json(self, response: httpx.Response, url: str) -> object:
         try:
             return response.json()
         except ValueError as exc:

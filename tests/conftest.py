@@ -157,3 +157,13 @@ def odds_api_historical_odds_payload() -> object:
 @pytest.fixture
 def odds_api_scores_payload() -> object:
     return load_fixture("odds_api_scores.json")
+
+
+@pytest.fixture
+def odds_api_player_props_payload() -> object:
+    return load_fixture("odds_api_player_props.json")
+
+
+@pytest.fixture
+def odds_api_historical_player_props_payload() -> object:
+    return load_fixture("odds_api_historical_player_props.json")

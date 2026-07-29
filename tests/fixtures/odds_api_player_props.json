@@ -1,0 +1,322 @@
+{
+  "id": "c01616be622aa0fcab0ac0351d05e264",
+  "sport_key": "basketball_wnba",
+  "sport_title": "WNBA",
+  "commence_time": "2026-07-30T00:00:00Z",
+  "home_team": "Dallas Wings",
+  "away_team": "Atlanta Dream",
+  "bookmakers": [
+    {
+      "key": "fanduel",
+      "title": "FanDuel",
+      "markets": [
+        {
+          "key": "player_assists",
+          "last_update": "2026-07-29T16:08:40Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -162,
+              "point": 4.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": 122,
+              "point": 4.5
+            },
+            {
+              "name": "Over",
+              "description": "Jordin Canada",
+              "price": -158,
+              "point": 7.5
+            },
+            {
+              "name": "Under",
+              "description": "Jordin Canada",
+              "price": 118,
+              "point": 7.5
+            }
+          ]
+        },
+        {
+          "key": "player_points",
+          "last_update": "2026-07-29T16:08:40Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -110,
+              "point": 14.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": -118,
+              "point": 14.5
+            },
+            {
+              "name": "Over",
+              "description": "Naz Hillmon",
+              "price": -102,
+              "point": 8.5
+            },
+            {
+              "name": "Under",
+              "description": "Naz Hillmon",
+              "price": -128,
+              "point": 8.5
+            }
+          ]
+        },
+        {
+          "key": "player_points_rebounds_assists",
+          "last_update": "2026-07-29T16:08:40Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -125,
+              "point": 30.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": -106,
+              "point": 30.5
+            },
+            {
+              "name": "Over",
+              "description": "Angel Reese",
+              "price": -104,
+              "point": 30.5
+            },
+            {
+              "name": "Under",
+              "description": "Angel Reese",
+              "price": -128,
+              "point": 30.5
+            }
+          ]
+        },
+        {
+          "key": "player_rebounds",
+          "last_update": "2026-07-29T16:08:40Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -102,
+              "point": 11.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": -130,
+              "point": 11.5
+            },
+            {
+              "name": "Over",
+              "description": "Angel Reese",
+              "price": -136,
+              "point": 11.5
+            },
+            {
+              "name": "Under",
+              "description": "Angel Reese",
+              "price": 102,
+              "point": 11.5
+            }
+          ]
+        },
+        {
+          "key": "player_threes",
+          "last_update": "2026-07-29T16:08:40Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Naz Hillmon",
+              "price": 194,
+              "point": 1.5
+            },
+            {
+              "name": "Under",
+              "description": "Naz Hillmon",
+              "price": -270,
+              "point": 1.5
+            },
+            {
+              "name": "Over",
+              "description": "Allisha Gray",
+              "price": -162,
+              "point": 1.5
+            },
+            {
+              "name": "Under",
+              "description": "Allisha Gray",
+              "price": 122,
+              "point": 1.5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "draftkings",
+      "title": "DraftKings",
+      "markets": [
+        {
+          "key": "player_assists",
+          "last_update": "2026-07-29T16:08:24Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jordin Canada",
+              "price": -101,
+              "point": 8.5
+            },
+            {
+              "name": "Under",
+              "description": "Jordin Canada",
+              "price": -135,
+              "point": 8.5
+            },
+            {
+              "name": "Over",
+              "description": "Paige Bueckers",
+              "price": -151,
+              "point": 5.5
+            },
+            {
+              "name": "Under",
+              "description": "Paige Bueckers",
+              "price": 111,
+              "point": 5.5
+            }
+          ]
+        },
+        {
+          "key": "player_points",
+          "last_update": "2026-07-29T16:08:24Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Paige Bueckers",
+              "price": -116,
+              "point": 20.5
+            },
+            {
+              "name": "Under",
+              "description": "Paige Bueckers",
+              "price": -114,
+              "point": 20.5
+            },
+            {
+              "name": "Over",
+              "description": "Allisha Gray",
+              "price": -113,
+              "point": 19.5
+            },
+            {
+              "name": "Under",
+              "description": "Allisha Gray",
+              "price": -117,
+              "point": 19.5
+            }
+          ]
+        },
+        {
+          "key": "player_points_rebounds_assists",
+          "last_update": "2026-07-29T16:08:24Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -107,
+              "point": 31.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": -127,
+              "point": 31.5
+            },
+            {
+              "name": "Over",
+              "description": "Paige Bueckers",
+              "price": -127,
+              "point": 30.5
+            },
+            {
+              "name": "Under",
+              "description": "Paige Bueckers",
+              "price": -107,
+              "point": 30.5
+            }
+          ]
+        },
+        {
+          "key": "player_rebounds",
+          "last_update": "2026-07-29T16:08:24Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Angel Reese",
+              "price": -130,
+              "point": 11.5
+            },
+            {
+              "name": "Under",
+              "description": "Angel Reese",
+              "price": -104,
+              "point": 11.5
+            },
+            {
+              "name": "Over",
+              "description": "Jessica Shepard",
+              "price": -103,
+              "point": 11.5
+            },
+            {
+              "name": "Under",
+              "description": "Jessica Shepard",
+              "price": -131,
+              "point": 11.5
+            }
+          ]
+        },
+        {
+          "key": "player_threes",
+          "last_update": "2026-07-29T16:08:24Z",
+          "outcomes": [
+            {
+              "name": "Over",
+              "description": "Rhyne Howard",
+              "price": -173,
+              "point": 2.5
+            },
+            {
+              "name": "Under",
+              "description": "Rhyne Howard",
+              "price": 126,
+              "point": 2.5
+            },
+            {
+              "name": "Over",
+              "description": "Azzi Fudd",
+              "price": -195,
+              "point": 1.5
+            },
+            {
+              "name": "Under",
+              "description": "Azzi Fudd",
+              "price": 142,
+              "point": 1.5
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from wnba_engine.models.odds import GameOddsRow
+from wnba_engine.models.odds import GameOddsRow, PlayerPropOddsRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,3 +26,29 @@ class OddsApiEventRef:
 class ParsedOddsEvent:
     event: OddsApiEventRef
     rows: tuple[GameOddsRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OddsApiPropRow:
+    """One parsed player-prop line, still carrying the player's NAME rather
+    than an id.
+
+    the-odds-api exposes no player identifier anywhere in a prop payload --
+    the player exists only as the free-text `description` on each outcome
+    (verified live). So unlike balldontlie's props, which carry that
+    provider's own numeric player id and resolve through the crosswalk,
+    these can only be resolved by name against players.full_name. Keeping
+    the raw name on this model (rather than resolving inside the parser)
+    preserves the repo's parser/pipeline split: parsers stay pure and
+    database-free, and the name→id resolution happens in the pipeline
+    where a connection exists.
+    """
+
+    player_name: str
+    row: PlayerPropOddsRow
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedPropEvent:
+    event: OddsApiEventRef
+    props: tuple[OddsApiPropRow, ...]
