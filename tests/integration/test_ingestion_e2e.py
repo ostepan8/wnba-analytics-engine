@@ -589,6 +589,52 @@ def test_find_player_by_name_falls_back_to_diacritic_insensitive_match(clean_db)
         assert entity_repo.find_player_by_name(conn, "Someone Else") is None
 
 
+def test_find_player_by_name_resolves_curated_aliases(clean_db):
+    """Name changes and provider misspellings, found by running a real
+    multi-season backfill. Always-on (unlike the reversed heuristic)
+    because each entry is an exact, individually-verified mapping."""
+    with clean_db.connection() as conn:
+        diggins = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="a1", full_name="Skylar Diggins", position="G")
+        )
+        collier = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="a2", full_name="Napheesa Collier", position="F")
+        )
+        conn.commit()
+
+        # Former name (2023-2025 odds still say "-Smith").
+        assert entity_repo.find_player_by_name(conn, "Skylar Diggins-Smith") == diggins
+        # Provider misspelling.
+        assert entity_repo.find_player_by_name(conn, "Napeesha Collier") == collier
+
+
+def test_find_player_by_name_leaves_ambiguous_names_unresolved(clean_db):
+    """Both Colliers are real players, so "Collier N." must NOT resolve --
+    a wrong prop attribution is silent and plausible-looking."""
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="b1", full_name="Napheesa Collier", position="F")
+        )
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="b2", full_name="Charli Collier", position="C")
+        )
+        conn.commit()
+
+        assert entity_repo.find_player_by_name(conn, "Collier N.", allow_reversed=True) is None
+
+
+def test_find_player_by_name_strips_surrounding_whitespace(clean_db):
+    """Providers really do emit " Ezi Magbegor" and "Satou Sabally "."""
+    with clean_db.connection() as conn:
+        player_id = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="c1", full_name="Ezi Magbegor", position="C")
+        )
+        conn.commit()
+
+        assert entity_repo.find_player_by_name(conn, " Ezi Magbegor") == player_id
+        assert entity_repo.find_player_by_name(conn, "Ezi Magbegor ") == player_id
+
+
 def test_find_player_by_name_reversed_fallback_is_opt_in(clean_db):
     """Real gap found live: bovada writes some player props "Last First"
     ("Austin Shakira"), inconsistently and only for some players in the
