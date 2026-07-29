@@ -34,6 +34,7 @@ from pathlib import Path
 
 from wnba_engine.errors import ProviderValidationError
 from wnba_engine.market_capture import (
+    PROVIDER_ESPN_INJURIES,
     PROVIDER_KALSHI,
     PROVIDER_POLYMARKET,
     SCHEMA_VERSION,
@@ -154,6 +155,27 @@ class ReplayPolymarketClient:
         del closed, limit  # recorded at capture time, not re-selectable
         # An empty list is the live pipeline's stop signal.
         return self._pages.get(offset, [])
+
+
+class ReplayEspnInjuriesClient:
+    """Serves a recorded ESPN injury report. Same surface as EspnClient
+    for the one method the injury pipeline calls."""
+
+    def __init__(self, capture: CaptureFile) -> None:
+        if capture.provider != PROVIDER_ESPN_INJURIES:
+            raise ProviderValidationError(
+                PROVIDER,
+                f"expected a {PROVIDER_ESPN_INJURIES} capture, got {capture.provider!r}",
+                context=str(capture.path),
+            )
+        self._payload: object = {}
+        for entry in capture.pages:
+            if isinstance(entry, Mapping) and "payload" in entry:
+                self._payload = entry["payload"]
+                break
+
+    def fetch_injuries(self) -> object:
+        return self._payload
 
 
 def list_capture_files(directory: Path, provider: str) -> Sequence[Path]:

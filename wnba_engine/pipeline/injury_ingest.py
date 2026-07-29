@@ -29,8 +29,18 @@ class InjuryIngestResult:
     unresolved_teams: int = 0
 
 
-def ingest_current_injury_report(db: Database, client: EspnClient) -> InjuryIngestResult:
-    captured_at = datetime.now(UTC)
+def ingest_current_injury_report(
+    db: Database, client: EspnClient, *, captured_at: datetime | None = None
+) -> InjuryIngestResult:
+    """Ingest the current league-wide ESPN injury report.
+
+    captured_at defaults to now, which is correct for a live snapshot.
+    REPLAY must pass the payload's real capture time instead (see
+    wnba_engine/market_capture/) -- this endpoint is current-state-only
+    with no historical version, so a replayed file stamped with today's
+    clock would claim an old report described today's injuries.
+    """
+    captured_at = captured_at or datetime.now(UTC)
     entries = parse_injuries(client.fetch_injuries(), captured_at=captured_at)
 
     player_id_by_external_id: dict[str, int] = {}

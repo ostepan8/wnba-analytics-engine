@@ -14,7 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from wnba_engine.models.games import TeamRef
 from wnba_engine.pipeline.market_capture_ingest import ingest_captures
+from wnba_engine.repositories import entity_repo
 
 pytestmark = pytest.mark.integration
 
@@ -136,3 +138,59 @@ def test_empty_capture_directory_is_a_no_op(clean_db, tmp_path):
 
     assert result.files_seen == 0
     assert result.snapshots_inserted == 0
+
+
+def _seed_injury_teams(conn) -> None:
+    """The injury pipeline resolves teams by ESPN id, so they must already
+    exist -- exactly as they would from a scoreboard sync in the real
+    pipeline."""
+    for external_id, name in (("20", "Atlanta Dream"), ("6", "Los Angeles Sparks")):
+        entity_repo.resolve_or_create_team(
+            conn, "espn", TeamRef(external_id=external_id, name=name, abbreviation=name[:3].upper())
+        )
+
+
+def test_espn_injury_captures_replay_with_their_recorded_time(clean_db, tmp_path):
+    """ESPN's injury endpoint is current-state-only with no historical
+    version, so captures are the only way to build history -- and each
+    must land at the moment it was actually observed."""
+    _write(
+        tmp_path,
+        "espn-injuries",
+        [{"page": 0, "payload": load_fixture("espn_injuries.json")}],
+        "20260720T153000Z",
+    )
+    with clean_db.connection() as conn:
+        _seed_injury_teams(conn)
+        conn.commit()
+
+    result = ingest_captures(clean_db, tmp_path)
+
+    assert result.files_ingested == 1
+    assert result.snapshots_inserted > 0
+
+    with clean_db.connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT source, captured_at FROM injury_reports"
+        ).fetchall()
+
+    # Same source the LIVE job writes -- one feed's history, not two.
+    assert [(r[0], r[1]) for r in rows] == [("espn", CAPTURED_AT)]
+
+
+def test_espn_injury_replay_is_idempotent(clean_db, tmp_path):
+    _write(
+        tmp_path,
+        "espn-injuries",
+        [{"page": 0, "payload": load_fixture("espn_injuries.json")}],
+        "20260720T153000Z",
+    )
+    with clean_db.connection() as conn:
+        _seed_injury_teams(conn)
+        conn.commit()
+
+    first = ingest_captures(clean_db, tmp_path, replay_all=True)
+    second = ingest_captures(clean_db, tmp_path, replay_all=True)
+
+    assert first.snapshots_inserted > 0
+    assert second.snapshots_inserted == 0

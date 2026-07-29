@@ -690,11 +690,17 @@ refresh this doc](#how-to-refresh-this-doc)).
 
 ### Off-box market capture (the always-on host)
 
-Kalshi/Polymarket prices are the one stream that **cannot be recovered
-after the fact** — no historical endpoint exists, so an observation
-missed is gone. A laptop that sleeps is the wrong place to own it, as
-the July 2026 outage proved by destroying two thirds of every
-prediction-market price ever collected.
+Three feeds **cannot be recovered after the fact** — they serve only
+current state, with no historical endpoint, so an observation missed is
+gone. A laptop that sleeps is the wrong place to own them, as the July
+2026 outage proved by destroying two thirds of every prediction-market
+price ever collected.
+
+| Feed | Why unrecoverable |
+|---|---|
+| Kalshi prices | No historical endpoint |
+| Polymarket prices | No historical endpoint |
+| ESPN injury report | Current-state only. The Wayback backfill recovers only what archive.org crawled — **11 days across three months** of the 2026 season, vs. 48/day here |
 
 So capture runs on an always-on host (`mac-studio`, reachable over
 Tailscale), **every 30 minutes**, and this machine loads from it:
@@ -703,7 +709,7 @@ Tailscale), **every 30 minutes**, and this machine loads from it:
 |---|---|---|
 | `com.ostepan.wnba-market-capture` | capture host | LaunchAgent, every 30 min, `RunAtLoad` |
 | `wnba_engine/market_capture/capture.py` | deployed to host | stdlib-only, no repo/uv/DB/secrets |
-| `~/wnba-market-capture/data/` | capture host | `<provider>/<YYYYMMDDTHHMMSSZ>.json.gz` |
+| `~/wnba-market-capture/data/` | capture host | `{kalshi,polymarket,espn-injuries}/<YYYYMMDDTHHMMSSZ>.json.gz` |
 | `scripts/deploy-capture-host.sh` | here | pushes the script + agent (idempotent) |
 | `scripts/sync-market-captures.sh` | here | rsync, then `ingest-market-captures` |
 
@@ -725,8 +731,12 @@ Consequences worth knowing:
   files, and `UNIQUE(provider, market_external_id, captured_at)`
   (migration 0022) rejects anything that slips past it. Re-running a
   sync, or syncing twice, inserts nothing.
-- **Volume:** ~530 KB per run across both providers, so roughly 25 MB/day
-  or ~9 GB/year at the 30-minute cadence. Trivial against the host's
+- **Replayed injuries write under `source = 'espn'`** — the SAME source
+  the live snapshot job uses, because they are the same observation from
+  the same endpoint, just recorded somewhere that doesn't sleep. A
+  separate source value would fork one feed's history into two.
+- **Volume:** ~550 KB per run across all three feeds, so roughly 26 MB/day
+  or ~9.5 GB/year at the 30-minute cadence. Trivial against the host's
   378 GB free, but not nothing — worth a retention policy eventually.
 - The laptop's own 2h `snapshot-kalshi`/`snapshot-polymarket` are
   **deliberately left running** as a fallback: a snapshot taken here at a

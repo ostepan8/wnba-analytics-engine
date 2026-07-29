@@ -43,6 +43,7 @@ SCHEMA_VERSION = 1
 
 KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2/"
 POLYMARKET_BASE = "https://gamma-api.polymarket.com/"
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/"
 
 KALSHI_MARKETS_PAGE_LIMIT = 200
 POLYMARKET_PAGE_LIMIT = 100
@@ -155,6 +156,18 @@ def capture_polymarket() -> list[object]:
     return pages
 
 
+def capture_espn_injuries() -> list[object]:
+    """The league-wide injury report -- one unpaginated GET, no auth.
+
+    Captured here for the same reason as the market feeds: ESPN serves
+    only the CURRENT report and has no historical endpoint, so a day not
+    recorded is a day lost. The Wayback Machine recovers only what
+    archive.org happened to crawl, which across three months of the 2026
+    season was 11 days.
+    """
+    return [{"page": 0, "payload": _get_json(ESPN_BASE, "injuries", {})}]
+
+
 def write_capture(root: Path, provider: str, captured_at: datetime, pages: list[object]) -> Path:
     """Write atomically: a scheduler and an rsync can race, and a reader
     must never observe a half-written file."""
@@ -184,7 +197,12 @@ def main(argv: list[str] | None = None) -> int:
 
     captured_at = datetime.now(UTC).replace(microsecond=0)
     failures = 0
-    for provider, collect in (("kalshi", capture_kalshi), ("polymarket", capture_polymarket)):
+    feeds = (
+        ("kalshi", capture_kalshi),
+        ("polymarket", capture_polymarket),
+        ("espn-injuries", capture_espn_injuries),
+    )
+    for provider, collect in feeds:
         try:
             pages = collect()
         except Exception as exc:  # noqa: BLE001 -- one provider must not sink the other

@@ -19,18 +19,30 @@ from pathlib import Path
 
 from wnba_engine.db.pool import Database
 from wnba_engine.errors import WnbaEngineError
-from wnba_engine.market_capture import PROVIDER_KALSHI, PROVIDER_POLYMARKET
+from wnba_engine.market_capture import (
+    PROVIDER_ESPN_INJURIES,
+    PROVIDER_KALSHI,
+    PROVIDER_POLYMARKET,
+)
 from wnba_engine.market_capture.replay import (
     CaptureFile,
+    ReplayEspnInjuriesClient,
     ReplayKalshiClient,
     ReplayPolymarketClient,
     list_capture_files,
 )
+from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
-from wnba_engine.repositories import market_repo
+from wnba_engine.repositories import injury_repo, market_repo
 
 logger = logging.getLogger(__name__)
+
+# Replayed injury captures are written under the SAME source the live
+# snapshot job uses, because they are the same observation taken from the
+# same endpoint -- just recorded somewhere that doesn't sleep. A separate
+# source value would fork one feed's history into two.
+INJURY_SOURCE = "espn"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +66,7 @@ def ingest_captures(
     understood on the day it was recorded.
     """
     result = CaptureIngestResult()
-    for provider in (PROVIDER_KALSHI, PROVIDER_POLYMARKET):
+    for provider in (PROVIDER_KALSHI, PROVIDER_POLYMARKET, PROVIDER_ESPN_INJURIES):
         result = _ingest_provider(db, directory, provider, replay_all, result)
     return result
 
@@ -69,7 +81,7 @@ def _ingest_provider(
     high_water: datetime | None = None
     if not replay_all:
         with db.connection() as conn:
-            high_water = market_repo.latest_captured_at(conn, provider)
+            high_water = _high_water_mark(conn, provider)
 
     for path in list_capture_files(directory, provider):
         result = replace(result, files_seen=result.files_seen + 1)
@@ -101,13 +113,28 @@ def _ingest_provider(
     return result
 
 
+def _high_water_mark(conn, provider: str) -> datetime | None:
+    """Newest observation already stored for this feed.
+
+    Injuries live in a different table than market prices, and under the
+    source name the LIVE snapshot job already writes ('espn'), so a
+    replayed capture and a live snapshot are the same kind of row -- not
+    a parallel history.
+    """
+    if provider == PROVIDER_ESPN_INJURIES:
+        return injury_repo.latest_captured_at(conn, INJURY_SOURCE)
+    return market_repo.latest_captured_at(conn, provider)
+
+
 def _replay_one(db: Database, capture: CaptureFile, provider: str) -> int:
     if provider == PROVIDER_KALSHI:
-        outcome = ingest_kalshi_wnba_markets(
+        return ingest_kalshi_wnba_markets(
             db, ReplayKalshiClient(capture), captured_at=capture.captured_at
-        )
-        return outcome.snapshots_inserted
-    outcome = ingest_polymarket_wnba_markets(
-        db, ReplayPolymarketClient(capture), captured_at=capture.captured_at
-    )
-    return outcome.snapshots_inserted
+        ).snapshots_inserted
+    if provider == PROVIDER_POLYMARKET:
+        return ingest_polymarket_wnba_markets(
+            db, ReplayPolymarketClient(capture), captured_at=capture.captured_at
+        ).snapshots_inserted
+    return ingest_current_injury_report(
+        db, ReplayEspnInjuriesClient(capture), captured_at=capture.captured_at
+    ).entries_inserted
