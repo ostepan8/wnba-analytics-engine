@@ -11,6 +11,7 @@ from psycopg import Connection
 
 from wnba_engine.db.pool import Database
 from wnba_engine.models.validation import CheckResult, ValidationReport
+from wnba_engine.validation import acknowledged as ack
 from wnba_engine.validation import (
     bounds_checks,
     consistency_checks,
@@ -34,7 +35,28 @@ _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
 )
 
 
+def find_stale_acknowledgements(results: tuple[CheckResult, ...]) -> tuple[str, ...]:
+    """Acknowledgements that matched no violation on this run.
+
+    Every registered check runs every time, so an entry whose key went
+    unmatched means the underlying violation is gone -- fixed upstream,
+    or the data changed shape. Either way the entry is dead weight, and
+    surfacing it keeps acknowledged.py from rotting into a list of
+    things that stopped being true. Reported, never auto-removed:
+    dropping an acknowledgement is a human decision.
+    """
+    matched = {key for result in results for key in result.matched_acknowledgements}
+    return tuple(
+        f"{entry.check_name}: {entry.key} ({entry.reason})"
+        for entry in ack.ACKNOWLEDGEMENTS
+        if entry.key not in matched
+    )
+
+
 def run_all_checks(db: Database) -> ValidationReport:
     with db.connection() as conn:
         results = tuple(check(conn) for check in _CHECKS)
-    return ValidationReport(checks=results)
+    return ValidationReport(
+        checks=results,
+        stale_acknowledgements=find_stale_acknowledgements(results),
+    )

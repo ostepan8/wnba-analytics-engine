@@ -516,6 +516,12 @@ def validate() -> None:
     plays vs ESPN score, ...), crosswalk integrity, and plausibility
     bounds -- see wnba_engine/validation/. Exits non-zero if any check
     fails, so this is safe to wire into a cron/CI gate later.
+
+    Violations individually verified as known-benign (see
+    wnba_engine/validation/acknowledged.py) are still counted and printed,
+    marked [ack], but don't fail the run -- otherwise a permanently-red
+    gate teaches everyone to ignore it. Anything NOT acknowledged still
+    fails, so a new violation of an already-acknowledged check is loud.
     """
     settings = load_settings()
     db = Database(settings.database_url)
@@ -526,10 +532,24 @@ def validate() -> None:
 
     for check in report.checks:
         status = "PASS" if check.passed else "FAIL"
-        click.echo(f"[{status}] {check.name}: {check.violation_count} violation(s)")
+        counts = f"{check.unacknowledged_count} violation(s)"
+        if check.acknowledged_count:
+            counts += f", {check.acknowledged_count} acknowledged"
+        click.echo(f"[{status}] {check.name}: {counts}")
         click.echo(f"       {check.description}")
         for sample in check.sample_violations:
             click.echo(f"       - {sample}")
+        for sample in check.sample_acknowledged:
+            click.echo(f"       - [ack] {sample}")
+
+    if report.stale_acknowledgements:
+        click.echo("")
+        click.echo(
+            "Stale acknowledgements (no longer match any violation -- "
+            "remove them from wnba_engine/validation/acknowledged.py):"
+        )
+        for entry in report.stale_acknowledgements:
+            click.echo(f"  - {entry}")
 
     if not report.passed:
         sys.exit(1)

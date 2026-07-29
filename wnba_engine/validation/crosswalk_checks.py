@@ -6,6 +6,9 @@ directly; these checks are the substitute.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import cast
+
 from psycopg import Connection
 
 from wnba_engine.models.validation import CheckResult
@@ -46,6 +49,19 @@ HAVING count(*) > 1
 """
 
 
+def _duplicate_mapping_key(row: tuple[object, ...]) -> str:
+    """Stable identity for one duplicate-mapping violation.
+
+    Includes the external_ids themselves, not just the canonical row they
+    collapsed onto: a THIRD id joining an already-acknowledged pair must
+    produce a different key so it re-fails instead of riding in on the
+    existing acknowledgement.
+    """
+    provider, entity_type, internal_id, external_ids = row
+    joined = ",".join(str(x) for x in cast("Sequence[object]", external_ids))
+    return f"{provider}/{entity_type}/{internal_id}:{joined}"
+
+
 def check_duplicate_crosswalk_mappings(conn: Connection) -> CheckResult:
     """One provider's entity_type should map exactly one external_id onto
     a given canonical row. More than one usually means two distinct raw
@@ -53,17 +69,24 @@ def check_duplicate_crosswalk_mappings(conn: Connection) -> CheckResult:
     merged into the same canonical row by resolve_or_create_player_by_name's
     name-matching fallback.
 
-    Known, verified-benign exception: balldontlie itself sometimes issues
-    a DIFFERENT player id for the same real person across its own separate
-    endpoints (advanced-stats vs. traditional-box-score, observed live for
-    a handful of players) -- not a provider we control, so this is a real
-    provider-side quirk, not a crosswalk bug. When investigating a flagged
-    balldontlie/player entry, check whether both external_ids consistently
-    appear under the SAME team_id in player_advanced_stats /
-    player_game_stats -- that's strong evidence it's the same person, not
-    a bad merge (verified for 3 real cases this way before concluding they
-    were fine, not "fixed" away here since silently suppressing a
-    legitimate-looking pattern risks hiding a genuinely bad future merge).
+    Two provider-side causes are known and verified benign, and are
+    acknowledged individually in wnba_engine/validation/acknowledged.py
+    rather than suppressed as a class -- a new instance of either still
+    fails, which is the whole point:
+
+    - balldontlie issues a DIFFERENT player id for the same real person
+      across its own separate endpoints (advanced-stats vs traditional
+      box-score). To investigate a flagged balldontlie/player entry,
+      check whether both external_ids consistently appear under the SAME
+      team_id in player_advanced_stats / player_game_stats -- that's
+      strong evidence of one person rather than a bad name-match merge.
+    - the-odds-api re-issues an event id partway through a game's quoting
+      life, leaving two ids for one game. To investigate, order that
+      game's sportsbook_game_odds by captured_at and check whether the
+      line hands over continuously across the id switch (the old id's
+      last quote matching the new id's first). A genuine two-games-
+      collapsed-into-one bug looks different: the other game has no
+      event id of its own, and the prices jump discontinuously.
     """
     rows = conn.execute(_DUPLICATE_MAPPINGS_SQL).fetchall()
     return build_check_result(
@@ -71,4 +94,5 @@ def check_duplicate_crosswalk_mappings(conn: Connection) -> CheckResult:
         description="a provider's external_ids map 1:1 onto canonical rows, never many:1",
         rows=rows,
         formatter=lambda r: f"{r[0]}/{r[1]} internal_id={r[2]} <- external_ids={r[3]}",
+        key_fn=_duplicate_mapping_key,
     )
