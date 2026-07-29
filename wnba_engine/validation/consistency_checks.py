@@ -106,6 +106,13 @@ def check_plays_final_score_matches_game_score(conn: Connection) -> CheckResult:
     mismatches where the "last row" was actually from early in the game.
     Games missing an "End Game" row entirely (rare, ~3 of 1242) are
     outside this check's scope -- there's no anchor to compare against.
+
+    A small number of games disagree by 1-2 points and are individually
+    acknowledged in wnba_engine/validation/acknowledged.py: two fully
+    independent providers with no shared upstream, so a sub-1% rate of
+    tiny disagreements is vendor noise rather than an ingestion bug.
+    ESPN stays the source of record for games.home_score/away_score --
+    nothing is written back from play-by-play to "resolve" these.
     """
     rows = conn.execute(_PLAYS_FINAL_SCORE_VS_GAME_SCORE_SQL).fetchall()
     return build_check_result(
@@ -115,6 +122,10 @@ def check_plays_final_score_matches_game_score(conn: Connection) -> CheckResult:
         formatter=lambda r: (
             f"game={r[0]} games_score={r[1]}-{r[2]} plays_final_score={r[3]}-{r[4]}"
         ),
+        # Both scores are in the key, not just the game id: if either
+        # provider revises its number, the acknowledgement stops
+        # applying and the game is re-surfaced for review.
+        key_fn=lambda r: f"{r[0]}:{r[1]}-{r[2]}:{r[3]}-{r[4]}",
     )
 
 
