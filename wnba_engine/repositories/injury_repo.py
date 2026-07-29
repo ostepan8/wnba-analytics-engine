@@ -9,6 +9,7 @@ real archived snapshot, not a live capture.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 
 from psycopg import Connection
 
@@ -20,6 +21,7 @@ INSERT INTO injury_reports (
     injury_type, side, return_date, short_comment, long_comment,
     reported_at, captured_at, source
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (source, player_id, captured_at) DO NOTHING
 """
 
 _INSERT_WAYBACK_SNAPSHOT = """
@@ -28,7 +30,22 @@ INSERT INTO injury_reports (
     injury_type, side, return_date, short_comment, long_comment,
     reported_at, captured_at, source
 ) VALUES (%s, %s, %s, %s, %s, NULL, NULL, NULL, %s, NULL, %s, %s, %s)
+ON CONFLICT (source, player_id, captured_at) DO NOTHING
 """
+
+
+def latest_captured_at(conn: Connection, source: str) -> datetime | None:
+    """Newest injury observation already stored for one source, or None.
+
+    High-water mark for replaying captures recorded off-box -- see
+    wnba_engine/pipeline/market_capture_ingest.py. Correctness doesn't
+    depend on it (migration 0023's UNIQUE makes re-ingestion a no-op); it
+    just avoids re-parsing an archive that grows without bound.
+    """
+    row = conn.execute(
+        "SELECT max(captured_at) FROM injury_reports WHERE source = %s", (source,)
+    ).fetchone()
+    return row[0] if row and row[0] is not None else None
 
 
 def insert_snapshots(
@@ -68,7 +85,10 @@ def insert_snapshots(
     if rows:
         with conn.cursor() as cursor:
             cursor.executemany(_INSERT_SNAPSHOT, rows)
-    return len(rows)
+            # Real inserts, not len(rows): a replayed capture
+            # correctly reports 0 (see migration 0023).
+            return max(cursor.rowcount, 0)
+    return 0
 
 
 def insert_wayback_snapshots(
@@ -111,4 +131,5 @@ def insert_wayback_snapshots(
     if rows:
         with conn.cursor() as cursor:
             cursor.executemany(_INSERT_WAYBACK_SNAPSHOT, rows)
-    return len(rows)
+            return max(cursor.rowcount, 0)
+    return 0

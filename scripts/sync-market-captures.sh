@@ -31,7 +31,7 @@ rsync -az --ignore-existing --exclude '.*.partial' \
     "${HOST}:${REMOTE_DATA}" "${LOCAL_ROOT}/"
 
 echo "==> local capture inventory"
-for provider in kalshi polymarket; do
+for provider in kalshi polymarket espn-injuries; do
   count=$(ls "${LOCAL_ROOT}/${provider}"/*.json.gz 2>/dev/null | wc -l | tr -d ' ')
   echo "    ${provider}: ${count} file(s)"
 done

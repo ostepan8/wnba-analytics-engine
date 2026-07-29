@@ -52,6 +52,13 @@ SCHEMA_VERSION = 1
 
 PROVIDER_KALSHI = "kalshi"
 PROVIDER_POLYMARKET = "polymarket"
+# ESPN's league-wide injury report is captured here for exactly the same
+# reason the market feeds are: it is current-state-only with no
+# historical endpoint (see db/migrations/0005_injury_reports.sql), so a
+# day not recorded is a day lost. The Wayback backfill recovers only what
+# archive.org happened to crawl -- 11 snapshots across three months of
+# the 2026 season, versus 48/day here.
+PROVIDER_ESPN_INJURIES = "espn-injuries"
 
 # Basic-format ISO8601 so the name is filesystem-safe and sorts
 # chronologically as a plain string.

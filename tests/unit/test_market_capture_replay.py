@@ -19,6 +19,7 @@ from wnba_engine.errors import ProviderValidationError
 from wnba_engine.market_capture import SCHEMA_VERSION
 from wnba_engine.market_capture.replay import (
     CaptureFile,
+    ReplayEspnInjuriesClient,
     ReplayKalshiClient,
     ReplayPolymarketClient,
     list_capture_files,
@@ -169,3 +170,26 @@ def test_capture_files_are_listed_oldest_first(tmp_path):
 
 def test_listing_a_missing_provider_directory_is_empty_not_an_error(tmp_path):
     assert list_capture_files(tmp_path, "kalshi") == ()
+
+
+def test_espn_injuries_replay_serves_the_recorded_report(tmp_path):
+    payload = {"injuries": [{"id": "1", "athlete": {"id": "99"}}]}
+    path = write_capture(tmp_path, "espn-injuries", [{"page": 0, "payload": payload}])
+
+    client = ReplayEspnInjuriesClient(CaptureFile(path))
+
+    assert client.fetch_injuries() == payload
+
+
+def test_espn_injuries_replay_rejects_the_wrong_provider(tmp_path):
+    path = write_capture(tmp_path, "kalshi", [])
+
+    with pytest.raises(ProviderValidationError):
+        ReplayEspnInjuriesClient(CaptureFile(path))
+
+
+def test_espn_injuries_replay_of_an_empty_capture_is_not_an_error(tmp_path):
+    """A capture recorded while ESPN returned nothing is legitimate."""
+    path = write_capture(tmp_path, "espn-injuries", [])
+
+    assert ReplayEspnInjuriesClient(CaptureFile(path)).fetch_injuries() == {}
