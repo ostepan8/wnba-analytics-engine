@@ -589,6 +589,77 @@ def test_find_player_by_name_falls_back_to_diacritic_insensitive_match(clean_db)
         assert entity_repo.find_player_by_name(conn, "Someone Else") is None
 
 
+def test_find_player_by_name_reversed_fallback_is_opt_in(clean_db):
+    """Real gap found live: bovada writes some player props "Last First"
+    ("Austin Shakira"), inconsistently and only for some players in the
+    same response. Every other book uses "First Last".
+
+    Opt-in rather than always-on: find_player_by_name also serves ESPN's
+    transactions pipeline, which extracts names best-effort from free
+    text, and a reversed retry there would match noise.
+    """
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="1", full_name="Shakira Austin", position="F")
+        )
+        conn.commit()
+
+        assert entity_repo.find_player_by_name(conn, "Austin Shakira") is None
+        assert (
+            entity_repo.find_player_by_name(conn, "Austin Shakira", allow_reversed=True)
+            is not None
+        )
+
+
+def test_find_player_by_name_reversed_fallback_handles_multiword_surnames(clean_db):
+    """"Delle Donne Elena" must become "Elena Delle Donne" -- so the rule
+    is "move the LAST token to the front", not "swap two tokens", which
+    would produce "Donne Delle Elena" and miss."""
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="2", full_name="Elena Delle Donne", position="F")
+        )
+        conn.commit()
+
+        assert (
+            entity_repo.find_player_by_name(conn, "Delle Donne Elena", allow_reversed=True)
+            is not None
+        )
+
+
+def test_find_player_by_name_reversed_fallback_never_beats_an_exact_match(clean_db):
+    """The reversed retry runs only after exact and diacritic-folded
+    matching fail, so it can never steal a name that legitimately
+    resolves."""
+    with clean_db.connection() as conn:
+        exact_id = entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="3", full_name="Alyssa Thomas", position="F")
+        )
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="4", full_name="Thomas Alyssa", position="G")
+        )
+        conn.commit()
+
+        assert (
+            entity_repo.find_player_by_name(conn, "Alyssa Thomas", allow_reversed=True)
+            == exact_id
+        )
+
+
+def test_find_player_by_name_reversed_fallback_still_returns_none_for_unknown(clean_db):
+    with clean_db.connection() as conn:
+        entity_repo.resolve_or_create_player(
+            conn, "espn", PlayerRef(external_id="5", full_name="Shakira Austin", position="F")
+        )
+        conn.commit()
+
+        assert (
+            entity_repo.find_player_by_name(conn, "Nobody Here", allow_reversed=True) is None
+        )
+        # A single token has no reversal -- must not match anything.
+        assert entity_repo.find_player_by_name(conn, "Austin", allow_reversed=True) is None
+
+
 def test_resolve_or_create_player_by_name_backfills_bio_on_name_match(clean_db):
     # An ESPN-only player has no bio data (ESPN box scores never carry
     # height/weight/jersey_number/college/age). The first time a

@@ -270,7 +270,9 @@ def find_team_by_name_fragment(conn: Connection, fragment: str) -> int | None:
     return int(row[0]) if row else None
 
 
-def find_player_by_name(conn: Connection, full_name: str) -> int | None:
+def find_player_by_name(
+    conn: Connection, full_name: str, *, allow_reversed: bool = False
+) -> int | None:
     """Read-only lookup by the canonical players.full_name column
     (case-insensitive exact match). Used to resolve a second provider's own
     player id (e.g. balldontlie's, or a Kalshi/Polymarket player-prop
@@ -282,16 +284,53 @@ def find_player_by_name(conn: Connection, full_name: str) -> int | None:
     Salaün" vs ESPN's "Janelle Salaun"), and Postgres ILIKE is
     accent-sensitive. The fallback is Python-side (small player count, only
     runs on a miss) rather than requiring the Postgres unaccent extension.
+
+    `allow_reversed` adds a further fallback for "Last First" ordering --
+    OPT-IN, and deliberately not the default. Verified live: bovada writes
+    some the-odds-api player props reversed ("Austin Shakira",
+    "Delle Donne Elena") while every other book uses "First Last", and it
+    is inconsistent even within a single response, correctly naming some
+    players and reversing others. Enabling it for sportsbook prop
+    ingestion recovers those rows; enabling it globally would be wrong,
+    since find_player_by_name also serves espn_transactions_ingest, which
+    extracts names best-effort from free text where a reversed retry would
+    manufacture matches out of noise.
+
+    The reversal moves the LAST token to the front rather than swapping a
+    pair, so multi-word surnames survive: "Delle Donne Elena" -> "Elena
+    Delle Donne". It runs only after both earlier strategies miss, so it
+    can never override a name that already resolves.
     """
     row = conn.execute("SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)).fetchone()
     if row is not None:
         return int(row[0])
 
     folded_target = _fold_diacritics(full_name).lower()
-    for player_id, candidate in conn.execute("SELECT id, full_name FROM players").fetchall():
+    candidates = conn.execute("SELECT id, full_name FROM players").fetchall()
+    for player_id, candidate in candidates:
         if _fold_diacritics(candidate).lower() == folded_target:
             return int(player_id)
+
+    if not allow_reversed:
+        return None
+    reversed_name = _reverse_name_order(full_name)
+    if reversed_name is None:
+        return None
+    folded_reversed = _fold_diacritics(reversed_name).lower()
+    for player_id, candidate in candidates:
+        if _fold_diacritics(candidate).lower() == folded_reversed:
+            return int(player_id)
     return None
+
+
+def _reverse_name_order(full_name: str) -> str | None:
+    """"Austin Shakira" -> "Shakira Austin"; "Delle Donne Elena" -> "Elena
+    Delle Donne". None when there's nothing to reverse (a single token).
+    """
+    parts = full_name.split()
+    if len(parts) < 2:
+        return None
+    return " ".join([parts[-1], *parts[:-1]])
 
 
 _FIND_RECENT_TEAM_FOR_PLAYER_SQL = """
