@@ -94,6 +94,31 @@ does not have.
 ratio of sums; `avg(stat/minutes)` is biased upward by low-minute games
 with noisy rates.)
 
+## The decisive test: residual modeling
+
+The standard technique for an efficient market is not to predict the
+outcome from scratch -- it is to predict the LINE'S ERROR. The line is
+the best available forecast, so a model can only add value by learning
+where it is systematically wrong. Every other test here compared a model
+AGAINST the line; this one uses the line as an input and learns the
+residual.
+
+Trained on 2022-2024, evaluated on a 2025-2026 holdout:
+
+| | corr(predicted residual, actual residual) |
+|---|---:|
+| ridge | **-0.031** |
+| gradient boosting | **-0.041** |
+
+Zero, and if anything slightly negative. Betting the holdout at every
+disagreement threshold returned negative ROI on both models, several
+significantly (t = -2.85, -2.06).
+
+The line's errors are unpredictable from anything in this dataset. That
+is what market efficiency means operationally, and it is the strongest
+negative result here: not "our model was not good enough" but "there is
+no structure in the residual for a better model to find".
+
 ## What would change the answer
 
 None of these is a modeling problem:
