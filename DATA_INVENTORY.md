@@ -444,6 +444,15 @@ in as a real, integrated source rather than a separate personal project.
     T-7d checkpoints on games books post late 404 constantly (all 3
     games in the first live day did). It's absorbed as
     `checkpoints_absent`; anything other than a 404 still raises.
+  - **betrivers publishes Over prices only.** 22,359 prop rows carry an
+    over price and no under, and the split is perfectly one-directional
+    -- never the reverse -- which looks exactly like a parser dropping a
+    side. It isn't: verified live, betrivers' `player_points` market
+    returns 19 outcomes all named "Over", while draftkings, fanduel,
+    williamhill_us and betonlineag each return both. Any two-sided
+    analysis must filter on `over_odds IS NOT NULL AND under_odds IS NOT
+    NULL` rather than on `market_type`, or betrivers silently halves the
+    sample it contributes to.
   - Players resolve **by name only** — the-odds-api carries no player
     identifier anywhere in a prop payload, just a free-text
     `description` per outcome. Unresolved names are logged and skipped,
