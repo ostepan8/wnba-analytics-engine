@@ -43,6 +43,7 @@ from wnba_engine.pipeline.balldontlie_stats_ingest import (
 from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
+from wnba_engine.pipeline.clv_report import build_clv_report
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
@@ -665,6 +666,31 @@ def build_features_cmd(as_of, strategy: str, seasons: tuple[int, ...], out, show
     if show_columns:
         for column in build.frame.columns:
             click.echo(f"  {column}")
+
+
+@cli.command("clv-report")
+@click.option("--prop-type", "prop_types", multiple=True, help="Limit to specific prop types.")
+@click.option("--season", "seasons", multiple=True, type=int, help="Limit to specific seasons.")
+def clv_report_cmd(prop_types: tuple[str, ...], seasons: tuple[int, ...]) -> None:
+    """Measure how far prop prices drift between opening and closing.
+
+    Reports the OPPORTUNITY, not a prediction's performance -- there is no
+    predictor yet. Mean CLV near zero means the market has no systematic
+    drift to farm; a non-trivial standard deviation means prices do move,
+    so the target becomes predicting WHICH ones rather than betting a side.
+
+    Scored from the under side by convention; over-side CLV is its exact
+    negative. Prices are de-vigged first, so a book merely widening its
+    margin does not register as the market changing its mind.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(
+            build_clv_report(db, prop_types=prop_types or None, seasons=seasons or None)
+        )
+    finally:
+        db.close()
 
 
 @cli.command("validate")
