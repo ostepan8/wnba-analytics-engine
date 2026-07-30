@@ -83,9 +83,26 @@ def test_team_form_adds_rolling_and_encoded_columns() -> None:
         "season_win_pct_prior",
         "home_away_is_home",
         "rest_days_scaled",
-        "standings_captured_at",
     ):
         assert column in frame.column_set
+    # Standings are deliberately NOT in the default strategy:
+    # team_standings_history only begins 2026-07-09, so the join would be
+    # all-null across 2022-2025. See team_form's docstring.
+    assert "standings_wins" not in frame.column_set
+
+
+def test_standings_can_be_layered_back_on() -> None:
+    """The removal is a composition choice, not a deletion -- re-adding the
+    step is one call, which is the point of the pipeline being composable."""
+    from wnba_engine.features.steps.loading import JoinStandingsSnapshotStep
+
+    source = StaticRowSource(team_game_rows=_team_rows())
+    with_standings = strategies.team_form(source).with_steps(
+        (JoinStandingsSnapshotStep(source=source),)
+    )
+
+    frame = with_standings.run(context=context())
+    assert "standings_wins" in frame.column_set
     # No standings history in this source, so the join is legitimately empty.
     assert all(row["standings_wins"] is None for row in frame.rows)
 
@@ -101,7 +118,7 @@ def test_team_form_is_the_baseline_plus_steps() -> None:
 def test_a_strategy_can_be_thinned_at_the_call_site() -> None:
     source = StaticRowSource(team_game_rows=_team_rows())
     full = strategies.team_form(source)
-    lean = full.without("rolling_form_5").without("join_standings_snapshot")
+    lean = full.without("rolling_form_5")
 
     frame = lean.run(context=context())
     assert "points_scored_mean_5" not in frame.column_set

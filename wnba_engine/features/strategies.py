@@ -20,7 +20,10 @@ a strategy layer at all:
 Swapping is the whole design:
 
     pipeline = strategies.build("team_form", source)
-    lean = pipeline.without("rolling_form_5").without("join_standings_snapshot")
+    lean = pipeline.without("rolling_form_5")
+    with_standings = pipeline.with_steps(
+        (loading.JoinStandingsSnapshotStep(source=source),)
+    )
 
 Order is not cosmetic. Filters that decide WHAT COUNTS AS A GAME run
 before the windowed steps, or exhibitions against national teams end up
@@ -83,7 +86,26 @@ def situational_baseline(source: FeatureRowSource) -> Pipeline:
 
 
 def team_form(source: FeatureRowSource) -> Pipeline:
-    """Baseline plus rolling form, season-to-date record, standings, encoding."""
+    """Baseline plus rolling form, season-to-date record, and encoding.
+
+    Standings are deliberately NOT here, even though
+    `loading.JoinStandingsSnapshotStep` is correct and point-in-time safe.
+    `team_standings_history` -- the only leak-free standings source, since
+    `team_standings` is a current-state upsert -- begins at 2026-07-09.
+    Every game before that has no snapshot to join, so the step
+    contributes four all-null columns across 2022-2025 and a usable value
+    only for the current season's tail. Columns that are null for ~97% of
+    the training frame are worse than absent: they invite imputation that
+    invents a record no one observed, and they make a model's apparent
+    reliance on "standings" really a reliance on "is this a recent game".
+
+    Add it back once that history has accumulated a season or more --
+    which is one line, and the reason this is a composable pipeline:
+
+        strategies.build("team_form", source).with_steps(
+            (loading.JoinStandingsSnapshotStep(source=source),)
+        )
+    """
     return situational_baseline(source).renamed("team_form").with_steps(
         (
             derivation.SeasonToDateStep(),
@@ -99,11 +121,7 @@ def team_form(source: FeatureRowSource) -> Pipeline:
                 group_by=("team_id",),
                 label="rolling_pace_5",
             ),
-            loading.JoinStandingsSnapshotStep(source=source),
-            cleaning.CoerceTypesStep(
-                coercions=_STANDINGS_COERCIONS, step_name="coerce_standings_numerics"
-            ),
-            cleaning.FlagNullsStep(columns=("pace", "standings_wins")),
+            cleaning.FlagNullsStep(columns=("pace",)),
             encoding.OneHotStep(column="home_away", categories=_HOME_AWAY_CATEGORIES),
             encoding.OneHotStep(column="season_type", categories=_SEASON_TYPE_CATEGORIES),
             encoding.FitScaleStep(column="rest_days"),

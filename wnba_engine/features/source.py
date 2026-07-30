@@ -64,6 +64,7 @@ class PostgresRowSource:
             as_of=context.as_of,
             season_types=context.season_types,
             seasons=context.seasons or None,
+            completion_margin=context.completion_margin,
         )
 
     def player_games(self, context: FeatureContext) -> tuple[Row, ...]:
@@ -73,6 +74,7 @@ class PostgresRowSource:
             season_types=context.season_types,
             seasons=context.seasons or None,
             box_score_source=self.box_score_source,
+            completion_margin=context.completion_margin,
         )
 
     def standings_snapshots(self, context: FeatureContext) -> tuple[Row, ...]:

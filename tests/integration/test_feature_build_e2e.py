@@ -155,8 +155,14 @@ def test_standings_history_is_read_per_row_not_latest_first(clean_db) -> None:
 
         source = PostgresRowSource(conn)
         from wnba_engine.features import strategies
+        from wnba_engine.features.steps.loading import JoinStandingsSnapshotStep
 
-        frame = strategies.team_form(source).run(
+        # Standings are not in team_form by default (history starts
+        # 2026-07-09), so layer the step back on -- the per-row as-of join
+        # is exactly what this test exists to verify.
+        frame = strategies.team_form(source).with_steps(
+            (JoinStandingsSnapshotStep(source=source),)
+        ).run(
             context=_context(TIP_ONE + 30 * DAY)
         )
 

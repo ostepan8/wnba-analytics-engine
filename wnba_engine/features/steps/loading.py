@@ -39,11 +39,11 @@ from wnba_engine.repositories import feature_repo
 DEFAULT_COMPLETION_MARGIN = timedelta(hours=4)
 
 EVENT_TIME_COLUMN = "start_time"
-
-
-def _completed_by(context: FeatureContext, margin: timedelta) -> FeatureContext:
-    """The context a loader actually queries with."""
-    return context.with_as_of(context.as_of - margin)
+#: When the result became knowable -- a witnessed final where we have
+#: one, else start_time + the context's fallback margin. Declared as an
+#: as-of anchor alongside start_time so the guard checks the property
+#: that actually matters, not just that the game had tipped off.
+RESULT_KNOWN_COLUMN = "result_known_at"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +51,6 @@ class LoadTeamGamesStep(SourceStep):
     """Team-game grain: two rows per game, one per side."""
 
     source: FeatureRowSource
-    completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN
     step_name: str = "load_team_games"
 
     @property
@@ -63,13 +62,13 @@ class LoadTeamGamesStep(SourceStep):
         return StepProvenance(
             kind=StepKind.SOURCE,
             adds_columns=feature_repo.TEAM_GAME_COLUMNS,
-            as_of_columns=(EVENT_TIME_COLUMN,),
+            as_of_columns=(EVENT_TIME_COLUMN, RESULT_KNOWN_COLUMN),
             event_time_column=EVENT_TIME_COLUMN,
             source_tables=("games", "teams", "team_advanced_stats"),
         )
 
     def fetch(self, context: FeatureContext) -> tuple[Row, ...]:
-        return self.source.team_games(_completed_by(context, self.completion_margin))
+        return self.source.team_games(context)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +81,6 @@ class LoadPlayerGamesStep(SourceStep):
     """
 
     source: FeatureRowSource
-    completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN
     step_name: str = "load_player_games"
 
     @property
@@ -94,13 +92,13 @@ class LoadPlayerGamesStep(SourceStep):
         return StepProvenance(
             kind=StepKind.SOURCE,
             adds_columns=feature_repo.PLAYER_GAME_COLUMNS,
-            as_of_columns=(EVENT_TIME_COLUMN,),
+            as_of_columns=(EVENT_TIME_COLUMN, RESULT_KNOWN_COLUMN),
             event_time_column=EVENT_TIME_COLUMN,
             source_tables=("player_game_stats", "games", "players", "teams"),
         )
 
     def fetch(self, context: FeatureContext) -> tuple[Row, ...]:
-        return self.source.player_games(_completed_by(context, self.completion_margin))
+        return self.source.player_games(context)
 
 
 @dataclass(frozen=True, slots=True)

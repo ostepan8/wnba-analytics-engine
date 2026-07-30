@@ -15,13 +15,15 @@ boundary in place -- which is how backtests leak.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Preseason has non-franchise opponents (national teams, club sides) and
 # All-Star games ('other') have roster constructs like "TEAM CLARK" -- see
 # DATA_INVENTORY.md's coverage-boundaries section. Neither is priced by
 # sportsbooks, and both distort any rest/form feature that treats them as
 # real games, so the default scope excludes them. Override deliberately.
+from wnba_engine.repositories.feature_repo import DEFAULT_COMPLETION_MARGIN
+
 DEFAULT_SEASON_TYPES: tuple[str, ...] = ("regular-season", "post-season")
 
 
@@ -37,6 +39,15 @@ class FeatureContext:
     as_of: datetime
     seasons: tuple[int, ...] = ()
     season_types: tuple[str, ...] = DEFAULT_SEASON_TYPES
+    #: Fallback for how long after tip-off a result is assumed knowable,
+    #: used ONLY where `games.final_observed_at` is NULL -- i.e. games that
+    #: were already final when first ingested, so nothing witnessed the
+    #: transition (see db/migrations/0024_game_final_observed_at.sql).
+    #: Lives on the context rather than on each loader because it is part
+    #: of what `as_of` MEANS for this build; two loaders disagreeing about
+    #: it would make one frame's boundary depend on which step produced a
+    #: row.
+    completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN
 
     def __post_init__(self) -> None:
         # A naive as_of is the most dangerous possible input here: every

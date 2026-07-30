@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from psycopg import Connection
 from psycopg.rows import dict_row
@@ -149,11 +149,21 @@ def execute_time_invariant(
 #: StepProvenance cannot drift: the guard compares this tuple against the
 #: columns that actually arrived, so adding a column to the SELECT without
 #: adding it here fails on the next run.
+#: Fallback for how long after tip-off a result is assumed knowable,
+#: used ONLY where games.final_observed_at is NULL -- games already
+#: final on first ingest, where nothing witnessed the transition. See
+#: db/migrations/0024_game_final_observed_at.sql. A WNBA game runs
+#: ~2h15m; four hours is deliberately generous, because being wrong
+#: this way drops a few rows near the boundary and being wrong the
+#: other way trains on a score that did not exist yet.
+DEFAULT_COMPLETION_MARGIN: timedelta = timedelta(hours=4)
+
 TEAM_GAME_COLUMNS: tuple[str, ...] = (
     "game_id",
     "season",
     "season_type",
     "start_time",
+    "result_known_at",
     "team_id",
     "team_abbrev",
     "team_is_franchise",
@@ -175,6 +185,8 @@ SELECT
     g.season                     AS season,
     g.season_type                AS season_type,
     g.start_time                 AS start_time,
+    COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
+                                 AS result_known_at,
     s.team_id                    AS team_id,
     t.abbreviation               AS team_abbrev,
     t.is_franchise               AS team_is_franchise,
@@ -198,7 +210,8 @@ JOIN teams t ON t.id = s.team_id
 JOIN teams o ON o.id = s.opponent_id
 LEFT JOIN team_advanced_stats tas
     ON tas.game_id = g.id AND tas.team_id = s.team_id
-WHERE g.start_time <= %(as_of)s
+WHERE COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
+      <= %(as_of)s
   AND g.status = 'final'
   AND g.season_type = ANY(%(season_types)s::text[])
   AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
@@ -212,6 +225,7 @@ def load_team_games(
     as_of: datetime,
     season_types: Sequence[str],
     seasons: Sequence[int] | None,
+    completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN,
 ) -> tuple[Row, ...]:
     """One row per (game, team) for games that FINISHED before `as_of`.
 
@@ -233,6 +247,7 @@ def load_team_games(
             "as_of": as_of,
             "season_types": list(season_types),
             "seasons": list(seasons) if seasons else None,
+            "completion_margin": completion_margin,
         },
     )
 
@@ -244,6 +259,7 @@ PLAYER_GAME_COLUMNS: tuple[str, ...] = (
     "season",
     "season_type",
     "start_time",
+    "result_known_at",
     "player_id",
     "player_name",
     "team_id",
@@ -265,6 +281,8 @@ SELECT
     g.season                        AS season,
     g.season_type                   AS season_type,
     g.start_time                    AS start_time,
+    COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
+                                    AS result_known_at,
     pgs.player_id                   AS player_id,
     p.full_name                     AS player_name,
     pgs.team_id                     AS team_id,
@@ -299,6 +317,7 @@ def load_player_games(
     season_types: Sequence[str],
     seasons: Sequence[int] | None,
     box_score_source: str,
+    completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN,
 ) -> tuple[Row, ...]:
     """One row per (game, player) from ONE box-score source.
 
@@ -318,6 +337,7 @@ def load_player_games(
             "season_types": list(season_types),
             "seasons": list(seasons) if seasons else None,
             "box_score_source": box_score_source,
+            "completion_margin": completion_margin,
         },
     )
 
