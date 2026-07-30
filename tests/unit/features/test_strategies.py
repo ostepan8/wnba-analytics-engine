@@ -118,7 +118,7 @@ def test_team_form_is_the_baseline_plus_steps() -> None:
 def test_a_strategy_can_be_thinned_at_the_call_site() -> None:
     source = StaticRowSource(team_game_rows=_team_rows())
     full = strategies.team_form(source)
-    lean = full.without("rolling_form_5")
+    lean = full.without("rolling_form_5").without("opponent_rolling_form_5")
 
     frame = lean.run(context=context())
     assert "points_scored_mean_5" not in frame.column_set
@@ -131,11 +131,17 @@ def test_swapping_the_rolling_window_changes_only_that_step() -> None:
     from wnba_engine.features.steps.derivation import RollingMeanStep
 
     source = StaticRowSource(team_game_rows=_team_rows())
-    swapped = strategies.team_form(source).replace_step(
-        "rolling_form_5",
-        RollingMeanStep(
-            value_columns=("points_scored",), window=3, label="rolling_form_5"
-        ),
+    # The mirror reads rolling_form_5's output columns, so swapping the
+    # window means swapping both -- see team_form's docstring.
+    swapped = (
+        strategies.team_form(source)
+        .without("opponent_rolling_form_5")
+        .replace_step(
+            "rolling_form_5",
+            RollingMeanStep(
+                value_columns=("points_scored",), window=3, label="rolling_form_5"
+            ),
+        )
     )
     frame = swapped.run(context=context())
     assert "points_scored_mean_3" in frame.column_set

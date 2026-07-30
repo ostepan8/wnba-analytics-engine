@@ -356,3 +356,112 @@ def _mean(values: Sequence[object]) -> float | None:
     if not values:
         return None
     return sum(float(value) for value in values) / len(values)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentFormStep(WindowedStep):
+    """Mirror the opponent's ALREADY-COMPUTED form onto each row.
+
+    The single largest gap in the original feature set: the frame carried
+    `opponent_team_id` and nothing derived from it, so every model built
+    on it was predicting a game while looking at one team. Rest, pace and
+    form all describe the wrong half of the matchup on their own.
+
+    Cheap because the team-game frame already holds two rows per game.
+    The opponent's prior form is literally the sibling row's value, so
+    this is a lookup rather than a second pass over history -- and it
+    inherits that row's window end, which is the tip-off of the most
+    recent game feeding the OPPONENT's average. That timestamp is already
+    strictly before the shared game, so the guard's window check passes
+    for the same reason the underlying rolling step's did.
+
+    Runs AFTER the rolling step whose columns it mirrors; `value_columns`
+    naming a column that does not exist yet is a contract error, not a
+    silent null.
+    """
+
+    value_columns: tuple[str, ...]
+    source_window_end_column: str
+    opponent_key: str = "opponent_team_id"
+    team_key: str = "team_id"
+    game_key: str = "game_id"
+    label: str = "opponent_form"
+
+    def __post_init__(self) -> None:
+        if not self.value_columns:
+            raise StepContractError("opponent form step needs at least one value column")
+
+    @classmethod
+    def mirroring(cls, source: WindowedStep, *, label: str | None = None):
+        """Build a mirror from the step whose columns it copies.
+
+        Deriving the names instead of retyping them removes the obvious
+        failure mode -- a rolling step reconfigured to window=3 while its
+        mirror still asks for `_mean_5`. It does NOT make the pair
+        immune to `Pipeline.replace_step`, which swaps by name and leaves
+        this mirror pointing at the old columns; that still fails, but it
+        fails loudly at the frame contract rather than emitting nulls.
+        Mirrors and their sources are a pair, and thinning one means
+        thinning both.
+        """
+        window_end = source.provenance.window_end_column
+        if window_end is None:
+            raise StepContractError(
+                f"cannot mirror {source.name!r}: it publishes no window-end column"
+            )
+        return cls(
+            value_columns=source.output_columns,
+            source_window_end_column=window_end,
+            label=label or f"opponent_{source.name}",
+        )
+
+    @property
+    def name(self) -> str:
+        return self.label
+
+    @property
+    def output_columns(self) -> tuple[str, ...]:
+        return tuple(f"opponent_{column}" for column in self.value_columns)
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=(*self.output_columns, f"{self.label}{WINDOW_END_SUFFIX}"),
+            window_end_column=f"{self.label}{WINDOW_END_SUFFIX}",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        del context
+        self._require_columns(
+            frame,
+            (
+                self.game_key,
+                self.team_key,
+                self.opponent_key,
+                self.source_window_end_column,
+                *self.value_columns,
+            ),
+        )
+        window_end_column = f"{self.label}{WINDOW_END_SUFFIX}"
+        by_game_team = {
+            (row[self.game_key], row[self.team_key]): row for row in frame.rows
+        }
+
+        cells: list[Row] = []
+        for row in frame.rows:
+            sibling = by_game_team.get((row[self.game_key], row[self.opponent_key]))
+            if sibling is None:
+                # The opponent's row was filtered out (a non-franchise
+                # exhibition side, say). Null rather than an invented
+                # value, and no window end to publish.
+                cells.append(
+                    {**{c: None for c in self.output_columns}, window_end_column: None}
+                )
+                continue
+            cell: dict[str, object] = {
+                f"opponent_{column}": sibling.get(column) for column in self.value_columns
+            }
+            cell[window_end_column] = sibling.get(self.source_window_end_column)
+            cells.append(cell)
+        return tuple(cells)

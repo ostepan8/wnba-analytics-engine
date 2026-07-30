@@ -86,40 +86,57 @@ def situational_baseline(source: FeatureRowSource) -> Pipeline:
 
 
 def team_form(source: FeatureRowSource) -> Pipeline:
-    """Baseline plus rolling form, season-to-date record, and encoding.
+    """Baseline plus rolling form, season-to-date record, opponent
+    strength, and encoding.
 
     Standings are deliberately NOT here, even though
     `loading.JoinStandingsSnapshotStep` is correct and point-in-time safe.
     `team_standings_history` -- the only leak-free standings source, since
     `team_standings` is a current-state upsert -- begins at 2026-07-09.
     Every game before that has no snapshot to join, so the step
-    contributes four all-null columns across 2022-2025 and a usable value
-    only for the current season's tail. Columns that are null for ~97% of
-    the training frame are worse than absent: they invite imputation that
-    invents a record no one observed, and they make a model's apparent
-    reliance on "standings" really a reliance on "is this a recent game".
-
-    Add it back once that history has accumulated a season or more --
-    which is one line, and the reason this is a composable pipeline:
+    contributes four all-null columns across 2022-2025. Columns null for
+    ~97% of the frame are worse than absent: they invite imputation that
+    invents a record no one observed, and they let a model's apparent
+    reliance on "standings" really be a reliance on "is this a recent
+    game". Add it back once that history accumulates:
 
         strategies.build("team_form", source).with_steps(
             (loading.JoinStandingsSnapshotStep(source=source),)
         )
+
+    OPPONENT MIRRORS ARE PAIRED WITH THEIR SOURCE. Each
+    `OpponentFormStep.mirroring(x)` reads the columns `x` produces, so
+    removing or replacing `x` without doing the same to its mirror fails
+    the frame contract. That is deliberate -- the alternative is a mirror
+    that silently emits nulls and a model that quietly loses half the
+    matchup -- but it means `.without("rolling_form_5")` must become
+    `.without("rolling_form_5").without("opponent_rolling_form_5")`.
     """
+    rolling_form = derivation.RollingMeanStep(
+        value_columns=("points_scored", "points_allowed", "point_margin"),
+        window=5,
+        group_by=("team_id",),
+        label="rolling_form_5",
+    )
+    rolling_pace = derivation.RollingMeanStep(
+        value_columns=("pace",), window=5, group_by=("team_id",), label="rolling_pace_5"
+    )
+    season_to_date = derivation.SeasonToDateStep()
     return situational_baseline(source).renamed("team_form").with_steps(
         (
-            derivation.SeasonToDateStep(),
-            derivation.RollingMeanStep(
-                value_columns=("points_scored", "points_allowed", "point_margin"),
-                window=5,
-                group_by=("team_id",),
-                label="rolling_form_5",
-            ),
-            derivation.RollingMeanStep(
-                value_columns=("pace",),
-                window=5,
-                group_by=("team_id",),
-                label="rolling_pace_5",
+            season_to_date,
+            rolling_form,
+            rolling_pace,
+            # The frame carried opponent_team_id and derived nothing from
+            # it, so every model on it saw one half of each matchup.
+            derivation.OpponentFormStep.mirroring(rolling_form),
+            derivation.OpponentFormStep.mirroring(rolling_pace),
+            # SeasonToDateStep publishes several columns without an
+            # output_columns contract, so this one names what it mirrors.
+            derivation.OpponentFormStep(
+                value_columns=("season_win_pct_prior",),
+                source_window_end_column="season_to_date__window_end",
+                label="opponent_season_form",
             ),
             cleaning.FlagNullsStep(columns=("pace",)),
             encoding.OneHotStep(column="home_away", categories=_HOME_AWAY_CATEGORIES),
