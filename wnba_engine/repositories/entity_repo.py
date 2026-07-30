@@ -109,18 +109,32 @@ def upsert_game(
     becoming final). ESPN is currently the sole score source in this repo;
     when Phase 0 odds/outcomes data is folded in it takes precedence for
     final scores (see 0001 migration comment).
+
+    `final_observed_at` is stamped only on a WITNESSED transition -- a game
+    we already held as non-final that is now final. It is deliberately not
+    set when inserting a game that is already final, because a backfill
+    would then claim every historical result only became knowable on the
+    day it was backfilled. `COALESCE` makes the first observation
+    permanent: a later re-sync of an already-final game must not move it
+    forward. See db/migrations/0024_game_final_observed_at.sql.
     """
     existing = lookup_internal_id(conn, provider, ENTITY_GAME, game.external_id)
     if existing is not None:
         conn.execute(
             "UPDATE games SET status = %s, home_score = %s, away_score = %s, "
-            "start_time = %s, season_type = %s, updated_at = now() WHERE id = %s",
+            "start_time = %s, season_type = %s, "
+            "final_observed_at = CASE "
+            "    WHEN %s = 'final' AND games.status <> 'final' "
+            "    THEN COALESCE(games.final_observed_at, now()) "
+            "    ELSE games.final_observed_at END, "
+            "updated_at = now() WHERE id = %s",
             (
                 game.status.value,
                 game.home_score,
                 game.away_score,
                 game.start_time,
                 game.season_type.value,
+                game.status.value,
                 existing,
             ),
         )

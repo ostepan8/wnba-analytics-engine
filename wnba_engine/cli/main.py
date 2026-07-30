@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import UTC, date, timedelta
 from pathlib import Path
 
 import click
@@ -19,6 +19,8 @@ from wnba_engine.db.migrate import run_migrations
 from wnba_engine.db.pool import Database
 from wnba_engine.espn.client import EspnClient
 from wnba_engine.espn.wayback_client import WaybackClient
+from wnba_engine.features.context import FeatureContext
+from wnba_engine.features.strategies import STRATEGIES as FEATURE_STRATEGIES
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.odds_api.client import OddsApiClient
 from wnba_engine.pipeline.balldontlie_advanced_stats_ingest import backfill_season
@@ -45,6 +47,7 @@ from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
 )
+from wnba_engine.pipeline.feature_build import build_features
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
 from wnba_engine.pipeline.market_capture_ingest import ingest_captures
@@ -601,6 +604,67 @@ def snapshot_odds_api_scores_cmd(days_from: int) -> None:
             click.echo(snapshot_odds_api_scores(db, client, days_from=days_from))
     finally:
         db.close()
+
+
+@cli.command("build-features")
+@click.option(
+    "--as-of",
+    type=click.DateTime(["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"]),
+    required=True,
+    help="Point-in-time boundary. A bare date means 00:00 UTC on that date.",
+)
+@click.option(
+    "--strategy",
+    type=click.Choice(sorted(FEATURE_STRATEGIES)),
+    default="situational_baseline",
+    show_default=True,
+)
+@click.option(
+    "--season",
+    "seasons",
+    type=int,
+    multiple=True,
+    help="Restrict to these seasons; repeatable. Omit for every season.",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write the frame to CSV as well as printing the summary.",
+)
+@click.option("--show-columns", is_flag=True, help="List the produced column names.")
+def build_features_cmd(as_of, strategy: str, seasons: tuple[int, ...], out, show_columns) -> None:
+    """Build a point-in-time-correct feature frame.
+
+    `--as-of` is the instant beyond which NO data may be used. Everything
+    the strategy loads is filtered to it, and every step's output is
+    re-checked against it afterwards (see wnba_engine/features/guard.py),
+    so a step that reads past the boundary fails loudly here rather than
+    producing a model that backtests well and cannot be reproduced live.
+
+    Naive input is interpreted as UTC, matching the TIMESTAMPTZ columns
+    this reads; --as-of 2025-08-01 therefore means 2025-08-01T00:00:00Z.
+
+    Note the boundary is stricter than it looks for game data: `games`
+    records when a game STARTED, not when its result became known, so
+    loaders additionally require the game to have finished a few hours
+    before the boundary (wnba_engine/features/steps/loading.py).
+    """
+    context = FeatureContext(
+        as_of=as_of.replace(tzinfo=UTC) if as_of.tzinfo is None else as_of,
+        seasons=tuple(seasons),
+    )
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        build = build_features(db, strategy=strategy, context=context, output_path=out)
+    finally:
+        db.close()
+
+    click.echo(build.result)
+    if show_columns:
+        for column in build.frame.columns:
+            click.echo(f"  {column}")
 
 
 @cli.command("validate")

@@ -2122,3 +2122,98 @@ def test_balldontlie_player_prop_odds_backfill_end_to_end(clean_db):
     with clean_db.connection() as conn:
         count = conn.execute("SELECT count(*) FROM sportsbook_player_prop_odds").fetchone()[0]
     assert count == 1
+
+
+def _scoreboard_game(external_id: str, status: GameStatus, home, away, start_time):
+    return ScoreboardGame(
+        external_id=external_id,
+        start_time=start_time,
+        season=start_time.year,
+        season_type=SeasonType.REGULAR_SEASON,
+        status=status,
+        home_team=home,
+        away_team=away,
+        home_score=None if status is GameStatus.SCHEDULED else 80,
+        away_score=None if status is GameStatus.SCHEDULED else 75,
+    )
+
+
+def test_final_observed_at_is_stamped_only_on_a_witnessed_transition(clean_db):
+    """The timestamp any point-in-time build actually needs: when the
+    result became knowable. No provider offers one (verified: ESPN reports
+    completed=true with no completion time), so the honest signal is our
+    own observation of the transition -- see migration 0024.
+    """
+    start = datetime(2026, 6, 1, 23, 0, tzinfo=UTC)
+    home = TeamRef(external_id="fo-h", name="Home Team", abbreviation="HOM")
+    away = TeamRef(external_id="fo-a", name="Away Team", abbreviation="AWY")
+
+    with clean_db.connection() as conn:
+        home_id = entity_repo.resolve_or_create_team(conn, "espn", home)
+        away_id = entity_repo.resolve_or_create_team(conn, "espn", away)
+
+        # First seen as SCHEDULED -- nothing known yet.
+        game_id = entity_repo.upsert_game(
+            conn,
+            "espn",
+            _scoreboard_game("fo-1", GameStatus.SCHEDULED, home, away, start),
+            home_team_id=home_id,
+            away_team_id=away_id,
+        )
+        conn.commit()
+        assert conn.execute(
+            "SELECT final_observed_at FROM games WHERE id = %s", (game_id,)
+        ).fetchone()[0] is None
+
+        # Re-synced as FINAL -- we witnessed the transition.
+        entity_repo.upsert_game(
+            conn,
+            "espn",
+            _scoreboard_game("fo-1", GameStatus.FINAL, home, away, start),
+            home_team_id=home_id,
+            away_team_id=away_id,
+        )
+        conn.commit()
+        first = conn.execute(
+            "SELECT final_observed_at FROM games WHERE id = %s", (game_id,)
+        ).fetchone()[0]
+        assert first is not None
+
+        # Re-syncing an already-final game must NOT move it forward; the
+        # first observation is the honest one.
+        entity_repo.upsert_game(
+            conn,
+            "espn",
+            _scoreboard_game("fo-1", GameStatus.FINAL, home, away, start),
+            home_team_id=home_id,
+            away_team_id=away_id,
+        )
+        conn.commit()
+        assert conn.execute(
+            "SELECT final_observed_at FROM games WHERE id = %s", (game_id,)
+        ).fetchone()[0] == first
+
+
+def test_a_game_already_final_on_first_ingest_gets_no_observation(clean_db):
+    """A backfill witnessed nothing. Stamping it would claim every
+    historical result only became knowable on the day it was backfilled,
+    which would make the whole archive look unusable."""
+    start = datetime(2022, 6, 1, 23, 0, tzinfo=UTC)
+    home = TeamRef(external_id="fo2-h", name="Old Home", abbreviation="OHM")
+    away = TeamRef(external_id="fo2-a", name="Old Away", abbreviation="OAW")
+
+    with clean_db.connection() as conn:
+        home_id = entity_repo.resolve_or_create_team(conn, "espn", home)
+        away_id = entity_repo.resolve_or_create_team(conn, "espn", away)
+        game_id = entity_repo.upsert_game(
+            conn,
+            "espn",
+            _scoreboard_game("fo-2", GameStatus.FINAL, home, away, start),
+            home_team_id=home_id,
+            away_team_id=away_id,
+        )
+        conn.commit()
+
+        assert conn.execute(
+            "SELECT final_observed_at FROM games WHERE id = %s", (game_id,)
+        ).fetchone()[0] is None
