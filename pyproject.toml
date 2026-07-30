@@ -13,6 +13,11 @@ dependencies = [
   "python-dotenv>=1.0",
 ]
 
+[project.optional-dependencies]
+# Modeling only. Deliberately optional: ingestion, validation and the
+# feature layer must stay installable without a compiler toolchain.
+modeling = ["scikit-learn>=1.5", "numpy>=2.0"]
+
 [project.scripts]
 wnba-engine = "wnba_engine.cli.main:cli"
 
