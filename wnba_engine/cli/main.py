@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 
+from wnba_engine.analysis import style as style_space
 from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
@@ -66,6 +67,7 @@ from wnba_engine.pipeline.odds_api_scores_ingest import (
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.polymarket.client import PolymarketClient
+from wnba_engine.repositories import style_repo
 from wnba_engine.validation.runner import run_all_checks
 
 
@@ -691,6 +693,51 @@ def clv_report_cmd(prop_types: tuple[str, ...], seasons: tuple[int, ...]) -> Non
         )
     finally:
         db.close()
+
+
+@cli.command("style-comps")
+@click.option("--subject", type=click.Choice(["player", "team"]), default="player",
+              show_default=True)
+@click.option("--find", "query", help="Name substring, e.g. 'Collier 2025'.")
+@click.option("--unique", is_flag=True, help="Rank by stylistic uniqueness instead.")
+@click.option("--limit", default=5, show_default=True)
+def style_comps_cmd(subject: str, query: str | None, unique: bool, limit: int) -> None:
+    """Nearest comparables in style space, or the league's most unusual profiles.
+
+    Style, deliberately not quality: player vectors are per-36 rates and
+    shares, and team vectors exclude offensive/defensive rating, so a good
+    and a bad team that play alike come out as neighbours. See
+    wnba_engine/analysis/style.py.
+
+    A player's own prior season showing up as her nearest comparable is
+    the expected result and the best evidence the space means something;
+    --unique excludes self-matches, since "nobody plays like her except
+    her" would otherwise read as unremarkable.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with db.connection() as conn:
+            raw = (style_repo.load_player_points(conn) if subject == "player"
+                   else style_repo.load_team_points(conn))
+    finally:
+        db.close()
+    points = style_space.z_score(raw)
+    click.echo(f"{len(points)} {subject}-seasons in {len(points[0].coordinates)}-dim style space")
+
+    if unique:
+        for point, dist in style_space.uniqueness(points)[:limit]:
+            click.echo(f"  {dist:5.2f}  {point.label}")
+        return
+    if not query:
+        raise click.UsageError("pass --find NAME, or --unique")
+    matches = [p for p in points if query.lower() in p.label.lower()]
+    if not matches:
+        raise click.UsageError(f"no {subject} matching {query!r}")
+    target = matches[0]
+    click.echo(f"nearest to {target.label}:")
+    for n in style_space.nearest(points, target, limit=limit):
+        click.echo(f"  {n.distance:5.2f}  {n.point.label}")
 
 
 @cli.command("validate")
