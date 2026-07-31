@@ -119,6 +119,56 @@ is what market efficiency means operationally, and it is the strongest
 negative result here: not "our model was not good enough" but "there is
 no structure in the residual for a better model to find".
 
+## A different lens: microstructure, not prediction
+
+Every result above shares one frame -- forecast the outcome, compare to
+the line, bet the gap. Twelve variations of one idea is not twelve ideas.
+Changing the target variable entirely gives a different answer.
+
+**Books follow each other, and quickly.** Across 46,401 observed price
+moves on 10 books, when one book repriced a prop, others moved the SAME
+direction within 6 hours **72-80% of the time**, at a mean lag of
+**16-29 minutes**:
+
+| Leading book | n | followed | mean lag |
+|---|---:|---:|---:|
+| fanatics | 4,131 | 79.7% | 0.37h |
+| bovada | 5,186 | 79.0% | 0.27h |
+| williamhill_us | 9,920 | 78.5% | 0.27h |
+| betonlineag | 9,265 | 77.1% | 0.37h |
+| fanduel | 13,913 | 74.0% | 0.41h |
+| draftkings | 5,787 | 72.6% | 0.48h |
+
+That is real structure, and it requires forecasting nothing. If a
+follower's price is genuinely stale in the window after a leader moves,
+it is bettable without any view on the game.
+
+**But this data cannot test it.** Betting the "stale" book returned
+-5.03% (t=-2.72, negative in all four seasons) -- and that number is
+meaningless, because of the sampling resolution:
+
+| | |
+|---|---:|
+| lead-lag window | 16-29 min |
+| **median gap between our captures of the same prop at the same book** | **60.3 min** |
+| mean gap | 394 min |
+| consecutive captures within 30 min | **4.5%** |
+
+We sample an order of magnitude slower than the phenomenon. When the data
+shows "A moved and B has not", B has very likely already moved and we
+have simply not observed it yet. Those prices are not stale, they are
+UNSAMPLED, and the -5.03% is measuring bets placed after both books
+adjusted.
+
+**This is the one open question in this file.** Every other result is a
+negative finding about the market. This is a negative finding about our
+instrumentation, and it is fixable: testing it needs sub-10-minute
+capture on a subset of props, which is an infrastructure change rather
+than a modelling one. The off-box capture host already runs every 30
+minutes and could run a narrow high-frequency sweep alongside it.
+
+Until that exists, treat lead-lag as UNTESTED, not as refuted.
+
 ## What would change the answer
 
 None of these is a modeling problem:
