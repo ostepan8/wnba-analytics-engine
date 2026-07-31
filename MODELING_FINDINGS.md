@@ -169,6 +169,54 @@ minutes and could run a narrow high-frequency sweep alongside it.
 
 Until that exists, treat lead-lag as UNTESTED, not as refuted.
 
+## Predicting price movement: CLV without profit
+
+The second change of lens. Rather than forecasting the game, forecast the
+PRICE -- which way will this quote move before it closes? If that is
+predictable, a bettor captures closing line value regardless of who wins,
+which is the metric the literature treats as the real measure of skill.
+
+**It is predictable.** Logistic regression on five features (current
+de-vigged price, deviation from peer books quoted in the prior 90
+minutes, peer dispersion, hours to tip, number of peers), trained on
+seasons <=2024 and evaluated on 2025-2026:
+
+| Confidence | n | Direction accuracy |
+|---|---:|---:|
+| all | 17,038 | 59.6% |
+| >0.60 | 4,799 | 67.5% |
+| >0.65 | 1,978 | 69.8% |
+| >0.70 | 632 | **72.6%** |
+
+against a 51.8% majority-class baseline. This is the largest predictive
+signal found anywhere in this file.
+
+**And it loses money.** Betting the side the price is predicted to move
+toward, one bet per game, on the same holdout:
+
+| Confidence | games | ROI | t |
+|---|---:|---:|---:|
+| >0.50 | 512 | -4.04% | -3.29 |
+| >0.60 | 499 | -1.59% | -0.62 |
+| >0.65 | 431 | -7.25% | -1.80 |
+| >0.70 | 258 | -4.98% | -0.74 |
+
+The explanation is the useful part. What the model detects is MEAN
+REVERSION TO PEER CONSENSUS -- an outlier book drifting back toward where
+everyone else already is. The prediction is correct and the CLV is real:
+the price genuinely moves toward the bet. But the destination is the
+consensus price, which is fair, and reaching fair value costs the vig.
+
+**Positive CLV does not imply profit when the movement being predicted is
+convergence to an efficient consensus.** CLV measures whether you beat
+the closing price; it says nothing about whether the closing price was
+beatable. The widely-repeated claim that positive CLV implies long-term
+profit is sportsbook-published rather than peer-reviewed, and this is a
+direct counterexample: 72% direction accuracy, negative ROI.
+
+Anything built on CLV as a proxy metric here must be validated against
+outcomes as well, not instead.
+
 ## What would change the answer
 
 None of these is a modeling problem:
