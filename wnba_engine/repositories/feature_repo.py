@@ -177,6 +177,19 @@ TEAM_GAME_COLUMNS: tuple[str, ...] = (
     "possessions",
     "offensive_rating",
     "defensive_rating",
+    # Style dimensions -- WHAT a team does, as opposed to how well. Rolled
+    # into a trailing-window vector by the style steps; see
+    # wnba_engine/analysis/style.py for why ratings are excluded from that
+    # vector even though they are loaded here.
+    "efg",
+    "tov_ratio",
+    "oreb_pct",
+    "ftr",
+    "ast_pct",
+    "opp_efg",
+    "opp_tov_pct",
+    "opp_oreb_pct",
+    "opp_ftr",
 )
 
 _TEAM_GAMES_SQL = """
@@ -201,7 +214,16 @@ SELECT
     tas.pace                     AS pace,
     tas.possessions              AS possessions,
     tas.offensive_rating         AS offensive_rating,
-    tas.defensive_rating         AS defensive_rating
+    tas.defensive_rating         AS defensive_rating,
+    tas.effective_field_goal_percentage      AS efg,
+    tas.turnover_ratio                       AS tov_ratio,
+    tas.offensive_rebound_percentage         AS oreb_pct,
+    tas.free_throw_attempt_rate              AS ftr,
+    tas.assist_percentage                    AS ast_pct,
+    tas.opp_effective_field_goal_percentage  AS opp_efg,
+    tas.opp_team_turnover_percentage         AS opp_tov_pct,
+    tas.opp_offensive_rebound_percentage     AS opp_oreb_pct,
+    tas.opp_free_throw_attempt_rate          AS opp_ftr
 FROM games g
 CROSS JOIN LATERAL (
     VALUES (g.home_team_id, g.away_team_id), (g.away_team_id, g.home_team_id)
