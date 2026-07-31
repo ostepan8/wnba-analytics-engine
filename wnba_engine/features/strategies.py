@@ -39,7 +39,14 @@ from collections.abc import Callable, Mapping
 from wnba_engine.features.errors import FeatureError
 from wnba_engine.features.pipeline import Pipeline
 from wnba_engine.features.source import FeatureRowSource
-from wnba_engine.features.steps import cleaning, derivation, encoding, filtering, loading
+from wnba_engine.features.steps import (
+    cleaning,
+    derivation,
+    encoding,
+    filtering,
+    loading,
+    style_steps,
+)
 
 StrategyFactory = Callable[[FeatureRowSource], Pipeline]
 
@@ -182,9 +189,65 @@ def player_form(source: FeatureRowSource, *, minimum_minutes: int = 5) -> Pipeli
 #: The registry the CLI's --strategy flag resolves against. Adding a
 #: strategy means adding a factory above and one line here; nothing else
 #: in the codebase needs to know it exists.
+def team_style(source: FeatureRowSource) -> Pipeline:
+    """Rolling STYLE vectors plus the matchup features they enable.
+
+    Built on situational_baseline rather than team_form deliberately.
+    team_form already rolls `pace` over a 5-game window, and
+    RollingMeanStep names its output `{column}_mean_{window}` regardless
+    of label -- so extending team_form would have two steps both claiming
+    `pace_mean_5`. The frame guard catches that (it did), but the right
+    fix is for style to be its own strategy rather than a bolt-on.
+
+    The season-aggregate vectors in wnba_engine/analysis/style.py cannot
+    be used as features -- a season aggregate contains the games it would
+    predict. These rebuild the same dimensions from trailing windows, then
+    derive what one team's vector cannot express:
+
+    - `style_distance` and the per-dimension `*_gap` columns describe the
+      MATCHUP. A stylistic mismatch is invisible in either team's own
+      numbers, and the archetype work found matchup effects large enough
+      to swamp home court -- perimeter teams beat grinders 74% at home.
+    - `style_volatility` compares a 5-game window against a 15-game one,
+      separating a settled identity from a team mid-reinvention. A single
+      rolling average cannot tell those apart.
+
+    Two windows over the same dimensions is the point, not duplication.
+    """
+    dims = style_steps.STYLE_DIMENSIONS
+    short = derivation.RollingMeanStep(
+        value_columns=dims, window=5, group_by=("team_id",), label="style_short"
+    )
+    long = derivation.RollingMeanStep(
+        value_columns=dims, window=15, group_by=("team_id",), label="style_long"
+    )
+    mirror = derivation.OpponentFormStep.mirroring(short, label="opponent_style")
+    return (
+        situational_baseline(source)
+        .renamed("team_style")
+        .with_steps(
+            (
+                short,
+                long,
+                mirror,
+                style_steps.StyleDistanceStep(
+                    team_columns=short.output_columns,
+                    opponent_columns=mirror.output_columns,
+                    dimensions=dims,
+                ),
+                style_steps.StyleVolatilityStep(
+                    short_columns=short.output_columns,
+                    long_columns=long.output_columns,
+                ),
+            )
+        )
+    )
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
+    "team_style": team_style,
     "player_form": player_form,
 }
 
