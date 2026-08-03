@@ -51,6 +51,10 @@ from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
 )
 from wnba_engine.pipeline.feature_build import build_features
+from wnba_engine.pipeline.focused_odds_capture import (
+    DEFAULT_MIN_FILLS,
+    capture_focused_odds,
+)
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_candle_backfill import (
     GAME_SERIES,
@@ -570,6 +574,42 @@ def lead_lag_report() -> None:
             click.echo(
                 f"  lag {check.lag_minutes:>+4}m  r={check.correlation}  "
                 f"P(r<=0)={check.share_at_or_below_zero}  games={check.games}"
+            )
+    finally:
+        db.close()
+
+
+@cli.command("capture-odds-focused")
+@click.option("--window-hours", default=6, show_default=True,
+              help="How long before tip-off a game becomes worth watching.")
+@click.option("--min-fills", default=DEFAULT_MIN_FILLS, show_default=True,
+              help="Minimum Polymarket fills on a game before it is watched.")
+def capture_odds_focused(window_hours: int, min_fills: int) -> None:
+    """High-frequency sportsbook capture near tip-off, quota-gated.
+
+    Answers ONE question, from MODELING_FINDINGS.md: when Polymarket moves,
+    is the book's old price still there? Our normal captures are 60 minutes
+    apart and the follow-through lands inside that gap, so the economics of
+    the cross-venue lead cannot currently be tested.
+
+    Spends ZERO requests unless a game is inside the window AND has enough
+    prediction-market activity to produce the move being studied. When it
+    does spend, it spends exactly one -- the-odds-api bills /odds per market
+    and region, not per event.
+
+    Read-only price capture. This is not a trading system; see ROADMAP.md.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(
+                capture_focused_odds(
+                    db,
+                    client,
+                    window=timedelta(hours=window_hours),
+                    min_fills=min_fills,
+                )
             )
     finally:
         db.close()

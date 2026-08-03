@@ -27,7 +27,7 @@ from psycopg import Connection
 
 from wnba_engine.db.pool import Database
 from wnba_engine.kalshi.game_matching import parse_matchup
-from wnba_engine.kalshi.team_market_matching import parse_two_team_market
+from wnba_engine.pipeline.kalshi_ingest import resolve_team_market_game_id
 from wnba_engine.repositories import entity_repo
 
 logger = logging.getLogger(__name__)
@@ -87,18 +87,18 @@ def _relink_candles(db: Database, *, dry_run: bool) -> int:
     """
     linked = 0
     with db.connection() as conn:
+        # Title comes from the candle row itself (migration 0026), not from
+        # market_price_snapshots. The snapshot ingest only ever sees markets
+        # that are currently OPEN, so a settled spread or total -- which is
+        # most of this table -- has no snapshot to borrow a title from, and
+        # an earlier version of this function repaired 2 markets out of
+        # 2,948 for exactly that reason.
         rows = conn.execute(
-            "SELECT DISTINCT market_ticker FROM kalshi_candlesticks WHERE game_id IS NULL"
+            "SELECT DISTINCT market_ticker, title FROM kalshi_candlesticks "
+            "WHERE game_id IS NULL AND title IS NOT NULL"
         ).fetchall()
-        for (ticker,) in rows:
-            title = conn.execute(
-                "SELECT title FROM market_price_snapshots "
-                "WHERE provider = 'kalshi' AND market_external_id = %s LIMIT 1",
-                (ticker,),
-            ).fetchone()
-            if not title or not title[0]:
-                continue
-            game_id = _resolve_kalshi(conn, str(ticker), str(title[0]))
+        for ticker, title in rows:
+            game_id = _resolve_kalshi(conn, str(ticker), str(title))
             if game_id is None:
                 continue
             linked += 1
@@ -129,14 +129,14 @@ def _resolve_kalshi(conn: Connection, event_id: str, title: str) -> int | None:
     """
     if not event_id:
         return None
-    parsed = parse_matchup(event_id, title) or parse_two_team_market(event_id, title)
-    if parsed is None:
-        return None
-    game_date, team_a, team_b = parsed
-    near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
-    return entity_repo.find_game_id_by_teams(
-        conn, team_a, team_b, near, window=timedelta(days=KALSHI_WINDOW_DAYS)
-    )
+    parsed = parse_matchup(event_id, title)
+    if parsed is not None:
+        game_date, team_a, team_b = parsed
+        near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
+        return entity_repo.find_game_id_by_teams(
+            conn, team_a, team_b, near, window=timedelta(days=KALSHI_WINDOW_DAYS)
+        )
+    return resolve_team_market_game_id(conn, event_id, title)
 
 
 def _resolve_polymarket(conn: Connection, title: str) -> int | None:

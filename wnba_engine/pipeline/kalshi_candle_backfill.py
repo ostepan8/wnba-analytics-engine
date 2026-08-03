@@ -24,8 +24,8 @@ from wnba_engine.db.pool import Database
 from wnba_engine.kalshi.candle_parser import parse_candlesticks
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.kalshi.game_matching import parse_matchup
-from wnba_engine.kalshi.team_market_matching import parse_two_team_market
 from wnba_engine.models.market_history import KalshiCandle
+from wnba_engine.pipeline.kalshi_ingest import resolve_team_market_game_id
 from wnba_engine.repositories import entity_repo, market_history_repo
 
 logger = logging.getLogger(__name__)
@@ -234,11 +234,14 @@ def _resolve_game_id(conn: Connection, event_ticker: str | None, title: str) -> 
     """
     if not event_ticker:
         return None
-    parsed = parse_matchup(event_ticker, title) or parse_two_team_market(event_ticker, title)
-    if parsed is None:
-        return None
-    game_date, team_a, team_b = parsed
-    near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
-    return entity_repo.find_game_id_by_teams(
-        conn, team_a, team_b, near, window=GAME_DATE_MATCH_WINDOW
-    )
+    parsed = parse_matchup(event_ticker, title)
+    if parsed is not None:
+        game_date, team_a, team_b = parsed
+        near = datetime.combine(game_date, time(12, 0), tzinfo=UTC)
+        return entity_repo.find_game_id_by_teams(
+            conn, team_a, team_b, near, window=GAME_DATE_MATCH_WINDOW
+        )
+    # Spreads and totals. Shared with kalshi_ingest rather than
+    # re-implemented -- a private second copy here is exactly how every
+    # KXWNBASPREAD bar came to be written with a NULL game_id.
+    return resolve_team_market_game_id(conn, event_ticker, title)

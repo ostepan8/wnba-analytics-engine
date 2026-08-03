@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Schedule the capture PULL on this machine.
+# Schedule the local launchd agents: the capture PULL, and the focused
+# high-frequency odds capture.
 #
 # scripts/deploy-capture-host.sh schedules the recording side on the
 # always-on host. Nothing scheduled the retrieval side, which is how four
@@ -11,34 +12,41 @@
 # Usage: scripts/install-market-sync.sh [--uninstall]
 set -euo pipefail
 
-LABEL="com.ostepan.wnba-market-sync"
+# Two agents, both local:
+#   market-sync    hourly, pulls captures off the always-on host
+#   odds-focused   every 5 min, but self-gating -- see its plist
+LABELS=(com.ostepan.wnba-market-sync com.ostepan.wnba-odds-focused)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLIST_DEST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 DOMAIN="gui/$(id -u)"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  launchctl bootout "${DOMAIN}/${LABEL}" 2>/dev/null || true
-  rm -f "$PLIST_DEST"
-  echo "==> removed ${LABEL}"
+  for label in "${LABELS[@]}"; do
+    launchctl bootout "${DOMAIN}/${label}" 2>/dev/null || true
+    rm -f "${HOME}/Library/LaunchAgents/${label}.plist"
+    echo "==> removed ${label}"
+  done
   exit 0
 fi
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${HOME}/wnba-market-capture/logs"
 
-echo "==> installing ${LABEL}"
-sed -e "s|PLACEHOLDER_REPO|${REPO_ROOT}|g" \
-    -e "s|PLACEHOLDER_HOME|${HOME}|g" \
-    "${REPO_ROOT}/scripts/${LABEL}.plist" > "$PLIST_DEST"
+for label in "${LABELS[@]}"; do
+  dest="${HOME}/Library/LaunchAgents/${label}.plist"
+  echo "==> installing ${label}"
+  sed -e "s|PLACEHOLDER_REPO|${REPO_ROOT}|g" \
+      -e "s|PLACEHOLDER_HOME|${HOME}|g" \
+      "${REPO_ROOT}/scripts/${label}.plist" > "$dest"
 
-# bootout before bootstrap so a re-run replaces rather than erroring with
-# "service already loaded".
-launchctl bootout "${DOMAIN}/${LABEL}" 2>/dev/null || true
-launchctl bootstrap "$DOMAIN" "$PLIST_DEST"
-
-echo "==> status"
-launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null \
-  | grep -E 'state|last exit code|runs' || echo "agent not reporting yet"
+  # bootout before bootstrap so a re-run replaces rather than erroring
+  # with "service already loaded".
+  launchctl bootout "${DOMAIN}/${label}" 2>/dev/null || true
+  launchctl bootstrap "$DOMAIN" "$dest"
+  launchctl print "${DOMAIN}/${label}" 2>/dev/null \
+    | grep -E 'state|last exit code|runs' || echo "   (not reporting yet)"
+done
 
 echo
-echo "Pull runs hourly. Logs: ${HOME}/wnba-market-capture/logs/sync.log"
+echo "Pull runs hourly.        logs: ${HOME}/wnba-market-capture/logs/sync.log"
+echo "Focused odds every 5min. logs: ${HOME}/wnba-market-capture/logs/odds-focused.log"
+echo "  (spends 0 requests unless a traded game is within 6h of tip-off)"
 echo "Full history sweep stays manual: scripts/backfill-prediction-markets.sh"

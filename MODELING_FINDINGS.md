@@ -236,6 +236,71 @@ Polymarket eased to 55.5%. They converged from BOTH directions, which is
 what two venues finding the same number looks like -- not what one venue
 following the other looks like.
 
+### The economics of the cross-venue lead: too small on average, positive in the tail
+
+Establishing that books FOLLOW Polymarket says nothing about whether the
+follow is worth crossing a spread for. That is an arithmetic question and
+the data answers it.
+
+Regressing each book price change on the Polymarket move that preceded it
+by >=20 minutes, over 1,049 changes:
+
+| | probability points |
+|---|---:|
+| books recover **60.8%** of a Polymarket move (beta = 0.608) | |
+| mean absolute Polymarket move | 1.21 |
+| implied book follow-through | **0.74** |
+| half the sportsbook overround (1.0465) you must cross | **2.33** |
+| **net per bet** | **-1.59** |
+
+**The average move is roughly 3x too small to pay for the spread**, and no
+amount of capture speed changes that -- faster sampling captures 0.74
+points faster.
+
+It flips in the tail, and unlike every other candidate in this file it
+does so MONOTONICALLY, which is what a real effect looks like:
+
+| \|Polymarket move\| >= | n | book follow | net vs vig |
+|---|---:|---:|---:|
+| any | 1,049 | 0.74p | -1.59p |
+| 1.0p | 588 | 1.26p | -1.07p |
+| 2.0p | 244 | 2.20p | -0.13p |
+| **3.0p** | 123 | 3.14p | **+0.81p** |
+| **5.0p** | 35 | 4.40p | **+2.07p** |
+
+Break-even is a Polymarket move of **~3.83 points**, which is 7.3% of
+observations -- about 40 opportunities per WNBA season.
+
+Compare that against the false positive rejected the same day: "follow
+Polymarket when it disagrees with the books" returned +15.34% on 96 games
+(t=1.60) but its threshold profile INVERTED -- +16.1% at >=0.0075, +5.7%
+at >=0.015, -4.6% at >=0.02 -- and every game was 2026. Monotonicity is
+the difference, and it is a cheaper test than any statistic.
+
+**Three things stand between this and money, and only the first is about
+latency:**
+
+1. You would have to act on the tail alone. Betting the average move
+   loses 1.59 points a time.
+2. **This measures that the book MOVED, not that the old price was still
+   available.** Our sportsbook sampling is 60.1 minutes; the follow-through
+   could have landed two minutes after Polymarket. The current data
+   structurally cannot distinguish those, and that assumption carries the
+   entire result.
+3. The CLV-without-profit section below is this exact failure mode already
+   observed once: 72.6% price-direction accuracy, -1.6% to -7.3% ROI.
+
+And a blunt comparison: on 2026-08-03 the same moneyline ranged -115 to
+-130 across eleven books -- **3 points of stake from line shopping alone**,
+larger than the +2.07 point edge in the best bucket, with no infrastructure
+at all.
+
+**The one experiment worth running** is therefore assumption 2, not a
+trading system: raise sportsbook polling to ~5 minutes on the handful of
+games where Polymarket has real volume, and measure whether book prices
+survive the window. `capture-odds-focused` does exactly that. If they do
+not survive, this is dead and it cost a few hundred API calls to learn.
+
 ## Predicting price movement: CLV without profit
 
 The second change of lens. Rather than forecasting the game, forecast the
