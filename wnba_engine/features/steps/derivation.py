@@ -22,7 +22,6 @@ and cannot be thrown off by a date boundary.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -31,15 +30,20 @@ from wnba_engine.features.errors import StepContractError
 from wnba_engine.features.frame import FeatureFrame, Row
 from wnba_engine.features.provenance import StepKind, StepProvenance
 from wnba_engine.features.step import RowMapStep, WindowedStep
+from wnba_engine.features.steps._windowing import (
+    WINDOW_COUNT_SUFFIX,
+    WINDOW_END_SUFFIX,
+    chronological,
+    event_time,
+    finalise,
+    mean_of,
+)
 
 #: A gap shorter than this counts as a back-to-back. 36h is the widest gap
 #: two consecutive-evening games can have (an early game followed by a
 #: late one three zones west) and comfortably narrower than the ~48h a
 #: genuine one-day-off pairing produces.
 BACK_TO_BACK_MAX_GAP = timedelta(hours=36)
-
-WINDOW_END_SUFFIX = "__window_end"
-WINDOW_COUNT_SUFFIX = "__window_games"
 
 #: Columns describing the OUTCOME of the row's own game. They are inputs
 #: to the backward-looking steps below (a rolling form average needs past
@@ -145,9 +149,9 @@ class RestDaysStep(WindowedStep):
         # key -> (previous distinct event time, current distinct event time)
         seen: dict[tuple[object, ...], tuple[datetime | None, datetime]] = {}
 
-        for index, row in _chronological(frame, self.name):
+        for index, row in chronological(frame, self.name):
             key = tuple(row.get(column) for column in self.group_by)
-            event_at = _event_time(frame, row, self.name)
+            event_at = event_time(frame, row, self.name)
             prior, current = seen.get(key, (None, event_at))
             if current != event_at:
                 prior, current = current, event_at
@@ -165,7 +169,7 @@ class RestDaysStep(WindowedStep):
                     "rest_days": gap.total_seconds() / 86_400.0,
                     "is_back_to_back": gap < BACK_TO_BACK_MAX_GAP,
                 }
-        return _finalise(cells, self.name)
+        return finalise(cells, self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,12 +227,12 @@ class RollingMeanStep(WindowedStep):
         cells: list[Row | None] = [None] * len(frame.rows)
         history: dict[tuple[object, ...], list[tuple[datetime, Row]]] = {}
 
-        for index, row in _chronological(frame, self.name):
+        for index, row in chronological(frame, self.name):
             key = tuple(row.get(column) for column in self.group_by)
             past = history.setdefault(key, [])
             contributing = past[-self.window :]
             cell: dict[str, object] = {
-                output: _mean(
+                output: mean_of(
                     [
                         observation[column]
                         for _, observation in contributing
@@ -244,11 +248,11 @@ class RollingMeanStep(WindowedStep):
             # reason a row can never enter its own window.
             past.append(
                 (
-                    _event_time(frame, row, self.name),
+                    event_time(frame, row, self.name),
                     {column: row.get(column) for column in self.value_columns},
                 )
             )
-        return _finalise(cells, self.name)
+        return finalise(cells, self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,7 +295,7 @@ class SeasonToDateStep(WindowedStep):
         won: dict[tuple[object, ...], int] = {}
         last_at: dict[tuple[object, ...], datetime] = {}
 
-        for index, row in _chronological(frame, self.name):
+        for index, row in chronological(frame, self.name):
             key = (*(row.get(column) for column in self.group_by), row.get(self.season_column))
             games = played.get(key, 0)
             wins = won.get(key, 0)
@@ -303,59 +307,8 @@ class SeasonToDateStep(WindowedStep):
             }
             played[key] = games + 1
             won[key] = wins + (1 if row.get("won") else 0)
-            last_at[key] = _event_time(frame, row, self.name)
-        return _finalise(cells, self.name)
-
-
-def _finalise(cells: Sequence[Row | None], step_name: str) -> tuple[Row, ...]:
-    """Positional results, refusing a gap.
-
-    Every windowed step above writes into a pre-sized list by original
-    index. Filtering the Nones out instead of failing on them would
-    silently SHIFT every later row's features onto the wrong game -- the
-    kind of bug that leaves the pipeline green and the numbers subtly
-    wrong.
-    """
-    if any(cell is None for cell in cells):
-        missing = [i for i, cell in enumerate(cells) if cell is None]
-        raise StepContractError(
-            f"step {step_name!r} produced no cells for row(s) {missing[:5]}"
-        )
-    return tuple(cell for cell in cells if cell is not None)
-
-
-def _chronological(frame: FeatureFrame, step_name: str) -> list[tuple[int, Row]]:
-    """(original index, row) ordered by event time.
-
-    Sorting explicitly rather than trusting the loader's ORDER BY: a
-    strategy is free to insert a step that reorders rows, and a rolling
-    window fed out-of-order rows would happily average future games
-    without any single line of code looking wrong. The original index
-    comes along so results are written back positionally.
-    """
-    column = frame.event_time_column
-    if column is None:
-        raise StepContractError(f"step {step_name!r} requires an event-time column")
-    return sorted(
-        enumerate(frame.rows),
-        key=lambda pair: (_event_time(frame, pair[1], step_name), pair[0]),
-    )
-
-
-def _event_time(frame: FeatureFrame, row: Row, step_name: str) -> datetime:
-    value = row.get(frame.event_time_column or "")
-    if not isinstance(value, datetime):
-        raise StepContractError(
-            f"step {step_name!r} needs a datetime event time in "
-            f"{frame.event_time_column!r}, got {type(value).__name__}"
-        )
-    return value
-
-
-def _mean(values: Sequence[object]) -> float | None:
-    if not values:
-        return None
-    return sum(float(value) for value in values) / len(values)  # type: ignore[arg-type]
+            last_at[key] = event_time(frame, row, self.name)
+        return finalise(cells, self.name)
 
 
 @dataclass(frozen=True, slots=True)

@@ -101,7 +101,8 @@ guard.py        LeakageGuard -- structural, provenance, boundary, window.
 pipeline.py     Pipeline -- immutable ordered stack + with_step/without/...
 source.py       FeatureRowSource protocol; Postgres and in-memory impls.
 strategies.py   Named, pre-composed pipelines.
-steps/          loading | cleaning | filtering | derivation | encoding
+steps/          loading | cleaning | filtering | derivation | form | encoding
+_windowing.py   the one invariant every WINDOWED step shares (see below)
 ```
 
 `FeatureFrame` is a tuple of `MappingProxyType` rows plus three
@@ -134,6 +135,30 @@ window stopped -- which the guard then checks. `StepProvenance` validates
 these combinations in `__post_init__`, and strategies are composed at
 import time, so a mis-declared step is an `ImportError`, not a surprise
 three hours into a backfill.
+
+### The one thing every windowed step gets right the same way
+
+`steps/_windowing.py::trailing_walk` walks the frame in event order and
+hands each row **its group's prior observations**, appending the row's
+own observation only after the consumer resumes:
+
+```python
+for index, row, past in trailing_walk(frame, self.name, group_by=("team_id",),
+                                      observe=_observer(("points_scored",))):
+    cells[index] = summarise(past)     # `past` cannot contain `row`
+```
+
+That is the structural reason a row can never enter its own window, and
+it is the single most-repeated piece of logic here -- ten windowed steps
+across two modules need it. It lives in one function because the tenth
+copy is the one that gets it backwards, and because the failure is a
+value rather than a crash.
+
+The guard does not take the helper's word for it: every windowed step
+still publishes a window end, and that end is still compared to the
+row's own tip-off. `tests/unit/features/test_leakage_guard.py` carries a
+deliberately-leaky variant of each family (rolling, expanding, slope,
+split, streak, standings join) that must be rejected.
 
 ---
 

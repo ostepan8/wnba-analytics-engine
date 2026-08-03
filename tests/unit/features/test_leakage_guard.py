@@ -136,6 +136,200 @@ def test_season_aggregate_spanning_the_target_game_is_rejected() -> None:
         _run(_WholeSeasonAggregateStep(), frame_of(team_schedule()))
 
 
+# -- the ss2 multi-window family, written wrong -------------------------
+#
+# One deliberately-leaky variant per family added by
+# `steps/form_steps.py`. Each is written the way the corresponding
+# correct step would look if its author had made the single most
+# plausible mistake for that KIND of statistic -- which differs per
+# family, and is the reason these are not one parametrised test.
+
+
+class _SeasonToDateIncludingTodayStep(WindowedStep):
+    """An expanding mean that accumulates BEFORE it summarises.
+
+    The `ExpandingMeanStep` off-by-one: "this team's season scoring
+    average" quietly becomes "including tonight". Indistinguishable from
+    the correct version by eye, and worth roughly a point of apparent
+    accuracy per game.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_expanding"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("season_mean", "leaky_expanding__window_end"),
+            window_end_column="leaky_expanding__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        totals: dict[object, list[float]] = {}
+        seen_at: dict[object, datetime] = {}
+        cells: list[Row] = []
+        for row in frame.rows:
+            key = (row["team_id"], row["season"])
+            totals.setdefault(key, []).append(float(row["points_scored"]))  # type: ignore[arg-type]
+            seen_at[key] = row["start_time"]  # type: ignore[assignment]
+            values = totals[key]
+            cells.append(
+                {
+                    "season_mean": sum(values) / len(values),
+                    "leaky_expanding__window_end": seen_at[key],
+                }
+            )
+        return tuple(cells)
+
+
+def test_a_season_to_date_mean_that_includes_tonight_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_SeasonToDateIncludingTodayStep(), frame_of(team_schedule()))
+    assert "leaky_expanding__window_end" in str(excinfo.value)
+
+
+class _WholeHistorySlopeStep(WindowedStep):
+    """A "form trend" fitted over the team's WHOLE schedule.
+
+    The mistake specific to a slope: a trend feels like a description of
+    a period rather than of a moment, so the natural implementation
+    regresses the full series once and attaches the same number to every
+    row. For every game but the last, that number was fitted on games
+    that had not happened.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_slope"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("form_slope", "leaky_slope__window_end"),
+            window_end_column="leaky_slope__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        by_team: dict[object, list[tuple[datetime, float]]] = {}
+        for row in frame.rows:
+            by_team.setdefault(row["team_id"], []).append(
+                (row["start_time"], float(row["points_scored"]))  # type: ignore[arg-type,index]
+            )
+        slopes: dict[object, tuple[float, datetime]] = {}
+        for team, series in by_team.items():
+            series.sort()
+            values = [value for _, value in series]
+            n = len(values)
+            mean_x, mean_y = (n - 1) / 2.0, sum(values) / n
+            denominator = sum((x - mean_x) ** 2 for x in range(n)) or 1.0
+            slope = sum((x - mean_x) * (y - mean_y) for x, y in enumerate(values)) / denominator
+            slopes[team] = (slope, series[-1][0])
+        return tuple(
+            {
+                "form_slope": slopes[row["team_id"]][0],
+                "leaky_slope__window_end": slopes[row["team_id"]][1],
+            }
+            for row in frame.rows
+        )
+
+
+def test_a_trend_fitted_on_the_whole_schedule_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_WholeHistorySlopeStep(), frame_of(team_schedule()))
+    assert "leaky_slope__window_end" in str(excinfo.value)
+
+
+class _SelfIncludingHomeSplitStep(WindowedStep):
+    """A home-only average that counts the game it is describing.
+
+    The mistake specific to a SPLIT: the filter is the visible logic, so
+    the exclusion gets attention only for the unsplit version. A home
+    average that includes tonight's home game is the same leak as the
+    rolling one and looks less like it.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_home_split"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("home_mean", "leaky_home_split__window_end"),
+            window_end_column="leaky_home_split__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        history: dict[object, list[tuple[datetime, float]]] = {}
+        cells: list[Row] = []
+        for row in frame.rows:
+            past = history.setdefault(row["team_id"], [])
+            if row["is_home"]:
+                past.append((row["start_time"], float(row["points_scored"])))  # type: ignore[arg-type]
+            if not past:
+                cells.append({"home_mean": None, "leaky_home_split__window_end": None})
+                continue
+            cells.append(
+                {
+                    "home_mean": sum(v for _, v in past) / len(past),
+                    "leaky_home_split__window_end": max(at for at, _ in past),
+                }
+            )
+        return tuple(cells)
+
+
+def test_a_home_split_that_includes_tonights_home_game_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_SelfIncludingHomeSplitStep(), frame_of(team_schedule()))
+    assert "leaky_home_split__window_end" in str(excinfo.value)
+
+
+class _StreakIncludingTonightStep(WindowedStep):
+    """A streak counting tonight's result.
+
+    The mistake specific to a STREAK: "on a 4-game win streak" is
+    ordinarily said AFTER a game, so the natural reading of the phrase is
+    the leaky one. A streak used as a feature has to mean "going in".
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_streak"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("win_streak", "leaky_streak__window_end"),
+            window_end_column="leaky_streak__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        streaks: dict[object, int] = {}
+        cells: list[Row] = []
+        for row in frame.rows:
+            won = row["points_scored"] > row["points_allowed"]  # type: ignore[operator]
+            current = streaks.get(row["team_id"], 0)
+            streaks[row["team_id"]] = (max(current, 0) + 1) if won else (min(current, 0) - 1)
+            cells.append(
+                {
+                    "win_streak": streaks[row["team_id"]],
+                    "leaky_streak__window_end": row["start_time"],
+                }
+            )
+        return tuple(cells)
+
+
+def test_a_streak_counting_tonights_result_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_StreakIncludingTonightStep(), frame_of(team_schedule()))
+    assert "leaky_streak__window_end" in str(excinfo.value)
+
+
 # -- the standings trap, both halves ------------------------------------
 
 
@@ -470,3 +664,42 @@ def test_a_correct_backward_window_passes() -> None:
         for end, row in zip(ends[1:], frame.rows[1:], strict=True)
     )
     assert frame.rows[0]["points_scored_mean_3"] is None
+
+
+def test_every_multi_window_form_step_publishes_a_window_end_before_its_row() -> None:
+    """The positive counterpart to the four leaky variants above: run the
+    real ss2 steps together and assert the property they are all trying to
+    hold, rather than only that they do not raise.
+    """
+    from wnba_engine.features.steps.derivation import GameOutcomeStep
+    from wnba_engine.features.steps.form_steps import (
+        ExpandingMeanStep,
+        ExponentialMeanStep,
+        RollingDispersionStep,
+        RollingSlopeStep,
+        SplitRollingMeanStep,
+        StreakStep,
+    )
+
+    steps = (
+        GameOutcomeStep(),
+        ExpandingMeanStep(value_columns=("points_scored",)),
+        ExponentialMeanStep(value_columns=("points_scored",)),
+        RollingDispersionStep(value_columns=("points_scored",), window=5),
+        RollingSlopeStep(value_columns=("points_scored",), window=5),
+        SplitRollingMeanStep(
+            value_columns=("points_scored",), window=5,
+            split_column="is_home", split_value=True, suffix="home", label="split_home",
+        ),
+        StreakStep(),
+    )
+    frame = Pipeline(name="multi", steps=steps).run(  # type: ignore[arg-type]
+        frame_of(team_schedule(count=8)), context=context()
+    )
+
+    window_ends = sorted(frame.window_end_columns)
+    assert len(window_ends) == len(steps) - 1  # every step but GameOutcomeStep
+    for row in frame.rows:
+        for column in window_ends:
+            end = row[column]
+            assert end is None or end < row["start_time"]  # type: ignore[operator]
