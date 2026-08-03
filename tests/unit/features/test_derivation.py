@@ -184,3 +184,47 @@ def test_rolling_step_rejects_a_nonsense_window() -> None:
         RollingMeanStep(value_columns=("points_scored",), window=0)
     with pytest.raises(StepContractError):
         RollingMeanStep(value_columns=(), window=3)
+
+
+def test_target_columns_covers_every_same_game_outcome_the_loader_selects() -> None:
+    """The list must not drift behind the loader.
+
+    `TARGET_COLUMNS` documents itself as the one-line drop before training,
+    and for a long time it named only the four scoring columns while
+    `load_team_games` also selected thirteen advanced-stat columns for the
+    row's OWN game. Correlated against what the closing line got wrong,
+    `offensive_rating` scored r=+0.431 (t=+23.9) -- a caller following the
+    docstring exactly would have trained on the box score of the game it
+    was predicting.
+
+    The leakage guard cannot catch it: these are row-local source columns
+    like `points_scored`, and nothing about their timestamp is wrong. Only
+    their meaning is. So the protection has to be this test.
+    """
+    from wnba_engine.features.steps.derivation import TARGET_COLUMNS
+    from wnba_engine.repositories import feature_repo
+
+    same_game_outcomes = {
+        "points_scored", "points_allowed", "pace", "possessions",
+        "offensive_rating", "defensive_rating",
+        "efg", "tov_ratio", "oreb_pct", "ftr", "ast_pct",
+        "opp_efg", "opp_tov_pct", "opp_oreb_pct", "opp_ftr",
+    }
+    loaded = set(feature_repo.TEAM_GAME_COLUMNS)
+    missing = (same_game_outcomes & loaded) - set(TARGET_COLUMNS)
+    assert not missing, (
+        f"the loader selects same-game outcome columns not named as targets: {sorted(missing)}"
+    )
+
+
+def test_drop_targets_removes_them_and_keeps_everything_else() -> None:
+    from wnba_engine.features.steps.derivation import TARGET_COLUMNS, drop_targets
+
+    row = {"team_id": 1, "points_scored": 90, "offensive_rating": 112.4,
+           "points_scored_mean_5": 82.1, "rest_days": 2.0}
+    (out,) = drop_targets([row])
+    assert "points_scored" not in out
+    assert "offensive_rating" not in out
+    assert out["points_scored_mean_5"] == 82.1  # the rolled feature survives
+    assert out["rest_days"] == 2.0
+    assert not set(out) & set(TARGET_COLUMNS)

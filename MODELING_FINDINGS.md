@@ -349,6 +349,73 @@ direct counterexample: 72% direction accuracy, negative ROI.
 Anything built on CLV as a proxy metric here must be validated against
 outcomes as well, not instead.
 
+## The residual test, re-run against every feature (2026-08-04)
+
+The "decisive test" above predates the 99 features added in August 2026
+(multi-window form, matchup, player rates, style, market). Re-running it
+across all of them, on 2,528 team-game rows carrying a de-vigged closing
+price:
+
+**First it found a leak, not an edge.** The top of the table was:
+
+| feature | r vs market residual | t |
+|---|---:|---:|
+| `offensive_rating` | **+0.431** | +23.9 |
+| `efg` | **+0.393** | +21.4 |
+| `tov_ratio` | -0.112 | -5.7 |
+
+Those are the row's OWN game's advanced stats. `load_team_games` selects
+thirteen columns from `team_advanced_stats` for the game being predicted,
+and `TARGET_COLUMNS` -- the list whose docstring says "named here so a
+caller can drop them in one line before training" -- listed only the four
+scoring columns. A caller who followed that advice exactly would have kept
+all thirteen and produced a spectacular backtest built on knowing the box
+score of the game it was forecasting.
+
+**The leakage guard cannot catch this.** These are row-local source
+columns, exactly like `points_scored`; nothing about their timestamp is
+wrong. Only their meaning is. Fixed by completing `TARGET_COLUMNS` (now 17
+columns) and adding `derivation.drop_targets`, so the one-line drop the
+docstring promises actually exists.
+
+**With those excluded, nothing survives.** 110 genuine backward-looking
+features:
+
+| | |
+|---|---:|
+| features with \|t\| > 1.96 | **5** |
+| expected by chance at 5% | **5.5** |
+| surviving Bonferroni (\|t\| > 3.51) | 1 |
+| best \|r\| among genuine features | 0.073 (0.53% of residual variance) |
+
+The count of "significant" features is indistinguishable from noise.
+
+### The one survivor, and why it is not one either
+
+`pace_gap` (difference in the two teams' rolling pace) reached r = -0.073,
+t = -3.66, and a betting test looked monotonic and profitable: +3.50% at
+1sd, **+10.18% at 1.5sd**, +12.50% at 2sd.
+
+It does not survive the check this file already documents. **A team-game
+frame holds two rows per game, and `pace_gap` is exactly antisymmetric
+between them -- verified on 1,288 of 1,288 games.** The two rows are one
+observation. Collapsing to the home row alone:
+
+| | doubled | independent |
+|---|---:|---:|
+| n | 2,522 | 1,261 |
+| t | -3.66 | **-2.61** |
+
+Precisely the sqrt(2) inflation, and -2.61 no longer clears the
+Bonferroni threshold for having searched 110 features. Per season the
+effect is significant in none of the five, and **2023 carries the opposite
+sign** (r = +0.034). The betting z-scores fall to +2.04 at 1.5sd (n=175)
+and +1.34 at 2sd (n=56), after an in-sample threshold search.
+
+So the answer stands, and now stands on a much wider base: **across 110
+features spanning form, matchup, style, rest, pace and player role,
+nothing holds information the closing line has not already priced.**
+
 ## What would change the answer
 
 None of these is a modeling problem:
