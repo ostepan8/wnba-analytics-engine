@@ -16,6 +16,8 @@ Several of them, because one would not be a strategy layer at all:
 - `team_form_multi` -- team_form plus FEATURE_ROADMAP.md ss2: 10/20-game
   and season-to-date levels, exponential weighting, consistency, trend,
   home/road splits, streaks, and blowout rate.
+- `team_matchup` -- team_form plus FEATURE_ROADMAP.md ss3: rest advantage,
+  pace interaction, and head-to-head record at two horizons.
 - `team_style` -- rolling style vectors and the matchup features they
   enable.
 - `player_form` -- player-game grain for prop work: rolling points /
@@ -43,6 +45,7 @@ from collections.abc import Callable, Mapping
 from wnba_engine.features.errors import FeatureError
 from wnba_engine.features.pipeline import Pipeline
 from wnba_engine.features.source import FeatureRowSource
+from wnba_engine.features.step import PreprocessingStep
 from wnba_engine.features.steps import (
     cleaning,
     derivation,
@@ -50,6 +53,7 @@ from wnba_engine.features.steps import (
     filtering,
     form_steps,
     loading,
+    matchup_steps,
     style_steps,
 )
 
@@ -311,7 +315,7 @@ def team_form_multi(source: FeatureRowSource) -> Pipeline:
     the feature. Dropping the rolling step and keeping the flags would
     hand a model the result.
     """
-    block: tuple[object, ...] = (
+    block: tuple[PreprocessingStep, ...] = (
         # -- level, at three horizons plus season-to-date -------------
         derivation.RollingMeanStep(
             value_columns=_FORM_COLUMNS, window=10, group_by=("team_id",),
@@ -353,15 +357,78 @@ def team_form_multi(source: FeatureRowSource) -> Pipeline:
     pipeline = team_form(source).renamed("team_form_multi")
     anchor = "opponent_season_form"
     for step in block:
-        pipeline = pipeline.insert_after(anchor, step)  # type: ignore[arg-type]
-        anchor = step.name  # type: ignore[attr-defined]
+        pipeline = pipeline.insert_after(anchor, step)
+        anchor = step.name
     return pipeline
+
+
+def team_matchup(source: FeatureRowSource) -> Pipeline:
+    """team_form plus FEATURE_ROADMAP.md ss3: what the two teams are
+    RELATIVE to each other.
+
+    Built on `team_form` rather than on `team_form_multi`, which is the
+    decision most worth challenging here. The three ss3 features need
+    exactly two things from upstream -- `rest_days` and `pace_mean_5`,
+    both of which `team_form` already produces -- so the multi-window
+    block would be eleven steps of cost for nothing this strategy reads.
+    Anyone wanting both can compose them, and the composition is the
+    reason `PaceInteractionStep` takes its column names as config rather
+    than hard-coding `pace_mean_5`:
+
+        strategies.build("team_form_multi", source).with_steps(
+            matchup_block()
+        )
+
+    The counter-argument: three strategies now share the same eighteen-step
+    prefix and can drift apart. That is the same tension `team_form_multi`
+    records, and the same answer applies -- collapsing them is cheap and
+    splitting them back apart is not.
+
+    A REST MIRROR IS ADDED HERE, not in team_form. `team_form` mirrors
+    rolling form, rolling pace and season record but not rest, so
+    `opponent_rest_days` does not exist until this strategy creates it.
+    That mirror and `RestAdvantageStep` are a pair in exactly the sense
+    `OpponentFormStep.mirroring` describes: dropping `rest_days` breaks
+    both, loudly.
+    """
+    return team_form(source).renamed("team_matchup").with_steps(matchup_block())
+
+
+def matchup_block() -> tuple[PreprocessingStep, ...]:
+    """The ss3 steps, in dependency order.
+
+    A function rather than a module constant because the steps are values
+    and sharing one tuple between strategies would be fine -- but the
+    mirror below is derived from column names `team_form` chose, and
+    keeping the derivation next to the strategy that relies on it is the
+    thing that makes a rename fail visibly.
+    """
+    return (
+        # RestDaysStep publishes no `output_columns` contract (it adds two
+        # unrelated columns rather than one per input), so the mirror
+        # names what it copies instead of using `.mirroring()`.
+        derivation.OpponentFormStep(
+            value_columns=("rest_days", "is_back_to_back"),
+            source_window_end_column=f"rest_days{derivation.WINDOW_END_SUFFIX}",
+            label="opponent_rest",
+        ),
+        matchup_steps.RestAdvantageStep(),
+        matchup_steps.PaceInteractionStep(),
+        # Two head-to-head horizons, both unbounded within their key.
+        # Season: typically 0-3 prior meetings, very noisy, and the only
+        # one describing the current rosters. All-time: up to ~20
+        # meetings across five seasons of turnover. FEATURE_ROADMAP.md
+        # asks for both and neither dominates.
+        matchup_steps.HeadToHeadStep(prefix="h2h_season", season_column="season"),
+        matchup_steps.HeadToHeadStep(prefix="h2h_all", season_column=None),
+    )
 
 
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
     "team_form_multi": team_form_multi,
+    "team_matchup": team_matchup,
     "team_style": team_style,
     "player_form": player_form,
 }

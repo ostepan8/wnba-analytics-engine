@@ -138,6 +138,79 @@ def test_team_form_is_unchanged_by_the_multi_window_strategy() -> None:
     assert "win_streak" not in frame.column_set
 
 
+def _matchup_rows() -> list[dict[str, object]]:
+    """Two teams meeting four times -- the structure every ss3 feature
+    is computed from.
+    """
+    rows: list[dict[str, object]] = []
+    for index in range(4):
+        at = FIRST_TIP + timedelta(days=3 * index)
+        rows.append(
+            team_row(game_id=index + 1, team_id=1, start_time=at, is_home=True,
+                     points_scored=80 + index, points_allowed=70)
+            | {"opponent_team_id": 2}
+        )
+        rows.append(
+            team_row(game_id=index + 1, team_id=2, start_time=at, is_home=False,
+                     points_scored=70, points_allowed=80 + index)
+            | {"opponent_team_id": 1}
+        )
+    return rows
+
+
+def test_team_matchup_adds_the_relational_columns() -> None:
+    source = StaticRowSource(team_game_rows=_matchup_rows())
+    frame = strategies.team_matchup(source).run(context=context())
+
+    for column in (
+        "opponent_rest_days",
+        "rest_advantage",
+        "back_to_back_edge",
+        "pace_pair_mean",
+        "pace_pair_min",
+        "pace_pair_gap",
+        "h2h_season_games_prior",
+        "h2h_season_win_pct_prior",
+        "h2h_all_margin_mean_prior",
+    ):
+        assert column in frame.column_set
+
+
+def test_the_rest_mirror_runs_before_the_step_that_reads_it() -> None:
+    """A mirror and the step consuming it are a pair; reversing them is a
+    frame-contract error rather than a column of nulls, but the ordering
+    is what makes that true.
+    """
+    names = strategies.team_matchup(StaticRowSource()).step_names
+    assert names.index("rest_days") < names.index("opponent_rest")
+    assert names.index("opponent_rest") < names.index("rest_advantage")
+    assert names.index("rolling_pace_5") < names.index("pace_interaction")
+
+
+def test_team_matchup_head_to_head_reflects_the_actual_series() -> None:
+    """Team 1 wins every meeting, so its later rows read a 1.0 prior win
+    rate and team 2's read 0.0. If the key were unordered both would read
+    0.5 and nothing would look wrong.
+    """
+    source = StaticRowSource(team_game_rows=_matchup_rows())
+    frame = strategies.team_matchup(source).run(context=context())
+    last = {row["team_id"]: row for row in frame.rows if row["game_id"] == 4}
+    assert last[1]["h2h_season_win_pct_prior"] == pytest.approx(1.0)
+    assert last[2]["h2h_season_win_pct_prior"] == pytest.approx(0.0)
+    assert last[1]["h2h_season_games_prior"] == 3
+
+
+def test_the_matchup_block_composes_onto_the_multi_window_strategy() -> None:
+    """The documented escape hatch: ss2 and ss3 are separate strategies
+    precisely so a caller wanting both says so in one line.
+    """
+    source = StaticRowSource(team_game_rows=_matchup_rows())
+    combined = strategies.team_form_multi(source).with_steps(strategies.matchup_block())
+    frame = combined.run(context=context())
+    assert "point_margin_sd_10" in frame.column_set
+    assert "rest_advantage" in frame.column_set
+
+
 def test_standings_can_be_layered_back_on() -> None:
     """The removal is a composition choice, not a deletion -- re-adding the
     step is one call, which is the point of the pipeline being composable."""

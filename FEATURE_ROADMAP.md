@@ -19,6 +19,7 @@ insight, and Phase 2 rules-based work**, not for an assumed betting edge.
 | `situational_baseline` | 8 | 33 |
 | `team_form` | 18 | 61 |
 | `team_form_multi` | 29 | 111 |
+| `team_matchup` | 23 | 80 |
 | `team_style` | 13 | 80 |
 | `player_form` | 9 | 34 |
 
@@ -51,7 +52,7 @@ Cheap, well-understood, mostly built.
 | games in last 7 / 10 days | `games` | **todo** | none |
 | travel: consecutive road games | `games` | **todo** | none |
 | days into season | `games` | **todo** | none |
-| rest ADVANTAGE vs opponent | `games` | **todo** | needs opponent mirror |
+| rest ADVANTAGE vs opponent | `games` | done (ss3) | needs opponent mirror -- AND inherits `rest_days`' cross-season gap; see `RestAdvantageStep` |
 | time-zone crossings | `games.venue_name` | **todo** | venue -> timezone mapping does not exist yet |
 
 ## 2. Team form, multi-window
@@ -84,10 +85,32 @@ recently. `OpponentFormStep.mirroring()` now mirrors any windowed step.
 |---|---|---|---|
 | opponent rolling form / pace | mirror | done | mirrors pair with their source step |
 | opponent season-to-date | mirror | done | same |
-| head-to-head history this season | `games` | **todo** | must exclude the current game |
-| head-to-head, multi-season | `games` | **todo** | same |
-| opponent defensive strength by position | `player_game_stats` | **todo** | needs a position mapping; `players.position` is present |
-| pace INTERACTION (both fast / both slow) | mirror | **todo** | none |
+| head-to-head history this season | `games` | done | must exclude the current game |
+| head-to-head, multi-season | `games` | done | same; also confounded with quality -- keep `*_margin_mean_prior` next to overall form |
+| opponent defensive strength by position | `player_game_stats` | **blocked** | `players.position` is a CURRENT-STATE UPSERT, not a stable label -- see below |
+| pace INTERACTION (both fast / both slow) | mirror | done | no threshold: a fitted one is cross-sectional, a hard-coded one is an era claim |
+
+Rest advantage, pace interaction and both head-to-head horizons live in
+the `team_matchup` strategy (`steps/matchup_steps.py`).
+
+**Why positional defence is blocked, not merely unbuilt.** The row above
+reads as a mapping problem ("`players.position` is present"). It is a
+provenance problem. `entity_repo.resolve_or_create_player` runs
+`UPDATE players SET full_name = %s, position = %s` on EVERY box-score
+ingest, so `position` is a current-state upsert in exactly the sense
+`team_standings` is -- and `players` carries no `captured_at` to anchor
+it. The values confirm it: the table holds `G` and `Guard`, `F` and
+`Forward`, `C` and `Center` for the same three concepts, which is
+last-writer-wins across providers rather than a vocabulary. 130 of 1,005
+players read `Not Available`.
+
+The label is not outcome-bearing, so this is weaker than the standings
+trap -- a wrong position bucket adds noise rather than smuggling a
+result. But it has no as-of anchor and its bucketing convention drifts,
+so it cannot ship under this package's rules without either a
+`player_positions_history` table or a position INFERRED from box-score
+behaviour. The latter is archetype work, which the roadmap already defers
+for the same reason.
 
 ## 4. Style and archetype
 

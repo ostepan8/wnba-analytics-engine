@@ -330,6 +330,89 @@ def test_a_streak_counting_tonights_result_is_rejected() -> None:
     assert "leaky_streak__window_end" in str(excinfo.value)
 
 
+# -- head to head, written the wrong way --------------------------------
+
+
+class _SeriesRecordStep(WindowedStep):
+    """"Our record in this series" -- computed over the whole series.
+
+    The mistake specific to a HEAD-TO-HEAD: a season series feels like a
+    single object with one record, so the natural implementation
+    aggregates the series once and attaches it to every meeting. Every
+    meeting but the last then carries results from meetings that had not
+    been played, and unlike a rolling average the number LOOKS right --
+    "2-1 in the season series" is a true sentence about the season, just
+    not about the moment.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_h2h"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("h2h_win_pct", "leaky_h2h__window_end"),
+            window_end_column="leaky_h2h__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        series: dict[tuple[object, object], list[float]] = {}
+        latest: dict[tuple[object, object], datetime] = {}
+        for row in frame.rows:
+            key = (row["team_id"], row["opponent_team_id"])
+            won = float(row["points_scored"] > row["points_allowed"])  # type: ignore[operator]
+            series.setdefault(key, []).append(won)
+            at: datetime = row["start_time"]  # type: ignore[assignment]
+            latest[key] = max(latest.get(key, at), at)
+        return tuple(
+            {
+                "h2h_win_pct": (
+                    sum(series[(row["team_id"], row["opponent_team_id"])])
+                    / len(series[(row["team_id"], row["opponent_team_id"])])
+                ),
+                "leaky_h2h__window_end": latest[(row["team_id"], row["opponent_team_id"])],
+            }
+            for row in frame.rows
+        )
+
+
+def test_a_season_series_record_spanning_the_current_meeting_is_rejected() -> None:
+    schedule = [
+        team_row(game_id=index + 1, team_id=1, start_time=FIRST_TIP + timedelta(days=3 * index))
+        | {"opponent_team_id": 2}
+        for index in range(4)
+    ]
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_SeriesRecordStep(), frame_of(schedule))
+    assert "leaky_h2h__window_end" in str(excinfo.value)
+
+
+def test_a_correct_head_to_head_publishes_the_previous_meeting() -> None:
+    """The positive counterpart: the real step's window end is the prior
+    MEETING, which is a different game and strictly earlier.
+    """
+    from wnba_engine.features.steps.derivation import GameOutcomeStep
+    from wnba_engine.features.steps.matchup_steps import HeadToHeadStep
+
+    schedule = [
+        team_row(game_id=index + 1, team_id=1, start_time=FIRST_TIP + timedelta(days=3 * index))
+        | {"opponent_team_id": 2}
+        for index in range(4)
+    ]
+    frame = Pipeline(  # type: ignore[arg-type]
+        name="h2h", steps=(GameOutcomeStep(), HeadToHeadStep(prefix="h2h_season"))
+    ).run(frame_of(schedule), context=context())
+
+    ends = [row["head_to_head_h2h_season__window_end"] for row in frame.rows]
+    assert ends[0] is None
+    assert all(
+        end < row["start_time"]  # type: ignore[operator]
+        for end, row in zip(ends[1:], frame.rows[1:], strict=True)
+    )
+
+
 # -- the standings trap, both halves ------------------------------------
 
 
