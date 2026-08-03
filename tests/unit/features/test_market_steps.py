@@ -197,3 +197,112 @@ def test_the_median_is_used_for_spreads_so_one_off_market_book_cannot_drag_it() 
     )
     out = market_steps.JoinMarketOddsStep(source=source).apply(_frame(), _context())
     assert out.rows[0]["book_spread_home"] == -2.5
+
+
+def _prop(minutes_before: int, prop_type: str, line: float, player_id: int = 7):
+    return {
+        "game_id": 1,
+        "player_id": player_id,
+        "prop_captured_at": TIP - timedelta(minutes=minutes_before),
+        "prop_type": prop_type,
+        "line_value": line,
+    }
+
+
+def _player_frame(rows=None) -> FeatureFrame:
+    body = tuple(
+        rows or [{"game_id": 1, "player_id": 7, "start_time": TIP, "team_id": 10}]
+    )
+    return FeatureFrame.from_rows(
+        body,
+        columns=("game_id", "player_id", "start_time", "team_id"),
+        as_of_columns=("start_time",),
+        event_time_column="start_time",
+    )
+
+
+def test_prop_lines_land_in_one_column_per_prop_type() -> None:
+    """Keyed on (game, player), not (game, player, prop type).
+
+    A player has several props on one game and AsOfJoinStep picks ONE
+    observation per key, so a per-type key would need four separate steps
+    and four separate anchors for what is really one join.
+    """
+    source = StaticRowSource(
+        prop_line_rows=[
+            _prop(120, "points", 16.5),
+            _prop(110, "rebounds", 5.5),
+            _prop(100, "assists", 3.5),
+            _prop(90, "threes", 1.5),
+        ]
+    )
+    out = market_steps.JoinPlayerPropLineStep(source=source).apply(
+        _player_frame(), _context()
+    )
+    row = out.rows[0]
+    assert row["prop_line_points"] == 16.5
+    assert row["prop_line_rebounds"] == 5.5
+    assert row["prop_line_assists"] == 3.5
+    assert row["prop_line_threes"] == 1.5
+    assert row["prop_captured_at"] == TIP - timedelta(minutes=90)
+
+
+def test_the_prop_consensus_is_a_median_across_books() -> None:
+    """A prop line is a number on a half-point grid, not a price with a
+    margin, so there is nothing to de-vig -- and one book posting
+    off-market must not drag the consensus off the grid.
+    """
+    source = StaticRowSource(
+        prop_line_rows=[
+            _prop(120, "points", 16.5),
+            _prop(110, "points", 16.5),
+            _prop(100, "points", 24.5),
+        ]
+    )
+    out = market_steps.JoinPlayerPropLineStep(source=source).apply(
+        _player_frame(), _context()
+    )
+    assert out.rows[0]["prop_line_points"] == 16.5
+
+
+def test_a_prop_quote_enters_only_at_its_own_timestamp() -> None:
+    source = StaticRowSource(
+        prop_line_rows=[_prop(120, "points", 16.5), _prop(30, "rebounds", 5.5)]
+    )
+    step = market_steps.JoinPlayerPropLineStep(source=source)
+    early = _player_frame(
+        [{"game_id": 1, "player_id": 7, "start_time": TIP - timedelta(minutes=60),
+          "team_id": 10}]
+    )
+    assert step.apply(early, _context()).rows[0]["prop_line_rebounds"] is None
+    assert step.apply(_player_frame(), _context()).rows[0]["prop_line_rebounds"] == 5.5
+
+
+def test_prop_edge_is_line_minus_recent_form() -> None:
+    """Positive means the market wants MORE than the player has produced.
+
+    MODELING_FINDINGS.md has already tested this exact quantity and it lost
+    money; it is a legitimate feature to weigh, not a signal.
+    """
+    row = market_steps.PropLineEdgeStep().transform(
+        {
+            "prop_line_points": 16.5,
+            "points_mean_5": 13.0,
+            "prop_line_rebounds": 5.5,
+            "rebounds_mean_5": 5.5,
+        },
+        _context(),
+    )
+    assert row["prop_line_points_vs_recent"] == pytest.approx(3.5)
+    assert row["prop_line_rebounds_vs_recent"] == pytest.approx(0.0)
+
+
+def test_prop_edge_is_null_without_both_sides() -> None:
+    """Props start May 2023 and do not cover every player-game. A zero here
+    would assert the market agreed with recent form on games it never
+    priced.
+    """
+    row = market_steps.PropLineEdgeStep().transform(
+        {"prop_line_points": None, "points_mean_5": 13.0}, _context()
+    )
+    assert row["prop_line_points_vs_recent"] is None

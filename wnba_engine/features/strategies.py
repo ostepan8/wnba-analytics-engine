@@ -616,6 +616,44 @@ def team_market(source: FeatureRowSource) -> Pipeline:
     )
 
 
+def player_market(source: FeatureRowSource, *, minimum_minutes: int = 5) -> Pipeline:
+    """player_form plus the player-grain half of FEATURE_ROADMAP.md ss8.
+
+    Separate from `team_market` because the grain differs, and separate
+    from `player_form` for the same containment reason `team_market` is
+    separate from `team_form`: the prop line is a forecast someone else
+    made, and a frame holding it will outperform every basketball feature
+    here while explaining nothing.
+
+    Adds its OWN rolling mean for three-pointers. `player_form` rolls
+    points, rebounds, assists and minutes but not threes, so
+    `three_pointers_made_mean_5` does not otherwise exist -- and
+    `PropLineEdgeStep` names the columns it reads explicitly rather than
+    guessing them, so a missing one fails the frame contract loudly
+    instead of emitting silent nulls (which is exactly how
+    `StyleDistanceStep` shipped broken once).
+    """
+    pipeline = (
+        player_form(source, minimum_minutes=minimum_minutes)
+        .renamed("player_market")
+        .insert_after(
+            "rolling_player_5",
+            derivation.RollingMeanStep(
+                value_columns=("three_pointers_made",),
+                window=5,
+                group_by=("player_id",),
+                label="rolling_player_threes_5",
+            ),
+        )
+    )
+    return pipeline.with_steps(
+        (
+            market_steps.JoinPlayerPropLineStep(source=source),
+            market_steps.PropLineEdgeStep(),
+        )
+    )
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
@@ -624,6 +662,7 @@ STRATEGIES: Mapping[str, StrategyFactory] = {
     "team_matchup": team_matchup,
     "team_style": team_style,
     "player_form": player_form,
+    "player_market": player_market,
     "player_rates": player_rates,
 }
 

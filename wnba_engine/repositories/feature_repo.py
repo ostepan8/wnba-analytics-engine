@@ -676,3 +676,66 @@ def load_prediction_market_prices(
             "seasons": list(seasons) if seasons else None,
         },
     )
+
+
+PLAYER_PROP_LINE_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "player_id",
+    "prop_captured_at",
+    "prop_type",
+    "line_value",
+)
+
+# over_under only. `milestone` markets ("20+ points") are a different
+# question with a different payoff shape, and pooling the two would put a
+# threshold and a median side by side in one column.
+_PLAYER_PROP_LINE_SQL = """
+SELECT
+    p.game_id      AS game_id,
+    p.player_id    AS player_id,
+    p.captured_at  AS prop_captured_at,
+    p.prop_type    AS prop_type,
+    p.line_value   AS line_value
+FROM sportsbook_player_prop_odds p
+JOIN games g ON g.id = p.game_id
+WHERE p.captured_at <= %(as_of)s
+  AND p.game_id IS NOT NULL
+  AND p.player_id IS NOT NULL
+  AND p.line_value IS NOT NULL
+  AND p.market_type = 'over_under'
+  AND p.prop_type = ANY(%(prop_types)s::text[])
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY p.game_id, p.player_id, p.captured_at
+"""
+
+
+def load_player_prop_lines(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+    prop_types: Sequence[str],
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary prop quote, one row per (game, player, book, capture).
+
+    Not aggregated in SQL for the same reason `load_market_odds` is not: a
+    consensus is a statement about the books at one moment, and the caller
+    needs the whole series to pick what preceded each individual game.
+
+    Books are NOT distinguished here, unlike the game-odds loader. A prop
+    line is a number on a half-point grid rather than a price with a
+    margin, so there is nothing to de-vig per book and the median across
+    whoever has posted is the honest consensus.
+    """
+    return execute_point_in_time(
+        conn,
+        _PLAYER_PROP_LINE_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+            "prop_types": list(prop_types),
+        },
+    )

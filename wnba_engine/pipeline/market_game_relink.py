@@ -40,6 +40,7 @@ POLYMARKET_WINDOW_DAYS = 3
 class RelinkResult:
     rows_examined: int = 0
     rows_linked: int = 0
+    candles_linked: int = 0
 
 
 def relink_market_snapshots(db: Database, *, dry_run: bool = False) -> RelinkResult:
@@ -68,11 +69,48 @@ def relink_market_snapshots(db: Database, *, dry_run: bool = False) -> RelinkRes
                 )
         if not dry_run:
             conn.commit()
+    candles = _relink_candles(db, dry_run=dry_run)
     logger.info(
-        "relink: %d unlinked market(s) examined, %d resolved%s",
-        examined, linked, " (dry run, nothing written)" if dry_run else "",
+        "relink: %d unlinked market(s) examined, %d resolved, %d candle market(s) linked%s",
+        examined, linked, candles, " (dry run, nothing written)" if dry_run else "",
     )
-    return RelinkResult(examined, linked)
+    return RelinkResult(examined, linked, candles)
+
+
+def _relink_candles(db: Database, *, dry_run: bool) -> int:
+    """Same repair for kalshi_candlesticks.
+
+    Needed for the same reason and by the same mechanism: the first full
+    sweep resolved only KXWNBAGAME, so spread and total bars -- the ones
+    worth comparing against sportsbook_game_odds -- were written with a
+    NULL game_id that no re-run can fix.
+    """
+    linked = 0
+    with db.connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT market_ticker FROM kalshi_candlesticks WHERE game_id IS NULL"
+        ).fetchall()
+        for (ticker,) in rows:
+            title = conn.execute(
+                "SELECT title FROM market_price_snapshots "
+                "WHERE provider = 'kalshi' AND market_external_id = %s LIMIT 1",
+                (ticker,),
+            ).fetchone()
+            if not title or not title[0]:
+                continue
+            game_id = _resolve_kalshi(conn, str(ticker), str(title[0]))
+            if game_id is None:
+                continue
+            linked += 1
+            if not dry_run:
+                conn.execute(
+                    "UPDATE kalshi_candlesticks SET game_id = %s "
+                    "WHERE market_ticker = %s AND game_id IS NULL",
+                    (game_id, ticker),
+                )
+        if not dry_run:
+            conn.commit()
+    return linked
 
 
 def _resolve(conn: Connection, provider: str, event_id: object, title: str) -> int | None:

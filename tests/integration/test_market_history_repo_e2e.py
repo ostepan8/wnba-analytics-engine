@@ -47,6 +47,7 @@ def _candle(**overrides: object) -> KalshiCandle:
     base = KalshiCandle(
         series_ticker="KXWNBAGAME",
         market_ticker="KXWNBAGAME-26AUG02TORGS-TOR",
+        title="Toronto vs Golden State women's Pro Basketball game: Toronto wins?",
         period_minutes=60,
         period_end=datetime(2026, 8, 1, 16, 0, tzinfo=UTC),
         price_open=0.16, price_high=0.16, price_low=0.16, price_close=0.16,
@@ -57,6 +58,26 @@ def _candle(**overrides: object) -> KalshiCandle:
         captured_at=FIRST_RUN,
     )
     return replace(base, **overrides)  # type: ignore[arg-type]
+
+
+def _stored_game_id(conn):
+    return conn.execute("SELECT game_id FROM kalshi_candlesticks LIMIT 1").fetchone()[0]
+
+
+def _seed_game(conn) -> int:
+    home = conn.execute(
+        "INSERT INTO teams (name, abbreviation) VALUES ('H Team','HME') RETURNING id"
+    ).fetchone()[0]
+    away = conn.execute(
+        "INSERT INTO teams (name, abbreviation) VALUES ('A Team','AWY') RETURNING id"
+    ).fetchone()[0]
+    return int(
+        conn.execute(
+            "INSERT INTO games (season, start_time, home_team_id, away_team_id, status, "
+            "home_score, away_score) VALUES (2026, %s, %s, %s, 'final', 90, 80) RETURNING id",
+            (FIRST_RUN, home, away),
+        ).fetchone()[0]
+    )
 
 
 def test_a_second_backfill_run_inserts_nothing(clean_db) -> None:
@@ -78,13 +99,56 @@ def test_a_second_backfill_run_inserts_nothing(clean_db) -> None:
 
 
 def test_a_candle_refetched_later_inserts_nothing(clean_db) -> None:
+    """Re-fetching an already-complete bar must report 0, not "updated".
+
+    The candle insert is a CONFLICT-UPDATE (0026) so an improved matcher
+    can repair a NULL game_id. A bare DO UPDATE would count every
+    conflicting row as written and a re-run would claim tens of thousands
+    of inserts it never made -- so the update carries a WHERE restricting
+    it to rows that actually need repair.
+    """
     with clean_db.connection() as conn:
-        assert market_history_repo.insert_candles(conn, [_candle()]) == 1
+        game_id = _seed_game(conn)
+        mapping = {_candle().market_ticker: game_id}
+        assert market_history_repo.insert_candles(
+            conn, [_candle()], game_id_by_market=mapping
+        ) == 1
         conn.commit()
-        assert market_history_repo.insert_candles(conn, [_candle(captured_at=SECOND_RUN)]) == 0
+        # Nothing left to fill: game_id and title are both already set, so
+        # the WHERE on the conflict-update excludes this row entirely.
+        assert market_history_repo.insert_candles(
+            conn, [_candle(captured_at=SECOND_RUN)], game_id_by_market=mapping
+        ) == 0
         conn.commit()
         total = conn.execute("SELECT count(*) FROM kalshi_candlesticks").fetchone()[0]
     assert total == 1
+
+
+def test_a_refetch_repairs_a_null_game_id(clean_db) -> None:
+    """The whole reason 0026 exists.
+
+    The first sweep resolved only KXWNBAGAME, leaving 118,495 spread and
+    total bars with a NULL game_id, and ON CONFLICT DO NOTHING meant fixing
+    the resolver could not repair them. Now a re-run fills the gap -- and
+    never overwrites a game_id already set.
+    """
+    with clean_db.connection() as conn:
+        game_id = _seed_game(conn)
+        market_history_repo.insert_candles(conn, [_candle()])
+        conn.commit()
+        assert _stored_game_id(conn) is None
+
+        repaired = market_history_repo.insert_candles(
+            conn, [_candle()], game_id_by_market={_candle().market_ticker: game_id}
+        )
+        conn.commit()
+        assert repaired == 1
+        assert _stored_game_id(conn) == game_id
+
+        # Idempotent: a third run has nothing left to fill.
+        assert market_history_repo.insert_candles(
+            conn, [_candle()], game_id_by_market={_candle().market_ticker: game_id}
+        ) == 0
 
 
 def test_both_sides_of_one_transaction_are_stored(clean_db) -> None:

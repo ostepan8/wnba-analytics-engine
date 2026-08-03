@@ -354,7 +354,156 @@ def _sd(values: Sequence[float]) -> float | None:
 __all__ = [
     "MARKET_ODDS_COLUMNS",
     "PREDICTION_MARKET_COLUMNS",
+    "PROP_TYPES",
     "JoinMarketOddsStep",
+    "JoinPlayerPropLineStep",
     "JoinPredictionMarketStep",
     "MarketDivergenceStep",
+    "PropLineEdgeStep",
 ]
+
+
+#: The prop markets worth joining. `over_under` only, and only the four
+#: with real coverage in this database (points 107,732 rows / rebounds
+#: 75,868 / threes 46,806 / assists 44,761, measured 2026-08-03).
+#: `double_double` is a milestone market with 1,323 rows and a different
+#: payoff shape, so it is deliberately absent rather than merely rare.
+PROP_TYPES: tuple[str, ...] = ("points", "rebounds", "assists", "threes")
+
+
+@dataclass(frozen=True, slots=True)
+class JoinPlayerPropLineStep(AsOfJoinStep):
+    """The consensus prop line facing each player-game, before it tipped.
+
+    The last **todo** in FEATURE_ROADMAP.md ss8, and the only one at player
+    grain -- which is why it needs `player_rates` rather than `team_form`.
+
+    MEDIAN across books, not mean. A prop line is a number on a half-point
+    grid, not a price carrying a margin, so there is nothing to de-vig; and
+    a single book posting off-market should not drag the consensus off the
+    grid. (The game-odds equivalent uses the mean, because there the
+    quantity being averaged is a de-vigged probability.)
+
+    Keyed on (game, player, prop type)? No -- on (game, player), with one
+    column per prop type. A player has several props on the same game and
+    AsOfJoinStep picks ONE observation per key, so a per-prop-type key
+    would need four separate steps and four separate anchors for what is
+    one join.
+    """
+
+    source: FeatureRowSource
+    prop_types: tuple[str, ...] = PROP_TYPES
+    step_name: str = "join_player_prop_lines"
+
+    @property
+    def output_columns(self) -> tuple[str, ...]:
+        return tuple(f"prop_line_{prop}" for prop in self.prop_types)
+
+    @property
+    def name(self) -> str:
+        return self.step_name
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.JOIN,
+            adds_columns=(*self.output_columns, "prop_captured_at"),
+            as_of_columns=("prop_captured_at",),
+            source_tables=("sportsbook_player_prop_odds",),
+        )
+
+    def observations(
+        self, context: FeatureContext
+    ) -> dict[tuple[object, ...], list[tuple[datetime, Row]]]:
+        """Running consensus per (game, player), same shape as the game-odds join.
+
+        Bucketing by exact `captured_at` would fail here for the reason it
+        failed there -- `captured_at` is each book's own last_update -- and
+        it would fail harder, because a player's four prop types are quoted
+        at different instants too.
+        """
+        by_key: dict[tuple[object, object], list[tuple[datetime, Row]]] = {}
+        for row in self.source.player_prop_lines(context, self.prop_types):
+            captured_at = row["prop_captured_at"]
+            if not isinstance(captured_at, datetime):
+                raise StepContractError(
+                    f"prop line row has a non-datetime captured_at: {captured_at!r}"
+                )
+            by_key.setdefault((row["game_id"], row["player_id"]), []).append(
+                (captured_at, row)
+            )
+
+        series: dict[tuple[object, ...], list[tuple[datetime, Row]]] = {}
+        for (game_id, player_id), quotes in by_key.items():
+            quotes.sort(key=lambda pair: pair[0])
+            # prop type -> every line currently standing for it. Each new
+            # quote replaces nothing (books are not tracked separately, see
+            # the class docstring), so the median is taken over the lines
+            # observed so far for that prop.
+            latest: dict[str, list[float]] = {}
+            observations: list[tuple[datetime, Row]] = []
+            for captured_at, quote in quotes:
+                prop = str(quote.get("prop_type"))
+                latest.setdefault(prop, []).append(float(quote["line_value"]))  # type: ignore[arg-type]
+                cells: dict[str, object] = {"prop_captured_at": captured_at}
+                for name in self.prop_types:
+                    cells[f"prop_line_{name}"] = _median(latest.get(name, []))
+                observations.append((captured_at, cells))
+            series[(game_id, player_id)] = observations
+        return series
+
+    def key_for(self, row: Row) -> tuple[object, ...]:
+        return (row.get("game_id"), row.get("player_id"))
+
+
+@dataclass(frozen=True, slots=True)
+class PropLineEdgeStep(RowMapStep):
+    """Prop line minus the player's own rolling mean for that stat.
+
+    The FEATURE_ROADMAP.md ss8 row this completes. Positive means the
+    market is asking for MORE than the player has recently produced.
+
+    Read it with `MODELING_FINDINGS.md` open: this exact quantity --
+    line versus trailing average -- is among the ten hypotheses already
+    tested and it lost money. It is here because it is a legitimate
+    feature for a model to weigh, not because it is a signal.
+
+    Pairs the line against the ROLLING mean, never a season average: a
+    season aggregate includes the game being predicted unless explicitly
+    windowed backwards, which is the second rule in FEATURE_ROADMAP.md.
+    """
+
+    #: (prop column, rolling-mean column) pairs. Names the rolling columns
+    #: explicitly rather than deriving them from a prefix convention --
+    #: `StyleDistanceStep` shipped with a guessed convention nothing
+    #: produced, and the columns came out silently null.
+    pairings: tuple[tuple[str, str], ...] = (
+        ("prop_line_points", "points_mean_5"),
+        ("prop_line_rebounds", "rebounds_mean_5"),
+        ("prop_line_assists", "assists_mean_5"),
+        ("prop_line_threes", "three_pointers_made_mean_5"),
+    )
+    step_name: str = "prop_line_edge"
+
+    @property
+    def name(self) -> str:
+        return self.step_name
+
+    @property
+    def output_columns(self) -> tuple[str, ...]:
+        return tuple(f"{line}_vs_recent" for line, _ in self.pairings)
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(kind=StepKind.ROW_LOCAL, adds_columns=self.output_columns)
+
+    def transform(self, row: Row, context: FeatureContext) -> Row:
+        del context
+        cells: dict[str, object] = {}
+        for line_column, mean_column in self.pairings:
+            line = _as_float(row.get(line_column))
+            recent = _as_float(row.get(mean_column))
+            cells[f"{line_column}_vs_recent"] = (
+                None if line is None or recent is None else line - recent
+            )
+        return cells

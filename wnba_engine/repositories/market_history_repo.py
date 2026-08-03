@@ -27,16 +27,31 @@ INSERT INTO polymarket_trades (
 ON CONFLICT ON CONSTRAINT polymarket_trades_fill_key DO NOTHING
 """
 
+# CONFLICT-UPDATE rather than DO NOTHING, and only onto NULLs. See
+# db/migrations/0026_kalshi_candle_title.sql: DO NOTHING meant an improved
+# matcher could never repair the 118,495 bars written with no game link.
+# COALESCE keeps it convergent -- a re-run fills gaps and never overwrites
+# a value that is already set.
+#
+# The trailing WHERE is what preserves this repo's rowcount contract. A
+# bare DO UPDATE counts every conflicting row as written, so a re-run would
+# report tens of thousands of "inserts" it did not perform -- the exact
+# signal AGENTS.md says must stay honest ("a re-ingested payload correctly
+# reports 0"). With the WHERE, only rows that actually needed repair are
+# counted, so a second run over healthy data still reports 0.
 _INSERT_CANDLE = """
 INSERT INTO kalshi_candlesticks (
-    series_ticker, market_ticker, period_minutes, period_end,
+    series_ticker, market_ticker, title, period_minutes, period_end,
     price_open, price_high, price_low, price_close, price_mean, price_previous,
     yes_bid_open, yes_bid_high, yes_bid_low, yes_bid_close,
     yes_ask_open, yes_ask_high, yes_ask_low, yes_ask_close,
     volume, open_interest, game_id, captured_at
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
           %s, %s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT kalshi_candlesticks_bar_key DO NOTHING
+ON CONFLICT ON CONSTRAINT kalshi_candlesticks_bar_key DO UPDATE SET
+    game_id = COALESCE(kalshi_candlesticks.game_id, EXCLUDED.game_id),
+    title   = COALESCE(kalshi_candlesticks.title, EXCLUDED.title)
+WHERE kalshi_candlesticks.game_id IS NULL OR kalshi_candlesticks.title IS NULL
 """
 
 
@@ -101,6 +116,7 @@ def insert_candles(
                 (
                     c.series_ticker,
                     c.market_ticker,
+                    c.title,
                     c.period_minutes,
                     c.period_end,
                     c.price_open,

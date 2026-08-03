@@ -62,6 +62,7 @@ class KalshiCandle:
 
     series_ticker: str
     market_ticker: str
+    title: str | None
     period_minutes: int
     period_end: datetime
     price_open: float | None

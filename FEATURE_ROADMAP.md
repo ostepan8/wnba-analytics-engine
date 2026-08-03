@@ -197,9 +197,10 @@ single forecast available -- but a frame containing the line will look
 brilliant and teach nothing. Keep market features in a separate strategy
 so they can never silently enter a "pure basketball" model.
 
-Built as the `team_market` strategy
-(`wnba_engine/features/steps/market_steps.py`). Kept separate for the reason
-stated above, not for cost.
+Built as two strategies, `team_market` (game grain) and `player_market`
+(player grain), both in `wnba_engine/features/steps/market_steps.py`. Kept
+separate from the basketball strategies for the reason stated above, not
+for cost.
 
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
@@ -207,7 +208,7 @@ stated above, not for cost.
 | cross-book dispersion | same | **done** | meaningless unless the de-vig happens first |
 | line movement, open -> current | same | **done** | none; the opening quote is knowable at every later instant |
 | implied win probability | same | **done** | none |
-| prop line vs rolling mean | `sportsbook_player_prop_odds` | **todo** | player grain, so it needs `player_rates` rather than `team_form` |
+| prop line vs rolling mean | `sportsbook_player_prop_odds` | **done** | player grain (`player_market`); pair against a ROLLING mean, never a season average |
 | prediction-market divergence | `polymarket_trades` | **done** | ~~only 2026-07 onward~~ -- **superseded**: on-chain fills go back to 2024-09, so the historical limit is gone |
 
 Two traps found while building it, both of which produced a frame that

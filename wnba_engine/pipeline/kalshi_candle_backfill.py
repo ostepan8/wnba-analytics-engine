@@ -24,6 +24,7 @@ from wnba_engine.db.pool import Database
 from wnba_engine.kalshi.candle_parser import parse_candlesticks
 from wnba_engine.kalshi.client import KalshiClient
 from wnba_engine.kalshi.game_matching import parse_matchup
+from wnba_engine.kalshi.team_market_matching import parse_two_team_market
 from wnba_engine.models.market_history import KalshiCandle
 from wnba_engine.repositories import entity_repo, market_history_repo
 
@@ -94,7 +95,7 @@ def backfill_kalshi_candles(
                 window_end = min(stamped, close_time + timedelta(days=1))
             candles = _fetch_candles(
                 client, series_ticker, market_ticker, window_start,
-                window_end, period_minutes,
+                window_end, period_minutes, title,
             )
             if not candles:
                 continue
@@ -176,6 +177,7 @@ def _fetch_candles(
     start: datetime,
     end: datetime,
     period_minutes: int,
+    title: str | None = None,
 ) -> tuple[KalshiCandle, ...]:
     """Fetch one market's bars, chunked to the API's window cap."""
     span = timedelta(days=MAX_WINDOW_DAYS.get(period_minutes, DEFAULT_WINDOW_DAYS))
@@ -209,6 +211,7 @@ def _fetch_candles(
                 market_ticker=market_ticker,
                 period_minutes=period_minutes,
                 captured_at=end,
+                title=title,
                 context=f"candlesticks[{market_ticker}]",
             )
         )
@@ -217,10 +220,21 @@ def _fetch_candles(
 
 
 def _resolve_game_id(conn: Connection, event_ticker: str | None, title: str) -> int | None:
-    """Canonical game id from the ticker-encoded date plus the title teams."""
+    """Canonical game id from the ticker-encoded date plus the title teams.
+
+    TWO matchers, tried in order. `parse_matchup` only understands
+    KXWNBAGAME's own title shape, so an earlier version of this function
+    left every KXWNBASPREAD and KXWNBATOTAL bar unlinked -- 116,000 of the
+    135,000 bars in the first full sweep, i.e. most of the table. Spreads
+    and totals are exactly the markets worth comparing against
+    `sportsbook_game_odds`, so losing them defeated the point.
+
+    `parse_matchup` first because it is the stricter, ticker-anchored one;
+    a KXWNBAGAME title also satisfies the looser two-team pattern.
+    """
     if not event_ticker:
         return None
-    parsed = parse_matchup(event_ticker, title)
+    parsed = parse_matchup(event_ticker, title) or parse_two_team_market(event_ticker, title)
     if parsed is None:
         return None
     game_date, team_a, team_b = parsed

@@ -43,6 +43,7 @@ def parse_candlesticks(
     market_ticker: str,
     period_minutes: int,
     captured_at: datetime,
+    title: str | None = None,
     context: str = "candlesticks",
 ) -> tuple[KalshiCandle, ...]:
     """Parse a candlesticks response.
@@ -75,7 +76,8 @@ def parse_candlesticks(
         )
     return tuple(
         _parse_candle(
-            entry, f"{context}[{i}]", series_ticker, market_ticker, period_minutes, captured_at
+            entry, f"{context}[{i}]", series_ticker, market_ticker, period_minutes,
+            captured_at, title,
         )
         for i, entry in enumerate(entries)
     )
@@ -88,6 +90,7 @@ def _parse_candle(
     market_ticker: str,
     period_minutes: int,
     captured_at: datetime,
+    title: str | None = None,
 ) -> KalshiCandle:
     if not isinstance(entry, Mapping):
         raise ProviderValidationError(PROVIDER, "candle must be an object", context=context)
@@ -97,6 +100,7 @@ def _parse_candle(
     return KalshiCandle(
         series_ticker=series_ticker,
         market_ticker=market_ticker,
+        title=title,
         period_minutes=period_minutes,
         period_end=_epoch_seconds(entry.get("end_period_ts"), f"{context}.end_period_ts"),
         price_open=_dollars(price, "open_dollars", context),
