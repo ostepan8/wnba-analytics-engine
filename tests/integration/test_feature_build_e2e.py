@@ -327,6 +327,71 @@ def test_completion_margin_excludes_a_game_still_in_progress(clean_db) -> None:
     assert {row["game_id"] for row in frame.rows} == {seeded["games"][0]}  # type: ignore[index]
 
 
+def test_completion_margin_excludes_an_in_progress_game_at_player_grain(clean_db) -> None:
+    """The same boundary, one loader over. This is the regression test for
+    the bug the multi-window work uncovered: `load_player_games` filtered
+    on `g.start_time` while declaring `result_known_at` as its as-of
+    anchor, so a game that TIPPED OFF before the boundary and finished
+    after it entered the frame and the guard then rejected the frame it
+    had just built. `uv run wnba-engine build-features --as-of 2026-07-29
+    --strategy player_form` -- the example in the package README -- failed
+    that way against the real database.
+
+    Asserted at BOTH grains and against the loader rather than only
+    through a strategy: the team query has had the COALESCE form since
+    db/migrations/0024_game_final_observed_at.sql landed and the player
+    one was simply never updated, which is exactly the kind of divergence
+    a test naming only one of them does not catch.
+    """
+    with clean_db.connection() as conn:
+        seeded = _seed_schedule(conn)
+        player = conn.execute(
+            "INSERT INTO players (full_name) VALUES ('Mid Game Player') RETURNING id"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO player_game_stats (game_id, player_id, team_id, source, minutes, "
+            "points, rebounds, assists, three_pointers_made) "
+            "VALUES (%s, %s, %s, 'espn', 30, 20, 5, 4, 2)",
+            (seeded["games"][0], player, seeded["home"]),  # type: ignore[index]
+        )
+        conn.commit()
+
+        def load(as_of: datetime):
+            return feature_repo.load_player_games(
+                conn,
+                as_of=as_of,
+                season_types=("regular-season",),
+                seasons=(SEASON,),
+                box_score_source="espn",
+                advanced_source="balldontlie",
+            )
+
+        # Tipped off, still being played: the box score is not observable.
+        assert load(TIP_ONE + timedelta(minutes=30)) == ()
+        # Past the margin with no witnessed final: now it is.
+        settled = TIP_ONE + DEFAULT_COMPLETION_MARGIN + timedelta(minutes=1)
+        assert len(load(settled)) == 1
+
+        # And with a witnessed final, that stamp governs instead of the
+        # margin -- later here, so the margin alone would wrongly admit it.
+        observed = TIP_ONE + timedelta(hours=9)
+        conn.execute(
+            "UPDATE games SET final_observed_at = %s WHERE id = %s",
+            (observed, seeded["games"][0]),  # type: ignore[index]
+        )
+        conn.commit()
+        assert load(settled) == ()
+        assert len(load(observed + timedelta(minutes=1))) == 1
+
+        # The whole strategy agrees with the loader.
+        from wnba_engine.features import strategies
+
+        frame = strategies.player_form(PostgresRowSource(conn)).run(
+            context=_context(settled)
+        )
+        assert len(frame) == 0
+
+
 def test_full_strategy_runs_guarded_against_real_sql(clean_db) -> None:
     with clean_db.connection() as conn:
         _seed_schedule(conn)
