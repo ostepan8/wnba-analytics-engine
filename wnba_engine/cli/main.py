@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from wnba_engine.analysis import style as style_space
+from wnba_engine.analysis.lead_lag import t_statistic as lead_lag_t
 from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
@@ -51,8 +52,14 @@ from wnba_engine.pipeline.espn_transactions_ingest import (
 )
 from wnba_engine.pipeline.feature_build import build_features
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
+from wnba_engine.pipeline.kalshi_candle_backfill import (
+    GAME_SERIES,
+    backfill_kalshi_candles,
+)
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
+from wnba_engine.pipeline.lead_lag_report import build_lead_lag_report
 from wnba_engine.pipeline.market_capture_ingest import ingest_captures
+from wnba_engine.pipeline.market_game_relink import relink_market_snapshots
 from wnba_engine.pipeline.odds_api_ingest import backfill_history as backfill_odds_api_history
 from wnba_engine.pipeline.odds_api_ingest import snapshot_current_odds as snapshot_odds_api_odds
 from wnba_engine.pipeline.odds_api_player_props_ingest import (
@@ -65,8 +72,10 @@ from wnba_engine.pipeline.odds_api_scores_ingest import (
     snapshot_current_scores as snapshot_odds_api_scores,
 )
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
+from wnba_engine.pipeline.polymarket_trade_backfill import backfill_polymarket_trades
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.polymarket.client import PolymarketClient
+from wnba_engine.polymarket.data_client import PolymarketDataClient
 from wnba_engine.repositories import style_repo
 from wnba_engine.validation.runner import run_all_checks
 
@@ -447,6 +456,139 @@ def snapshot_polymarket() -> None:
     try:
         with PolymarketClient(settings) as client:
             click.echo(ingest_polymarket_wnba_markets(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-polymarket-trades")
+@click.option(
+    "--no-resume",
+    "no_resume",
+    is_flag=True,
+    help="Re-fetch markets that already have stored fills (needed to pick up "
+    "new trades on markets that are still open).",
+)
+@click.option("--limit", "market_limit", type=int, default=None, help="Cap markets processed.")
+def backfill_polymarket_trades_cmd(no_resume: bool, market_limit: int | None) -> None:
+    """Backfill every on-chain Polymarket fill for WNBA markets.
+
+    REAL history, unlike snapshot-polymarket. The CLOB's price endpoint is a
+    rolling ~30-day cache, but data-api serves every fill back to 2024-09-20
+    -- so a market that resolved in June is still fully recoverable today.
+
+    Each fill records the outcome as a team name, which the snapshot table
+    cannot do: Gamma leaves groupItemTitle null on two-way game markets, so
+    which side its probability describes has to be inferred there.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with PolymarketClient(settings) as gamma, PolymarketDataClient(settings) as data:
+            click.echo(
+                backfill_polymarket_trades(
+                    db, gamma, data, resume=not no_resume, market_limit=market_limit
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("backfill-kalshi-candles")
+@click.option("--series", "series_tickers", multiple=True, help="Limit to specific series.")
+@click.option(
+    "--period",
+    "period_minutes",
+    type=click.Choice(["1", "60", "1440"]),
+    default="60",
+    show_default=True,
+    help="Bar size. 1-minute is capped at a ~3-day request window, so a full "
+    "sweep at that resolution costs ~50x the requests of hourly.",
+)
+@click.option("--limit", "market_limit", type=int, default=None, help="Cap markets per series.")
+def backfill_kalshi_candles_cmd(
+    series_tickers: tuple[str, ...], period_minutes: str, market_limit: int | None
+) -> None:
+    """Backfill Kalshi OHLC bars for WNBA game markets.
+
+    Bars go back to market creation, so this is genuine history rather than
+    a snapshot. Keeps yes_bid and yes_ask separately rather than a midpoint:
+    the spread is how an empty book is told apart from a real quote, and
+    empty books are what make a naive lead-lag study meaningless.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with KalshiClient(settings) as client:
+            click.echo(
+                backfill_kalshi_candles(
+                    db,
+                    client,
+                    series=series_tickers or GAME_SERIES,
+                    period_minutes=int(period_minutes),
+                    market_limit=market_limit,
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("lead-lag-report")
+def lead_lag_report() -> None:
+    """Measure whether Polymarket or the sportsbooks move first.
+
+    The one hypothesis MODELING_FINDINGS.md lists as untested rather than
+    refuted. It was untested because 30-minute quote snapshots cannot see a
+    16-29 minute lag; polymarket_trades carries exact fill timestamps, so
+    both sides are now event-timed.
+
+    A lead is a NECESSARY condition for an edge, never a sufficient one --
+    this repo already found one real price-direction signal (72.6%
+    accuracy) that still lost money.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        report = build_lead_lag_report(db)
+        click.echo(f"games with both venues: {report.games_considered}")
+        for label, result in (
+            ("polymarket -> books", report.polymarket_leads_books),
+            ("books -> polymarket", report.books_lead_polymarket),
+        ):
+            click.echo(f"\n{label}  ({result.games} games)")
+            for lag in result.by_lag:
+                t = lead_lag_t(lag.correlation, lag.pairs)
+                click.echo(
+                    f"  lag {lag.lag_minutes:>+4}m  r={lag.correlation:>+7.4f}  "
+                    f"n={lag.pairs:>7,}  t={t:>+7.2f}" if t is not None else
+                    f"  lag {lag.lag_minutes:>+4}m  r={lag.correlation:>+7.4f}  n={lag.pairs:>7,}"
+                )
+            click.echo(
+                f"  best: lag={result.best_lag_minutes}m r={result.best_correlation}"
+            )
+        click.echo("\ngame-clustered bootstrap (polymarket -> books, a priori lags):")
+        for check in report.bootstrap:
+            click.echo(
+                f"  lag {check.lag_minutes:>+4}m  r={check.correlation}  "
+                f"P(r<=0)={check.share_at_or_below_zero}  games={check.games}"
+            )
+    finally:
+        db.close()
+
+
+@cli.command("relink-market-games")
+@click.option("--dry-run", is_flag=True, help="Report what would link, write nothing.")
+def relink_market_games(dry_run: bool) -> None:
+    """Fill NULL game_id on stored prediction-market snapshots.
+
+    ON CONFLICT DO NOTHING makes every ingest re-runnable but also means a
+    re-ingest cannot repair a row already stored -- so a matcher fix only
+    helps rows written after it. Run this after changing any market/game
+    matcher. Never overwrites a game_id that is already set.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(relink_market_snapshots(db, dry_run=dry_run))
     finally:
         db.close()
 

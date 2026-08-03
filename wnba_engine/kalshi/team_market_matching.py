@@ -29,7 +29,20 @@ import re
 from datetime import date
 
 _TICKER_DATE_RE = re.compile(r"-(\d{2})([A-Z]{3})(\d{2})[A-Z]*$")
-_TWO_TEAM_RE = re.compile(r"^(.+?)\s+vs\.?\s+(.+?)(?:\s+on\s+.+|:.*)?$")
+#: The sport-description clause Kalshi inserted into titles between
+#: 2026-07-13 and 2026-07-27:
+#:
+#:   before: "Golden State vs Toronto: 1st Quarter Total?"
+#:   after:  "Atlanta vs Dallas women's Pro Basketball game: Over 166.5 points?"
+#:
+#: Without it in the pattern this regex still MATCHED, which is why the
+#: breakage was worse here than in game_matching: the non-greedy second
+#: group simply grew to swallow the clause, yielding team_b = "Dallas
+#: women's Pro Basketball game". A wrong team name fails the downstream
+#: substring lookup just as silently as no match at all -- 13,330
+#: KXWNBATOTAL rows since 2026-07-27, against 633/1146 the week before.
+_SPORT_CLAUSE = r"(?:\s+women's Pro Basketball game)?"
+_TWO_TEAM_RE = re.compile(rf"^(.+?)\s+vs\.?\s+(.+?){_SPORT_CLAUSE}(?:\s+on\s+.+|:.*)?$")
 _SINGLE_TEAM_FULL_RE = re.compile(r"^(.+?) wins by over [\d.]+ points\??$")
 _SINGLE_TEAM_HALF_RE = re.compile(r"^Will (.+?) win the [12]H by over [\d.]+ points\?$")
 

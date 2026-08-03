@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Pulls captures off the always-on host and loads them, on THIS machine.
+
+  The counterpart to com.ostepan.wnba-market-capture.plist, and it exists
+  because only half the pipeline was ever scheduled. Capture ran every 30
+  minutes on mac-studio without a miss; the pull was a script somebody had
+  to remember to run. On 2026-08-03 the host was holding 189 unsynced
+  files per provider going back to 2026-07-30 - four days of data
+  captured correctly and sitting where nothing could read it.
+
+  Installed by scripts/install-market-sync.sh.
+
+  Hourly rather than every 30 minutes. rsync only moves new files and the
+  ingest is idempotent, so a missed run costs nothing but a delay, and the
+  laptop is not always awake - a tighter interval would mostly log
+  connection failures. The capture side is the one that cannot miss a
+  window; this side only has to catch up.
+
+  Deliberately NOT running backfill-prediction-markets.sh. That sweep
+  takes ~an hour and re-walks thousands of markets; it belongs on a manual
+  or weekly cadence, not hourly. Run it after a parser change or when
+  topping up recent games.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ostepan.wnba-market-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>PLACEHOLDER_REPO/scripts/sync-market-captures.sh</string>
+    </array>
+
+    <!-- 1 hour. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <!-- Catch up immediately after a reboot or reload rather than waiting
+         out an interval; the backlog is the thing being fixed. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/sync.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>PLACEHOLDER_REPO</string>
+</dict>
+</plist>

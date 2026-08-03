@@ -13,7 +13,24 @@ import re
 from datetime import date
 
 _TICKER_DATE_RE = re.compile(r"^KXWNBAGAME-(\d{2})([A-Z]{3})(\d{2})")
-_TITLE_RE = re.compile(r"^(.+?) vs (.+?) winner\?$")
+#: TWO title shapes, because Kalshi rewrote them between 2026-07-13 and
+#: 2026-07-27 without changing the ticker:
+#:
+#:   old: "Indiana vs Phoenix winner?"
+#:   new: "Las Vegas vs Chicago women's Pro Basketball game: Chicago wins?"
+#:
+#: Only the old one was matched, so from 2026-07-27 every KXWNBAGAME market
+#: parsed as None and stopped resolving to a game -- 4,712 snapshot rows at a
+#: 0.0% match rate where the preceding weeks ran 31-34%. It failed silently
+#: because an unparseable title and a market we deliberately do not map are
+#: the same outcome here: a NULL game_id.
+#:
+#: The old shape is kept rather than replaced. The database still holds rows
+#: written in it, and a re-ingest that only understood the new one would
+#: orphan them in the opposite direction.
+_TITLE_RE = re.compile(
+    r"^(.+?) vs (.+?)(?: winner\?|(?: women's Pro Basketball game)?: .+ wins\?)$"
+)
 
 _MONTHS = {
     "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,

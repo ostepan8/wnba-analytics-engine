@@ -55,6 +55,7 @@ from wnba_engine.features.steps import (
     filtering,
     form_steps,
     loading,
+    market_steps,
     matchup_steps,
     player_steps,
     style_steps,
@@ -578,10 +579,48 @@ def player_rates(source: FeatureRowSource, *, minimum_minutes: int = 5) -> Pipel
     return pipeline
 
 
+def team_market(source: FeatureRowSource) -> Pipeline:
+    """team_form plus FEATURE_ROADMAP.md ss8: what the MARKET thought.
+
+    A SEPARATE strategy, and this one is not a cost argument like
+    `team_form_multi`'s -- it is a containment argument, and the roadmap
+    states it directly: "Keep market features in a separate strategy so
+    they can never silently enter a 'pure basketball' model."
+
+    The line is the best single forecast of a game that exists. A frame
+    holding it will beat every basketball feature in this package on any
+    metric, and will have taught nothing, because it is a copy of someone
+    else's model rather than a description of the teams. Anyone comparing
+    strategies needs to be unable to include these by accident.
+
+    What it IS good for: measuring whether anything else here adds
+    information the market has not already priced. MODELING_FINDINGS.md
+    records that nothing has yet -- residual correlation of -0.031/-0.041
+    against the closing line -- and this strategy is how that gets
+    re-tested as features are added.
+
+    Both joins are per ROW. The two venues need opposite handling and both
+    are documented in market_steps: books are de-vigged per book before
+    aggregating, Polymarket needs no de-vig at all.
+    """
+    return (
+        team_form(source)
+        .renamed("team_market")
+        .with_steps(
+            (
+                market_steps.JoinMarketOddsStep(source=source),
+                market_steps.JoinPredictionMarketStep(source=source),
+                market_steps.MarketDivergenceStep(),
+            )
+        )
+    )
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
     "team_form_multi": team_form_multi,
+    "team_market": team_market,
     "team_matchup": team_matchup,
     "team_style": team_style,
     "player_form": player_form,

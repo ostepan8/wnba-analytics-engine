@@ -541,3 +541,138 @@ def load_player_bios(conn: Connection) -> tuple[Row, ...]:
     return execute_time_invariant(
         conn, _PLAYER_BIO_SQL, {}, justification=_PLAYER_BIO_JUSTIFICATION
     )
+
+
+# -- market observations (as-of joins) ---------------------------------
+
+MARKET_ODDS_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "odds_captured_at",
+    "vendor",
+    "moneyline_home_odds",
+    "moneyline_away_odds",
+    "spread_home_value",
+    "total_value",
+)
+
+_MARKET_ODDS_SQL = """
+SELECT
+    o.game_id                AS game_id,
+    o.captured_at            AS odds_captured_at,
+    o.vendor                 AS vendor,
+    o.moneyline_home_odds    AS moneyline_home_odds,
+    o.moneyline_away_odds    AS moneyline_away_odds,
+    o.spread_home_value      AS spread_home_value,
+    o.total_value            AS total_value
+FROM sportsbook_game_odds o
+JOIN games g ON g.id = o.game_id
+WHERE o.captured_at <= %(as_of)s
+  AND o.game_id IS NOT NULL
+  AND o.moneyline_home_odds IS NOT NULL
+  AND o.moneyline_away_odds IS NOT NULL
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY o.game_id, o.captured_at, o.vendor
+"""
+
+
+def load_market_odds(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary sportsbook quote, one row per (game, capture, book).
+
+    Deliberately NOT pre-aggregated to a consensus in SQL. De-vigging is a
+    per-BOOK operation -- each book carries its own margin -- and averaging
+    prices before removing the vig produces a number that is not a
+    probability of anything. The caller de-vigs each row and then
+    aggregates, which is also what makes cross-book dispersion available
+    for free.
+
+    Deliberately NOT `DISTINCT ON (game_id) ... ORDER BY captured_at DESC`
+    either, for the same reason `load_standings_snapshots` refuses that
+    shape: "the latest quote we had by the boundary" joined onto a
+    full-season frame hands a May game a July line. The as-of join needs
+    the whole series to pick the quote preceding each individual game.
+
+    `captured_at` here is the BOOK's own `last_update`, not our fetch time
+    (see AGENTS.md), which is what makes it usable as an as-of anchor at
+    all -- it is when the price existed, not when we happened to look.
+    """
+    return execute_point_in_time(
+        conn,
+        _MARKET_ODDS_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+        },
+    )
+
+
+PREDICTION_MARKET_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "prediction_traded_at",
+    "prediction_home_probability",
+    "prediction_size",
+)
+
+# The home-side probability is resolved IN SQL from the stated outcome,
+# because polymarket_trades.outcome carries the team NAME. Fills naming
+# neither team (props and derivatives on the same game) are dropped rather
+# than forced onto a side.
+_PREDICTION_MARKET_SQL = """
+SELECT
+    t.game_id       AS game_id,
+    t.traded_at     AS prediction_traded_at,
+    CASE
+        WHEN t.outcome = h.name THEN t.price
+        ELSE 1 - t.price
+    END             AS prediction_home_probability,
+    t.size          AS prediction_size
+FROM polymarket_trades t
+JOIN games g ON g.id = t.game_id
+JOIN teams h ON h.id = g.home_team_id
+JOIN teams a ON a.id = g.away_team_id
+WHERE t.traded_at <= %(as_of)s
+  AND t.outcome IN (h.name, a.name)
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY t.game_id, t.traded_at
+"""
+
+
+def load_prediction_market_prices(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary Polymarket fill on a game's moneyline.
+
+    Fills, not quote snapshots. FEATURE_ROADMAP.md marked this row
+    "**only 2026-07 onward** -- unusable historically" because
+    `market_price_snapshots` starts when the capture host did. The on-chain
+    trade history goes back to 2024-09, so that limitation is gone.
+
+    `traded_at` is a cleaner as-of anchor than any `captured_at` in this
+    schema: it is when the fact HAPPENED, not when we observed it. Nothing
+    about it depends on our polling having been running.
+
+    No de-vig, because there is nothing to remove -- Polymarket's two
+    outcomes are complementary shares of one dollar, so a fill price is
+    already a probability.
+    """
+    return execute_point_in_time(
+        conn,
+        _PREDICTION_MARKET_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+        },
+    )

@@ -17,6 +17,7 @@ from wnba_engine.validation import (
     consistency_checks,
     crosswalk_checks,
     franchise_checks,
+    market_history_checks,
 )
 
 _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
@@ -32,6 +33,10 @@ _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
     bounds_checks.check_player_shot_zone_bounds,
     bounds_checks.check_team_shot_zone_bounds,
     franchise_checks.check_non_franchise_team_in_regular_season,
+    market_history_checks.check_polymarket_trade_bounds,
+    market_history_checks.check_kalshi_candle_bounds,
+    market_history_checks.check_kalshi_book_is_not_crossed,
+    market_history_checks.check_no_trade_long_after_settlement,
 )
 
 

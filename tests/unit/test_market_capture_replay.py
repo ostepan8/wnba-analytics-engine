@@ -193,3 +193,24 @@ def test_espn_injuries_replay_of_an_empty_capture_is_not_an_error(tmp_path):
     path = write_capture(tmp_path, "espn-injuries", [])
 
     assert ReplayEspnInjuriesClient(CaptureFile(path)).fetch_injuries() == {}
+
+
+def test_every_launchd_plist_is_well_formed_xml() -> None:
+    """Both plists shipped as malformed XML for months.
+
+    `--` is illegal inside an XML comment, and AGENTS.md's house style asks
+    for `--` rather than em-dashes everywhere else -- so the convention and
+    the format actively conflict here. launchd's own parser tolerates it
+    (the capture agent ran 239 times without complaint), which is exactly
+    why nothing surfaced it: the file was broken and working at the same
+    time. Any stricter consumer -- plutil, a config-management tool, an
+    editor's validator -- would reject it.
+    """
+    import plistlib
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    plists = sorted(scripts.glob("*.plist"))
+    assert plists, "expected launchd plists under scripts/"
+    for path in plists:
+        plistlib.loads(path.read_bytes())

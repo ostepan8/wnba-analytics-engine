@@ -52,6 +52,39 @@ class KalshiClient:
             params["cursor"] = cursor
         return self._http.get_json("markets", params=params)
 
+    def fetch_candlesticks(
+        self,
+        series_ticker: str,
+        market_ticker: str,
+        *,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int,
+    ) -> object:
+        """GET /series/{s}/markets/{t}/candlesticks -- OHLC bars.
+
+        Unlike the snapshot endpoints this is genuinely HISTORICAL: bars go
+        back to market creation, not to some rolling window (verified
+        2026-08-03 -- a season future opened 2026-05-22 still returns its
+        first bar when queried with a 180-day lookback).
+
+        THE WINDOW IS CAPPED AND THE CAP DEPENDS ON `period_interval`.
+        Measured against the live API on the same date: 60-minute bars
+        accept ~180 days per request and 400 was rejected with HTTP 400;
+        1-minute bars accept ~3 days and 7 was rejected. The error is a bare
+        400 with no explanation, so a caller that guesses too wide sees what
+        looks like a broken endpoint. `backfill_candlesticks` chunks against
+        `MAX_WINDOW_DAYS` for exactly this reason.
+        """
+        return self._http.get_json(
+            f"series/{series_ticker}/markets/{market_ticker}/candlesticks",
+            params={
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "period_interval": period_interval,
+            },
+        )
+
     def close(self) -> None:
         self._http.close()
 

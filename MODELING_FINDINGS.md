@@ -15,6 +15,14 @@ Ten hypotheses across player props, totals and spreads; the best
 survivor was +3.08% with t=0.55 and a confidence interval spanning
 -7.8% to +14.0%.
 
+The one structural question left open is LEAD-LAG, and as of 2026-08-03 it
+is half-answered. Cross-venue (Polymarket -> books) now measures a weak
+effect in the predicted direction and at the predicted horizon, which
+survives a game-clustered bootstrap at one of two a-priori lags and not
+the other. Book-to-book remains untestable. Both are limited by the same
+thing: our sportsbook captures are 60 minutes apart and the phenomenon is
+15-30 minutes wide.
+
 ## What was tested
 
 | # | Hypothesis | Result |
@@ -160,14 +168,73 @@ have simply not observed it yet. Those prices are not stale, they are
 UNSAMPLED, and the -5.03% is measuring bets placed after both books
 adjusted.
 
-**This is the one open question in this file.** Every other result is a
+**This is the open question in this file.** Every other result is a
 negative finding about the market. This is a negative finding about our
 instrumentation, and it is fixable: testing it needs sub-10-minute
 capture on a subset of props, which is an infrastructure change rather
 than a modelling one. The off-box capture host already runs every 30
 minutes and could run a narrow high-frequency sweep alongside it.
 
-Until that exists, treat lead-lag as UNTESTED, not as refuted.
+Until that exists, treat BOOK-TO-BOOK lead-lag as UNTESTED, not as
+refuted. Nothing below changes that; the next section tests a different
+pair of venues.
+
+### Cross-venue: does Polymarket lead the books? (2026-08-03)
+
+A separate question from the one above, and one the data can now partly
+answer. `polymarket_trades` carries exact fill timestamps, so one side of
+this comparison is no longer sampling-limited:
+
+| | median gap between consecutive observations, pre-tip |
+|---|---:|
+| Polymarket fills | **1.7 min** (75.7% within 10 min) |
+| sportsbook quotes, per book | **60.1 min** (0.2% within 10 min) |
+
+`uv run wnba-engine lead-lag-report`, 202 games with both venues, 2025-26,
+de-vigged consensus P(home) against trade-implied P(home), first
+differences on a 5-minute grid, fifteen symmetric lags:
+
+| lag | r (poly -> books) | n | t |
+|---:|---:|---:|---:|
+| +10m | +0.033 | 760 | +0.91 |
+| **+15m** | **+0.095** | 746 | +2.61 |
+| **+20m** | **+0.102** | 756 | +2.82 |
+| +30m | -0.013 | 750 | -0.34 |
+
+The reverse direction agrees: books-follow-Polymarket peaks at -15m
+(r=+0.075), which is the same claim read backwards, while
+books-LEAD-Polymarket at +15/+20m is flat (r=+0.021/+0.009). So the
+asymmetry is in the direction the hypothesis predicts, and it lands in the
+16-29 minute band the book-to-book section measured independently.
+
+**And it is still not enough to act on.** Three reasons, in order of
+weight:
+
+1. **The pooled t is inflated by clustering** -- the same trap this file
+   documents above. 756 paired observations come from 193 games. A
+   game-clustered block bootstrap (`analysis/lead_lag.bootstrap_by_game`,
+   2,000 resamples) gives P(r <= 0) = **0.0285** at +20m and **0.14** at
+   +15m. One of two a-priori lags is marginally significant; the other is
+   not.
+2. **r = 0.10 explains 1% of variance.** Fifteen lags were examined, and
+   the peak moved between runs as the backfill added rows -- consistent
+   with a noise-dominated maximum rather than a stable one.
+3. **The follower is still sampled hourly.** A 15-20 minute lag sits BELOW
+   the books' 60.1-minute resolution, so the lag estimate cannot be
+   trusted to that precision even where the direction is real.
+
+**Status: half-instrumented.** The Polymarket side is solved permanently
+and cheaply -- fills are recoverable from the chain, no capture host
+required. The sportsbook side is unchanged and is now the binding
+constraint on both lead-lag questions in this file. Raising odds-api
+polling on a subset of games is the single change that would settle it.
+
+A live example from the day this was written, offered as illustration and
+not evidence: Polymarket sat at ATL 56.5% while eleven books averaged
+52.2%; over the following six hours the books moved to 55.3% and
+Polymarket eased to 55.5%. They converged from BOTH directions, which is
+what two venues finding the same number looks like -- not what one venue
+following the other looks like.
 
 ## Predicting price movement: CLV without profit
 

@@ -197,14 +197,30 @@ single forecast available -- but a frame containing the line will look
 brilliant and teach nothing. Keep market features in a separate strategy
 so they can never silently enter a "pure basketball" model.
 
+Built as the `team_market` strategy
+(`wnba_engine/features/steps/market_steps.py`). Kept separate for the reason
+stated above, not for cost.
+
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
-| consensus line / total, de-vigged | `sportsbook_game_odds` | **todo** | must be pre-tip captures only |
-| cross-book dispersion | same | **todo** | none |
-| line movement, open -> current | same | **todo** | none |
-| implied win probability | same | **todo** | de-vig first |
-| prop line vs rolling mean | `sportsbook_player_prop_odds` | **todo** | none |
-| prediction-market divergence | `market_price_snapshots` | **todo** | **only 2026-07 onward** -- unusable historically |
+| consensus line / total, de-vigged | `sportsbook_game_odds` | **done** | de-vig PER BOOK before averaging; a mean of raw implied probabilities is not a probability |
+| cross-book dispersion | same | **done** | meaningless unless the de-vig happens first |
+| line movement, open -> current | same | **done** | none; the opening quote is knowable at every later instant |
+| implied win probability | same | **done** | none |
+| prop line vs rolling mean | `sportsbook_player_prop_odds` | **todo** | player grain, so it needs `player_rates` rather than `team_form` |
+| prediction-market divergence | `polymarket_trades` | **done** | ~~only 2026-07 onward~~ -- **superseded**: on-chain fills go back to 2024-09, so the historical limit is gone |
+
+Two traps found while building it, both of which produced a frame that
+looked correct:
+
+- **`captured_at` is each BOOK's own `last_update`**, so books almost never
+  share an instant. Bucketing by exact timestamp gave a median `book_count`
+  of 1 and an all-null dispersion. The consensus has to be a running one:
+  each book's latest quote as of each moment.
+- **An as-of anchor named only in `provenance` arrives NULL.**
+  `AsOfJoinStep` copies the chosen cells verbatim, and the guard reads a
+  null anchor as "no observation" and passes -- so the check silently
+  checked nothing. The anchor must be written into the cells.
 
 ## 9. Play-by-play derived
 

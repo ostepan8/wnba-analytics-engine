@@ -339,6 +339,21 @@ dollar-string quoting.
 
 CLI: `snapshot-kalshi [--series]`.
 
+### `kalshi_candlesticks` — REAL history, not snapshots
+
+OHLC bars from `/series/{s}/markets/{t}/candlesticks`, back to **market
+creation** rather than to whenever the capture host started. Keeps
+`yes_bid`, `yes_ask` and the traded `price` as three separate series: the
+spread is the only way to tell a real quote from an empty book, and empty
+books are what make a naive lead-lag study meaningless.
+
+Caveat on coverage: Kalshi's per-GAME markets only open near tip-off, so a
+settled game market yields a handful of hourly bars, not a week of them.
+The long series live on season-scale markets. That is the product, not a
+gap in the ingest.
+
+CLI: `backfill-kalshi-candles [--series] [--period 1|60|1440]`.
+
 ---
 
 ## Polymarket (prediction market, free public API)
@@ -354,6 +369,29 @@ CLI: `snapshot-kalshi [--series]`.
   backtestable via `season_awards`.
 
 CLI: `snapshot-polymarket`.
+
+### `polymarket_trades` — every on-chain fill
+
+From `data-api.polymarket.com/trades`, back to **2024-09-20** for WNBA.
+This is the deepest prediction-market history the project has, and it is
+strictly better than the quote snapshots for three reasons:
+
+1. **It cannot expire.** The CLOB's `/prices-history` is a rolling ~30-day
+   cache -- a June 2026 market with $377k of volume returns zero points.
+   The fills are on-chain and permanent.
+2. **The outcome is STATED, not inferred.** Each fill names the team the
+   buyer took. `market_price_snapshots` has no recorded side for two-way
+   game markets (Gamma leaves `groupItemTitle` null), so which team its
+   probability refers to has to be reverse-engineered from title ordering.
+3. **It is what traded**, not what a 30-minute cron happened to see quoted.
+
+`size` is SHARE COUNT, not dollars -- notional is `price * size`. Both
+sides of a trade record separately on-chain, so summing raw size roughly
+doubles true volume.
+
+CLI: `backfill-polymarket-trades [--no-resume] [--limit]`.
+
+Both venues at once: `scripts/backfill-prediction-markets.sh`.
 
 ---
 
