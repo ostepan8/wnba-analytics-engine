@@ -295,6 +295,97 @@ def test_player_form_rolls_per_player() -> None:
     assert "player_height" in frame.column_set
 
 
+def _rate_rows() -> list[dict[str, object]]:
+    """Two players on one team, so a minutes share has a denominator."""
+    rows: list[dict[str, object]] = []
+    for index in range(6):
+        at = FIRST_TIP + timedelta(days=2 * index)
+        for player_id, minutes, points in ((7, 30, 15), (8, 10, 4)):
+            rows.append(
+                {
+                    "game_id": index + 1,
+                    "season": 2025,
+                    "season_type": "regular-season",
+                    "start_time": at,
+                    "player_id": player_id,
+                    "player_name": f"Player {player_id}",
+                    "team_id": 1,
+                    "team_abbrev": "T1",
+                    "opponent_team_id": 2,
+                    "is_home": index % 2 == 0,
+                    "minutes": minutes,
+                    "points": points,
+                    "rebounds": 5,
+                    "assists": 3,
+                    "three_pointers_made": 1,
+                    "starter": player_id == 7,
+                    "did_not_play": False,
+                    "field_goals_attempted": 12,
+                    "three_pointers_attempted": 4,
+                    "free_throws_attempted": 3,
+                    "offensive_rebounds": 2,
+                    "steals": 1,
+                    "blocks": 1,
+                    "turnovers": 2,
+                    "usage_pct": 0.2,
+                    "true_shooting_pct": 0.55,
+                    "assist_pct": 0.15,
+                    "rebound_pct": 0.08,
+                    "pie": 0.1,
+                }
+            )
+    return rows
+
+
+def test_player_rates_adds_rates_role_and_the_style_vector() -> None:
+    source = StaticRowSource(player_game_rows=_rate_rows())
+    frame = strategies.player_rates(source).run(context=context())
+
+    for column in (
+        "points_per36_10",
+        "turnovers_per36_10",
+        "three_pointers_attempted_share_of_fga_10",
+        "offensive_rebounds_share_of_reb_10",
+        "usage_pct_wmean_10",
+        "pie_wmean_10",
+        "minutes_share_10",
+        "starter_mean_10",
+        "usage_pct_is_null",
+    ):
+        assert column in frame.column_set
+
+
+def test_player_rates_minutes_share_matches_the_rotation() -> None:
+    """Player 7 takes 30 of the team's 40 minutes every game, so their
+    share is 0.75 once there is any history.
+    """
+    source = StaticRowSource(player_game_rows=_rate_rows())
+    frame = strategies.player_rates(source).run(context=context())
+    later = [r for r in frame.rows if r["player_id"] == 7 and r["game_id"] == 6]
+    assert later[0]["minutes_share_10"] == pytest.approx(0.75)
+
+
+def test_player_rates_keeps_the_minutes_filter_last() -> None:
+    """Same reason as player_form: a cameo is noise as a row and is still
+    real history for every rate above it. Filtering earlier would silently
+    redefine every rate as "over games with real minutes", which HIDES the
+    low-minute bias the ratio of sums exists to handle rather than fixing
+    it.
+    """
+    names = strategies.player_rates(StaticRowSource()).step_names
+    assert names[-1] == "minimum_minutes"
+    for step in ("per36_10", "advanced_10", "minutes_share_10", "starter_rate_10"):
+        assert names.index(step) < names.index("minimum_minutes")
+
+
+def test_player_rates_coerces_before_it_windows() -> None:
+    """The advanced columns are NUMERIC, so psycopg hands back Decimal and
+    the first window would raise TypeError on contact with a float.
+    """
+    names = strategies.player_rates(StaticRowSource()).step_names
+    assert names.index("coerce_player_rates") < names.index("advanced_10")
+
+
 def test_a_strategy_refuses_rows_from_beyond_the_boundary() -> None:
     """StaticRowSource deliberately does not filter, so this is the guard
     catching a loader that forgot to.

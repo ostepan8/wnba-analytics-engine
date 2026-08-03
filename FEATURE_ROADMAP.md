@@ -21,7 +21,8 @@ insight, and Phase 2 rules-based work**, not for an assumed betting edge.
 | `team_form_multi` | 29 | 111 |
 | `team_matchup` | 23 | 80 |
 | `team_style` | 13 | 80 |
-| `player_form` | 9 | 34 |
+| `player_form` | 9 | 46 |
+| `player_rates` | 17 | 76 |
 
 ## The two rules
 
@@ -135,13 +136,36 @@ Two representations exist: season-aggregate vectors for description
 |---|---|---|---|
 | rolling pts / reb / ast / min | `player_game_stats` | done | none |
 | bio (height / weight / college) | `players` | done | `age`, `jersey_number` are mutable -- refused |
-| per-36 rates, rolling | `player_game_stats` | **todo** | ratio OF SUMS, never mean of ratios (see MODELING_FINDINGS) |
-| usage / TS% / PIE, rolling | `player_advanced_stats` | **todo** | `minutes` is TEXT here, integer in box scores |
-| role: minutes share of team | `player_game_stats` | **todo** | none |
-| starter rate, rolling | `player_game_stats` | **todo** | none |
-| player style vector, rolling | both | **todo** | season version exists; needs a trailing variant |
-| player uniqueness vs league | derived | **todo** | population must be prior seasons only |
+| per-36 rates, rolling | `player_game_stats` | done | ratio OF SUMS, never mean of ratios (see MODELING_FINDINGS) |
+| usage / TS% / PIE, rolling | `player_advanced_stats` | done | the TEXT `minutes` is NOT read -- rates are minutes-weighted by the box-score integer |
+| role: minutes share of team | `player_game_stats` | done | THIS game's share is not computable and the guard is right to refuse it |
+| starter rate, rolling | `player_game_stats` | done | none -- `RollingMeanStep` over a boolean is already a rate |
+| player style vector, rolling | both | done | the per-36 + share + weighted-rate block IS the trailing vector; dimensions match `analysis/style.py` |
+| player uniqueness vs league | derived | **todo** | population must be prior seasons only -- a fitting-discipline problem, deferred with archetypes |
 | **projected minutes** | none yet | **blocked** | needs lineup news -- the single highest-value missing input |
+
+Everything above except uniqueness lives in the `player_rates` strategy
+(`steps/player_steps.py`). Three ratio shapes, all taking the ratio of
+SUMS: `RollingRateStep` (per-36 and shot-mix shares),
+`RollingWeightedMeanStep` (provider-computed rates, minutes-weighted) and
+`RollingShareStep` (a denominator that lives on sibling rows).
+
+Two things found while building it, both pre-existing on `main`:
+
+- **`load_player_games` filtered on `start_time` while declaring
+  `result_known_at` as its anchor**, so a game that tipped off before the
+  boundary and finished after it was admitted and then rejected by the
+  guard. The README's own example
+  (`--as-of 2026-07-29 --strategy player_form`) raised `LeakageError`.
+  Fixed to the `COALESCE(final_observed_at, start_time + margin)` form the
+  team-game query always used.
+- **A rolling window excluded the current ROW but not a SIMULTANEOUS
+  one.** Player 137 has ESPN box-score rows in two games both tipping off
+  at 2024-08-23T23:30Z -- one collision in 31,340 rows, and enough to make
+  a per-player window publish a window end equal to its own tip-off.
+  `_windowing.trailing_walk` now holds an observation until the walk
+  reaches a strictly later instant; `RollingMeanStep` and
+  `SeasonToDateStep` were moved onto it.
 
 ## 6. Roster composition
 

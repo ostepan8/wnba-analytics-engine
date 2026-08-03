@@ -101,7 +101,8 @@ guard.py        LeakageGuard -- structural, provenance, boundary, window.
 pipeline.py     Pipeline -- immutable ordered stack + with_step/without/...
 source.py       FeatureRowSource protocol; Postgres and in-memory impls.
 strategies.py   Named, pre-composed pipelines.
-steps/          loading | cleaning | filtering | derivation | form | encoding
+steps/          loading | cleaning | filtering | derivation | form
+                matchup | player | style | encoding
 _windowing.py   the one invariant every WINDOWED step shares (see below)
 ```
 
@@ -158,7 +159,16 @@ The guard does not take the helper's word for it: every windowed step
 still publishes a window end, and that end is still compared to the
 row's own tip-off. `tests/unit/features/test_leakage_guard.py` carries a
 deliberately-leaky variant of each family (rolling, expanding, slope,
-split, streak, standings join) that must be rejected.
+split, streak, per-36 rate, minutes share, head-to-head, standings join)
+that must be rejected.
+
+It also carries the one case where "append after emitting" is not enough.
+An observation is held until the walk reaches a STRICTLY LATER event
+time, because two rows sharing an instant would otherwise enter each
+other's windows. That is not theoretical: player 137 has ESPN box-score
+rows in two games both tipping off at 2024-08-23T23:30Z -- one collision
+in 31,340 rows, and enough to make a per-player rolling window publish a
+window end equal to its own tip-off.
 
 ---
 
@@ -262,4 +272,15 @@ database (see `DATA_INVENTORY.md`).
 - **`players.age` and `jersey_number` are refreshed on every
   re-ingestion.** Refused; `height`/`weight`/`college` are joined as
   explicitly time-invariant with a written justification.
+- **`players.position` is refreshed the same way** --
+  `entity_repo.resolve_or_create_player` upserts it on every box-score
+  ingest, and the table holds both `G` and `Guard` for the same concept.
+  Not refused by name (it is not outcome-bearing), but it has no as-of
+  anchor, which is why FEATURE_ROADMAP.md's positional-defence row is
+  marked blocked rather than todo.
+- **`player_advanced_stats` is balldontlie only and joins onto ESPN box
+  scores through our canonical ids.** 28,989 of 31,340 rows match
+  (92.5%); the rest get nulls, like `pace` at team grain. The join pins
+  `source` explicitly because the table is UNIQUE(game_id, player_id,
+  source) and a second provider would double every player-game.
 - **`season_awards` is end-of-season ground truth.** Refused entirely.

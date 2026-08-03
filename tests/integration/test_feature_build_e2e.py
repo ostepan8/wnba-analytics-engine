@@ -217,6 +217,7 @@ def test_player_games_are_not_doubled_by_the_second_box_score_source(clean_db) -
             season_types=("regular-season",),
             seasons=(SEASON,),
             box_score_source="espn",
+            advanced_source="balldontlie",
         )
         both_sources_would_be = conn.execute(
             "SELECT count(*) FROM player_game_stats WHERE player_id = %s", (player,)
@@ -224,6 +225,84 @@ def test_player_games_are_not_doubled_by_the_second_box_score_source(clean_db) -
 
     assert len(espn_only) == 1
     assert both_sources_would_be == 2
+
+
+def test_the_advanced_join_cannot_double_a_player_game(clean_db) -> None:
+    """The same trap, one table over.
+
+    player_advanced_stats is UNIQUE(game_id, player_id, source), so a
+    second provider appearing there would turn one row per (player, game)
+    into two through the LEFT JOIN -- silently halving every rate built on
+    the frame, exactly as an unfiltered player_game_stats does. Only
+    balldontlie exists today, so this seeds a hypothetical second source
+    to prove the filter is what prevents it rather than the data
+    happening to be single-sourced.
+    """
+    with clean_db.connection() as conn:
+        seeded = _seed_schedule(conn)
+        player = conn.execute(
+            "INSERT INTO players (full_name) VALUES ('Test Player') RETURNING id"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO player_game_stats (game_id, player_id, team_id, source, minutes, "
+            "points, rebounds, assists, three_pointers_made) "
+            "VALUES (%s, %s, %s, 'espn', 30, 20, 5, 4, 2)",
+            (seeded["games"][0], player, seeded["home"]),  # type: ignore[index]
+        )
+        for source, usage in (("balldontlie", 0.25), ("some_future_provider", 0.99)):
+            conn.execute(
+                "INSERT INTO player_advanced_stats (game_id, player_id, team_id, source, "
+                "usage_percentage) VALUES (%s, %s, %s, %s, %s)",
+                (seeded["games"][0], player, seeded["home"], source, usage),  # type: ignore[index]
+            )
+        conn.commit()
+
+        rows = feature_repo.load_player_games(
+            conn,
+            as_of=TIP_ONE + 30 * DAY,
+            season_types=("regular-season",),
+            seasons=(SEASON,),
+            box_score_source="espn",
+            advanced_source="balldontlie",
+        )
+
+    assert len(rows) == 1
+    # The named source's value, not the other one and not two rows.
+    assert float(rows[0]["usage_pct"]) == 0.25  # type: ignore[arg-type]
+
+
+def test_a_player_game_survives_with_no_advanced_row(clean_db) -> None:
+    """7.5% of ESPN box-score rows have no balldontlie advanced row
+    (28,989 of 31,340 as of 2026-08-02). A LEFT JOIN is what keeps those
+    players in the frame with null rates instead of dropping them, which
+    would quietly restrict every player feature to games one paid
+    provider happened to cover.
+    """
+    with clean_db.connection() as conn:
+        seeded = _seed_schedule(conn)
+        player = conn.execute(
+            "INSERT INTO players (full_name) VALUES ('Unmatched Player') RETURNING id"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO player_game_stats (game_id, player_id, team_id, source, minutes, "
+            "points, rebounds, assists, three_pointers_made) "
+            "VALUES (%s, %s, %s, 'espn', 30, 20, 5, 4, 2)",
+            (seeded["games"][0], player, seeded["home"]),  # type: ignore[index]
+        )
+        conn.commit()
+
+        rows = feature_repo.load_player_games(
+            conn,
+            as_of=TIP_ONE + 30 * DAY,
+            season_types=("regular-season",),
+            seasons=(SEASON,),
+            box_score_source="espn",
+            advanced_source="balldontlie",
+        )
+
+    assert len(rows) == 1
+    assert rows[0]["points"] == 20
+    assert rows[0]["usage_pct"] is None
 
 
 def test_completion_margin_excludes_a_game_still_in_progress(clean_db) -> None:
