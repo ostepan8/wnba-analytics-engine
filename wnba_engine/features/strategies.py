@@ -5,8 +5,7 @@ needs a FeatureRowSource and that source owns a live connection. A
 module-level constant would either hold a connection for the process
 lifetime or force a null-source placeholder that fails at run time.
 
-Three of them, because two would not prove the point and one would not be
-a strategy layer at all:
+Several of them, because one would not be a strategy layer at all:
 
 - `situational_baseline` -- home/road, rest, back-to-backs. The features
   ROADMAP.md Phase 1 names, and nothing else. Fast, no advanced-stats
@@ -14,6 +13,11 @@ a strategy layer at all:
 - `team_form` -- baseline plus season-to-date record, rolling scoring and
   pace, standings-as-known, and encoding. What Phase 2's situational
   splits actually want.
+- `team_form_multi` -- team_form plus FEATURE_ROADMAP.md ss2: 10/20-game
+  and season-to-date levels, exponential weighting, consistency, trend,
+  home/road splits, streaks, and blowout rate.
+- `team_style` -- rolling style vectors and the matchup features they
+  enable.
 - `player_form` -- player-game grain for prop work: rolling points /
   rebounds / assists / minutes, rest inherited from the team's schedule.
 
@@ -44,6 +48,7 @@ from wnba_engine.features.steps import (
     derivation,
     encoding,
     filtering,
+    form_steps,
     loading,
     style_steps,
 )
@@ -244,9 +249,119 @@ def team_style(source: FeatureRowSource) -> Pipeline:
     )
 
 
+#: The value columns every ss2 multi-window step rolls. Scoring on both
+#: sides plus the margin, because a team whose points_scored is drifting
+#: up while its points_allowed drifts up faster is improving on offence
+#: and getting worse overall, and only the margin says so.
+_FORM_COLUMNS: tuple[str, ...] = ("points_scored", "points_allowed", "point_margin")
+
+#: Longer windows for the shape statistics than for the level ones. A
+#: standard deviation or a slope over 5 observations is mostly noise --
+#: the sampling error on a 5-point sd is roughly a third of the sd -- so
+#: they run at 10 while the means run at 5/10/20.
+_SHAPE_WINDOW = 10
+
+#: The home/road split window. FEATURE_ROADMAP.md flags thin samples here
+#: and it is not a small effect: a team's tenth HOME game is around its
+#: twentieth overall, so this window is only full late in a season.
+#: `split_home__window_games` / `split_road__window_games` report the
+#: real contribution per row, and a caller that wants to require a full
+#: window should filter on those rather than trust the mean.
+_SPLIT_WINDOW = 10
+
+
+def team_form_multi(source: FeatureRowSource) -> Pipeline:
+    """team_form plus FEATURE_ROADMAP.md ss2: many windows, and the shape
+    of a team's form rather than only its level.
+
+    A SEPARATE strategy rather than an extension of `team_form`, which is
+    the decision most worth challenging here. Three reasons, in order of
+    weight:
+
+    1. `team_form` is the cheap, widely-used frame and this block roughly
+       quadruples its windowed work (eleven passes over the frame instead
+       of three). A caller wanting rest and a 5-game average should not
+       pay for eleven.
+    2. The two answer different questions. `team_form` describes a team's
+       level; this describes the distribution its level was drawn from.
+       Mixing them makes "which columns does my model actually use"
+       harder to answer, not easier.
+    3. Composability is the stated point of this package -- if extending
+       a strategy is not the natural way to add features, the layering
+       is decorative.
+
+    The counter-argument is real and a reviewer should weigh it: two
+    strategies whose first eighteen steps are identical will drift, and
+    the roadmap describes ss2 as filling in `team_form` rather than as a
+    new thing. If the multi-window block proves to be what everyone
+    wants, collapsing this back into `team_form` is a one-line change and
+    the right one.
+
+    Steps are INSERTED after the last derivation step rather than
+    appended, so the block sits with the other windowed work and ahead of
+    the encoders. Position is currently immaterial -- `team_form` has no
+    filter after its derivation block -- but `Pipeline.insert_after`
+    exists so that adding a step is a choice of position rather than a
+    default, and a future filter appended to `team_form` would otherwise
+    silently start running before these windows instead of after.
+
+    `MarginProfileStep` and the rolling mean over its flags are a PAIR.
+    The flags describe the row's own game and are targets, exactly like
+    `derivation.TARGET_COLUMNS`; the rolled `is_blowout_win_mean_10` is
+    the feature. Dropping the rolling step and keeping the flags would
+    hand a model the result.
+    """
+    block: tuple[object, ...] = (
+        # -- level, at three horizons plus season-to-date -------------
+        derivation.RollingMeanStep(
+            value_columns=_FORM_COLUMNS, window=10, group_by=("team_id",),
+            label="rolling_form_10",
+        ),
+        derivation.RollingMeanStep(
+            value_columns=_FORM_COLUMNS, window=20, group_by=("team_id",),
+            label="rolling_form_20",
+        ),
+        form_steps.ExpandingMeanStep(value_columns=_FORM_COLUMNS, label="season_form"),
+        form_steps.ExponentialMeanStep(
+            value_columns=_FORM_COLUMNS, half_life_games=5.0, label="ewm_form_5"
+        ),
+        # -- shape: consistency, trend, splits ------------------------
+        form_steps.RollingDispersionStep(
+            value_columns=_FORM_COLUMNS, window=_SHAPE_WINDOW, label="dispersion_form_10"
+        ),
+        form_steps.RollingSlopeStep(
+            value_columns=_FORM_COLUMNS, window=_SHAPE_WINDOW, label="slope_form_10"
+        ),
+        form_steps.SplitRollingMeanStep(
+            value_columns=_FORM_COLUMNS, window=_SPLIT_WINDOW,
+            split_column="is_home", split_value=True, suffix="home", label="split_home",
+        ),
+        form_steps.SplitRollingMeanStep(
+            value_columns=_FORM_COLUMNS, window=_SPLIT_WINDOW,
+            split_column="is_home", split_value=False, suffix="road", label="split_road",
+        ),
+        # -- streak and margin distribution ---------------------------
+        form_steps.StreakStep(),
+        form_steps.MarginProfileStep(),
+        derivation.RollingMeanStep(
+            value_columns=("is_blowout_win", "is_blowout_loss", "is_close_game"),
+            window=_SHAPE_WINDOW,
+            group_by=("team_id",),
+            label="margin_profile_10",
+        ),
+    )
+    pipeline = team_form(source).renamed("team_form_multi")
+    anchor = "opponent_season_form"
+    for step in block:
+        pipeline = pipeline.insert_after(anchor, step)  # type: ignore[arg-type]
+        anchor = step.name  # type: ignore[attr-defined]
+    return pipeline
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
+    "team_form_multi": team_form_multi,
     "team_style": team_style,
     "player_form": player_form,
 }

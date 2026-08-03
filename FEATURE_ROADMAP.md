@@ -18,6 +18,7 @@ insight, and Phase 2 rules-based work**, not for an assumed betting edge.
 |---|---:|---:|
 | `situational_baseline` | 8 | 33 |
 | `team_form` | 18 | 61 |
+| `team_form_multi` | 29 | 111 |
 | `team_style` | 13 | 80 |
 | `player_form` | 9 | 34 |
 
@@ -61,13 +62,18 @@ thinnest area relative to its value.
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
 | rolling mean, 5 | `team_game_stats` | done | none |
-| rolling mean, 10 / 20 / season-to-date | same | **todo** | none |
-| exponentially weighted form | same | **todo** | none |
-| rolling **variance** (consistency) | same | **todo** | none |
-| form **trend** (slope over window) | same | **todo** | none |
-| home-only / road-only splits | same | **todo** | thin samples early in a season -- emit a window-count column |
-| win / loss streak length | `games` | **todo** | none |
-| margin distribution (blowout rate) | `games` | **todo** | none |
+| rolling mean, 10 / 20 / season-to-date | same | done | none |
+| exponentially weighted form | same | done | crosses seasons by default -- see `ExponentialMeanStep` |
+| rolling **variance** (consistency) | same | done | emitted as SAMPLE stddev, on the data's own scale |
+| form **trend** (slope over window) | same | done | regressed on window POSITION, not elapsed days |
+| home-only / road-only splits | same | done | thin samples early in a season -- `split_*__window_games` reports the real count |
+| win / loss streak length | `games` | done | resets per season by default |
+| margin distribution (blowout rate) | `games` | done | the raw flags are TARGETS; the rolled rate is the feature |
+
+All of the above live in the `team_form_multi` strategy
+(`steps/form_steps.py`), which is `team_form` plus an eleven-step
+multi-window block. Kept separate so the cheap frame stays cheap -- see
+that factory's docstring for the argument and the counter-argument.
 
 ## 3. Opponent and matchup
 

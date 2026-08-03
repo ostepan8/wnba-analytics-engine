@@ -91,6 +91,53 @@ def test_team_form_adds_rolling_and_encoded_columns() -> None:
     assert "standings_wins" not in frame.column_set
 
 
+def test_team_form_multi_is_team_form_plus_the_multi_window_block() -> None:
+    """The layering claim for ss2, asserted rather than assumed: every
+    team_form step survives, and the new ones sit with the other windowed
+    work rather than after the encoders.
+    """
+    source = StaticRowSource()
+    base = strategies.team_form(source).step_names
+    rich = strategies.team_form_multi(source).step_names
+
+    assert set(base) < set(rich)
+    assert rich.index("season_form") < rich.index("one_hot_home_away")
+    # The blowout flags describe the row's own game; the ROLLED flag is
+    # the feature, so the pair must stay in that order.
+    assert rich.index("margin_profile") < rich.index("margin_profile_10")
+
+
+def test_team_form_multi_produces_level_shape_and_streak_columns() -> None:
+    source = StaticRowSource(team_game_rows=_team_rows())
+    frame = strategies.team_form_multi(source).run(context=context())
+
+    for column in (
+        "points_scored_mean_10",
+        "points_scored_mean_20",
+        "point_margin_season_mean",
+        "point_margin_ewm_5",
+        "point_margin_sd_10",
+        "point_margin_slope_10",
+        "point_margin_mean_10_home",
+        "point_margin_mean_10_road",
+        "win_streak",
+        "is_blowout_win_mean_10",
+        "split_home__window_games",
+    ):
+        assert column in frame.column_set
+
+
+def test_team_form_is_unchanged_by_the_multi_window_strategy() -> None:
+    """team_form_multi is a separate strategy precisely so the cheap one
+    stays cheap; if this ever fails, the two have been merged and the
+    docstring's argument needs revisiting.
+    """
+    source = StaticRowSource(team_game_rows=_team_rows())
+    frame = strategies.team_form(source).run(context=context())
+    assert "point_margin_sd_10" not in frame.column_set
+    assert "win_streak" not in frame.column_set
+
+
 def test_standings_can_be_layered_back_on() -> None:
     """The removal is a composition choice, not a deletion -- re-adding the
     step is one call, which is the point of the pipeline being composable."""

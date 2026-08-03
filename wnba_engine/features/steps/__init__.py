@@ -4,6 +4,12 @@
 - `cleaning`   -- null policy, type coercion, duplicate handling.
 - `filtering`  -- row selection (franchise, season type, minimum minutes).
 - `derivation` -- situational features; every cross-row one is windowed.
+- `form_steps` -- multi-window team form: expanding and exponential
+  levels, dispersion, trend, home/road splits, streaks, margin profile.
+- `_windowing` -- shared plumbing for windowed steps. `trailing_walk`
+  encodes the append-AFTER-summarise invariant once, so the six steps in
+  `form_steps` and the four in `derivation` cannot each get it subtly
+  wrong.
 - `encoding`   -- categorical encoding and scaling.
 
 Split by what a step DOES rather than by grain, because the swap a caller
