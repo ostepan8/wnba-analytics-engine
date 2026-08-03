@@ -37,6 +37,8 @@ from wnba_engine.features.steps._windowing import (
     event_time,
     finalise,
     mean_of,
+    numeric,
+    trailing_walk,
 )
 
 #: A gap shorter than this counts as a back-to-back. 36h is the widest gap
@@ -221,37 +223,34 @@ class RollingMeanStep(WindowedStep):
         )
 
     def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        del context
         self._require_columns(frame, (*self.group_by, *self.value_columns))
         window_end_column = f"{self.label}{WINDOW_END_SUFFIX}"
         count_column = f"{self.label}{WINDOW_COUNT_SUFFIX}"
         cells: list[Row | None] = [None] * len(frame.rows)
-        history: dict[tuple[object, ...], list[tuple[datetime, Row]]] = {}
 
-        for index, row in chronological(frame, self.name):
-            key = tuple(row.get(column) for column in self.group_by)
-            past = history.setdefault(key, [])
+        # trailing_walk holds each row's observation until the walk
+        # reaches a STRICTLY later event time, which is what this loop
+        # used to do only for "the previous row" -- it appended after
+        # emitting, so a row sharing an instant with an earlier one still
+        # saw it. That is not theoretical: player 137 has box-score rows
+        # in two games tipping off simultaneously (2024-08-23T23:30Z), and
+        # the per-player window here published a window end equal to the
+        # row's own tip-off, which the guard rejected. See _windowing.
+        for index, _row, past in trailing_walk(
+            frame,
+            self.name,
+            group_by=self.group_by,
+            observe=lambda row: {column: row.get(column) for column in self.value_columns},
+        ):
             contributing = past[-self.window :]
             cell: dict[str, object] = {
-                output: mean_of(
-                    [
-                        observation[column]
-                        for _, observation in contributing
-                        if observation[column] is not None
-                    ]
-                )
+                output: mean_of(numeric(contributing, column))
                 for column, output in zip(self.value_columns, self.output_columns, strict=True)
             }
             cell[count_column] = len(contributing)
             cell[window_end_column] = max((at for at, _ in contributing), default=None)
             cells[index] = cell
-            # Appended AFTER this row's cells are built -- the structural
-            # reason a row can never enter its own window.
-            past.append(
-                (
-                    event_time(frame, row, self.name),
-                    {column: row.get(column) for column in self.value_columns},
-                )
-            )
         return finalise(cells, self.name)
 
 
@@ -288,26 +287,30 @@ class SeasonToDateStep(WindowedStep):
         )
 
     def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        del context
         self._require_columns(frame, (*self.group_by, self.season_column, "won"))
         window_end_column = f"{self.label}{WINDOW_END_SUFFIX}"
         cells: list[Row | None] = [None] * len(frame.rows)
-        played: dict[tuple[object, ...], int] = {}
-        won: dict[tuple[object, ...], int] = {}
-        last_at: dict[tuple[object, ...], datetime] = {}
 
-        for index, row in chronological(frame, self.name):
-            key = (*(row.get(column) for column in self.group_by), row.get(self.season_column))
-            games = played.get(key, 0)
-            wins = won.get(key, 0)
+        # Counters replaced by trailing_walk for the same reason as the
+        # rolling step above: an accumulator updated after each row still
+        # counts a SIMULTANEOUS earlier row. The list this walks is at
+        # most one season of games per key, so recomputing the two sums
+        # per row is a few thousand additions on the largest frame here.
+        for index, _row, past in trailing_walk(
+            frame,
+            self.name,
+            group_by=(*self.group_by, self.season_column),
+            observe=lambda row: {"won": row.get("won")},
+        ):
+            games = len(past)
+            wins = sum(1 for _, observation in past if observation.get("won"))  # type: ignore[union-attr]
             cells[index] = {
                 "season_games_prior": games,
                 "season_wins_prior": wins,
                 "season_win_pct_prior": (wins / games) if games else None,
-                window_end_column: last_at.get(key),
+                window_end_column: past[-1][0] if past else None,
             }
-            played[key] = games + 1
-            won[key] = wins + (1 if row.get("won") else 0)
-            last_at[key] = event_time(frame, row, self.name)
         return finalise(cells, self.name)
 
 

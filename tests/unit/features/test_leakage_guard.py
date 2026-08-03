@@ -330,6 +330,166 @@ def test_a_streak_counting_tonights_result_is_rejected() -> None:
     assert "leaky_streak__window_end" in str(excinfo.value)
 
 
+# -- player rates, written the wrong way --------------------------------
+
+
+class _SelfIncludingRateStep(WindowedStep):
+    """A per-36 rate that divides by the window INCLUDING tonight.
+
+    The mistake specific to a RATE: the ratio-of-sums discipline gets all
+    the attention (MODELING_FINDINGS.md measured a 2.6x MAE regression
+    from getting it wrong), and the exclusion quietly does not. A rate
+    that is correctly a ratio of sums and incorrectly includes the
+    current game is the worst of both worlds: it looks rigorous.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_rate"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("points_per36", "leaky_rate__window_end"),
+            window_end_column="leaky_rate__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        history: dict[object, list[tuple[datetime, float, float]]] = {}
+        cells: list[Row] = []
+        for row in frame.rows:
+            past = history.setdefault(row["team_id"], [])
+            past.append(
+                (row["start_time"], float(row["points_scored"]), 200.0)  # type: ignore[arg-type]
+            )
+            window = past[-10:]
+            top = sum(points for _, points, _ in window)
+            bottom = sum(minutes for _, _, minutes in window)
+            cells.append(
+                {
+                    "points_per36": 36.0 * top / bottom,
+                    "leaky_rate__window_end": max(at for at, _, _ in window),
+                }
+            )
+        return tuple(cells)
+
+
+def test_a_per36_rate_that_includes_tonight_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_SelfIncludingRateStep(), frame_of(team_schedule()))
+    assert "leaky_rate__window_end" in str(excinfo.value)
+
+
+class _CurrentGameShareStep(WindowedStep):
+    """A minutes share computed from TONIGHT's rotation.
+
+    The mistake specific to a SHARE: its denominator lives on sibling
+    rows, and the siblings of the row being predicted are the game being
+    predicted. This is the one leaky step here that is not an off-by-one
+    -- it is a category error, and the guard catches it for the same
+    reason it catches the others, because the window ends at the row's
+    own tip-off.
+
+    MODELING_FINDINGS.md is explicit that forward-looking minutes are the
+    input this repo does not have, so anything producing them is
+    producing them from the future.
+    """
+
+    @property
+    def name(self) -> str:
+        return "leaky_share"
+
+    @property
+    def provenance(self) -> StepProvenance:
+        return StepProvenance(
+            kind=StepKind.WINDOWED,
+            adds_columns=("minutes_share", "leaky_share__window_end"),
+            window_end_column="leaky_share__window_end",
+        )
+
+    def compute(self, frame: FeatureFrame, context: FeatureContext) -> tuple[Row, ...]:
+        totals: dict[tuple[object, object], float] = {}
+        for row in frame.rows:
+            key = (row["team_id"], row["game_id"])
+            totals[key] = totals.get(key, 0.0) + float(row["points_scored"])  # type: ignore[arg-type]
+        return tuple(
+            {
+                "minutes_share": float(row["points_scored"])  # type: ignore[arg-type]
+                / totals[(row["team_id"], row["game_id"])],
+                "leaky_share__window_end": row["start_time"],
+            }
+            for row in frame.rows
+        )
+
+
+def test_a_share_of_tonights_rotation_is_rejected() -> None:
+    with pytest.raises(LeakageError) as excinfo:
+        _run(_CurrentGameShareStep(), frame_of(team_schedule()))
+    assert "leaky_share__window_end" in str(excinfo.value)
+
+
+def test_simultaneous_rows_do_not_enter_each_others_windows() -> None:
+    """A regression test for a real row in this database.
+
+    Player 137 has ESPN box-score rows in games 21 and 22, both tipping
+    off at 2024-08-23T23:30Z, on two different teams -- one collision in
+    31,340 rows. `RollingMeanStep` appended each row's observation after
+    emitting its own cells, which excludes the row ITSELF but not a
+    SIBLING at the same instant, so the second of the two published a
+    window end equal to its own tip-off and the guard rejected the whole
+    build.
+
+    The guard was right: two games played at the same moment cannot
+    inform each other. The fix is in `_windowing.trailing_walk`, which
+    now holds an observation until the walk reaches a strictly later
+    event time -- so this asserts both that the build survives AND that
+    the simultaneous row contributed nothing.
+    """
+    from wnba_engine.features.steps.derivation import RollingMeanStep
+
+    simultaneous = FIRST_TIP + timedelta(days=6)
+    rows = [
+        team_row(game_id=1, team_id=1, start_time=FIRST_TIP, points_scored=10),
+        team_row(game_id=21, team_id=1, start_time=simultaneous, points_scored=90),
+        team_row(game_id=22, team_id=1, start_time=simultaneous, points_scored=90),
+        team_row(game_id=3, team_id=1, start_time=simultaneous + timedelta(days=2)),
+    ]
+    frame = _run(
+        RollingMeanStep(value_columns=("points_scored",), window=10, label="form"),
+        frame_of(rows),
+    )
+    by_game = {row["game_id"]: row for row in frame.rows}
+    # Both simultaneous rows see only the game six days earlier.
+    assert by_game[21]["points_scored_mean_10"] == 10.0
+    assert by_game[22]["points_scored_mean_10"] == 10.0
+    assert by_game[21]["form__window_games"] == 1
+    assert by_game[22]["form__window_games"] == 1
+    # ... and the later row sees all three.
+    assert by_game[3]["form__window_games"] == 3
+
+
+def test_season_to_date_also_ignores_a_simultaneous_row() -> None:
+    """The same fix, on the other accumulator that had the same shape."""
+    from wnba_engine.features.steps.derivation import GameOutcomeStep, SeasonToDateStep
+
+    simultaneous = FIRST_TIP + timedelta(days=6)
+    rows = [
+        team_row(game_id=1, team_id=1, start_time=FIRST_TIP, points_scored=90,
+                 points_allowed=70),
+        team_row(game_id=21, team_id=1, start_time=simultaneous, points_scored=90,
+                 points_allowed=70),
+        team_row(game_id=22, team_id=1, start_time=simultaneous, points_scored=90,
+                 points_allowed=70),
+    ]
+    frame = Pipeline(  # type: ignore[arg-type]
+        name="std", steps=(GameOutcomeStep(), SeasonToDateStep())
+    ).run(frame_of(rows), context=context())
+    by_game = {row["game_id"]: row for row in frame.rows}
+    assert by_game[21]["season_games_prior"] == 1
+    assert by_game[22]["season_games_prior"] == 1
+
+
 # -- head to head, written the wrong way --------------------------------
 
 

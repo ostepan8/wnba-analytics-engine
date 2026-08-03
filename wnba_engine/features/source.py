@@ -38,6 +38,14 @@ Row = Mapping[str, object]
 #: games (see DATA_INVENTORY.md's plays_final_score check).
 DEFAULT_BOX_SCORE_SOURCE = "espn"
 
+#: Which source's advanced player rates are joined onto those box scores.
+#: balldontlie is the only one that exists (28,995 rows, 2022-2026,
+#: verified 2026-08-02) -- it is named rather than left unfiltered because
+#: player_advanced_stats is UNIQUE(game_id, player_id, source), so a
+#: second provider would double every player-game silently. The same
+#: mistake on player_game_stats is what DATA_INVENTORY.md warns about.
+DEFAULT_ADVANCED_SOURCE = "balldontlie"
+
 
 class FeatureRowSource(Protocol):
     """Raw rows for the loader steps, already bounded by `context.as_of`."""
@@ -57,6 +65,7 @@ class PostgresRowSource:
 
     conn: Connection
     box_score_source: str = DEFAULT_BOX_SCORE_SOURCE
+    advanced_source: str = DEFAULT_ADVANCED_SOURCE
 
     def team_games(self, context: FeatureContext) -> tuple[Row, ...]:
         return feature_repo.load_team_games(
@@ -74,6 +83,7 @@ class PostgresRowSource:
             season_types=context.season_types,
             seasons=context.seasons or None,
             box_score_source=self.box_score_source,
+            advanced_source=self.advanced_source,
             completion_margin=context.completion_margin,
         )
 

@@ -46,6 +46,22 @@ def trailing_walk(
     window: at the moment the consumer sees `past`, the current row is
     not in it and there is no ordering of the loop in which it could be.
 
+    SIMULTANEOUS OBSERVATIONS ARE HELD BACK TOO, which is the part that
+    is not obvious and that a "append after yield" implementation gets
+    wrong. An observation becomes visible only once the walk reaches a
+    row with a STRICTLY LATER event time, so two rows sharing an instant
+    never enter each other's windows.
+
+    That is not hypothetical. `RestDaysStep` already documents the common
+    case -- a player-grain frame has ~12 rows per (team, tip-off) -- and
+    this database contains a rarer one that breaks a per-PLAYER window:
+    player 137 has ESPN box-score rows in games 21 and 22, both tipping
+    off at 2024-08-23T23:30Z, on two different teams. Exactly one such
+    collision exists in 31,340 rows, and it is enough to make a per-player
+    rolling window publish a window end equal to the row's own tip-off,
+    which the guard rejects. It rejects it correctly: two games played at
+    the same instant cannot inform each other.
+
     Consumers must therefore SUMMARISE `past` before continuing the loop
     rather than keeping a reference to it -- the list is mutated in
     place on the next iteration, deliberately, so that a group's history
@@ -56,12 +72,25 @@ def trailing_walk(
     is expected to have run `_require_columns` first.
     """
     history: dict[tuple[object, ...], list[tuple[datetime, object]]] = {}
+    # Observed but not yet visible: recorded at an instant the walk has
+    # not passed. `chronological` is ascending, so everything held is at
+    # or before the current row's event time and only the strictly
+    # earlier entries may be released.
+    holding: dict[tuple[object, ...], list[tuple[datetime, object]]] = {}
     for index, row in chronological(frame, step_name):
         key = tuple(row.get(column) for column in group_by)
         past = history.setdefault(key, [])
+        held = holding.setdefault(key, [])
         at = event_time(frame, row, step_name)
+        released = 0
+        for observed_at, observation in held:
+            if observed_at >= at:
+                break
+            past.append((observed_at, observation))
+            released += 1
+        del held[:released]
         yield index, row, past
-        past.append((at, observe(row)))
+        held.append((at, observe(row)))
 
 
 def finalise(cells: Sequence[Row | None], step_name: str) -> tuple[Row, ...]:

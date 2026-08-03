@@ -22,6 +22,8 @@ Several of them, because one would not be a strategy layer at all:
   enable.
 - `player_form` -- player-game grain for prop work: rolling points /
   rebounds / assists / minutes, rest inherited from the team's schedule.
+- `player_rates` -- player_form plus FEATURE_ROADMAP.md ss5: per-36 rates,
+  shot mix, minutes-weighted usage/TS/PIE, minutes share, starter rate.
 
 Swapping is the whole design:
 
@@ -54,6 +56,7 @@ from wnba_engine.features.steps import (
     form_steps,
     loading,
     matchup_steps,
+    player_steps,
     style_steps,
 )
 
@@ -424,6 +427,157 @@ def matchup_block() -> tuple[PreprocessingStep, ...]:
     )
 
 
+#: The counting stats a per-36 rate is taken over. These are exactly
+#: analysis/style.py's PLAYER_DIMENSIONS minus the shares and the
+#: provider-computed rates, so a trailing vector built here is comparable
+#: to the season vector built there.
+_PER36_NUMERATORS: tuple[str, ...] = (
+    "points",
+    "rebounds",
+    "assists",
+    "three_pointers_made",
+    "steals",
+    "blocks",
+    "turnovers",
+)
+
+#: Rates balldontlie computed from inputs this database does not store,
+#: so they cannot be re-derived as a ratio of sums and are instead
+#: minutes-weighted. See RollingWeightedMeanStep.
+_ADVANCED_RATES: tuple[str, ...] = (
+    "usage_pct",
+    "true_shooting_pct",
+    "assist_pct",
+    "rebound_pct",
+    "pie",
+)
+
+#: NUMERIC again -- psycopg hands these back as decimal.Decimal, and a
+#: Decimal meeting a float raises TypeError inside the first window.
+_PLAYER_NUMERIC_COERCIONS = tuple((column, cleaning.TO_FLOAT) for column in _ADVANCED_RATES)
+
+#: The rolling window for every player rate. 10 rather than the team
+#: side's 5, because a player-grain window is thinner than it looks: a
+#: DNP contributes NULL minutes (db/migrations/0002_box_scores.sql) and
+#: drops out of the ratio entirely, so a 5-game window on a
+#: load-managed player can describe two games. Every rate step publishes
+#: `<label>__window_games` so the real depth stays visible.
+_PLAYER_WINDOW = 10
+
+
+def player_rates(source: FeatureRowSource, *, minimum_minutes: int = 5) -> Pipeline:
+    """player_form plus FEATURE_ROADMAP.md ss5: rates, role, and the
+    trailing player style vector.
+
+    Everything here is a RATIO, and MODELING_FINDINGS.md records what the
+    wrong kind of ratio costs -- an 8.0045 MAE against a 3.05 baseline,
+    from averaging `stat/minutes` per game instead of taking a ratio of
+    sums. `player_steps` is built around the correct form; this strategy
+    just chooses the columns.
+
+    Four ss5 rows, three shapes:
+
+    - PER-36 RATES and SHOT-MIX SHARES are the same step at different
+      scales. `points_per36_10` divides summed points by summed minutes
+      and multiplies by 36; `three_pointers_attempted_share_of_fga_10`
+      divides summed threes by summed attempts at scale 1.
+    - USAGE / TS / PIE arrive already divided, so they are
+      minutes-weighted rather than summed.
+    - MINUTES SHARE needs a denominator on other rows, so it is its own
+      step. Note what is NOT here: this game's minutes share. It would
+      require tonight's rotation, the guard would reject it, and the
+      guard would be right -- see RollingShareStep.
+
+    STARTER RATE gets no new class. A rolling mean over a boolean IS a
+    rate, and `starter` is NOT NULL in player_game_stats, so
+    `starter_mean_10` is a genuine 0-1 fraction rather than a fraction of
+    the games we happen to know about.
+
+    THE MINUTES FILTER MUST STAY LAST, and every step here is INSERTED
+    before it rather than appended. `player_form` ends with
+    `minimum_minutes`, so `.with_steps(...)` would put these windows
+    AFTER it -- and that is not a stylistic point:
+
+    - Every rate would be computed over "games with at least 5 minutes",
+      silently redefining a 10-game window as 10 qualifying games. That
+      HIDES the low-minute bias a ratio of sums exists to handle rather
+      than fixing it, and it hides it in the direction that looks fine.
+    - `RollingShareStep` would be worse than biased. Its denominator is
+      the TEAM's minutes summed across the rotation, and a filtered frame
+      has no rows for the players who played four minutes -- so every
+      team total would be short and every share inflated, with no null or
+      error to show for it.
+
+    This was not a hypothetical: the first version of this factory
+    appended, and `test_player_rates_keeps_the_minutes_filter_last`
+    caught it.
+    """
+    rate_block: tuple[PreprocessingStep, ...] = (
+        player_steps.RollingRateStep(
+            value_columns=_PER36_NUMERATORS,
+            denominator_column="minutes",
+            window=_PLAYER_WINDOW,
+            scale=player_steps.PER_36,
+            suffix="per36",
+            label="per36_10",
+        ),
+        # Shot mix. Scale 1, so these read as fractions.
+        player_steps.RollingRateStep(
+            value_columns=("three_pointers_attempted", "free_throws_attempted"),
+            denominator_column="field_goals_attempted",
+            window=_PLAYER_WINDOW,
+            scale=1.0,
+            suffix="share_of_fga",
+            label="shot_mix_10",
+        ),
+        player_steps.RollingRateStep(
+            value_columns=("offensive_rebounds",),
+            denominator_column="rebounds",
+            window=_PLAYER_WINDOW,
+            scale=1.0,
+            suffix="share_of_reb",
+            label="reb_mix_10",
+        ),
+        player_steps.RollingWeightedMeanStep(
+            value_columns=_ADVANCED_RATES,
+            weight_column="minutes",
+            window=_PLAYER_WINDOW,
+            label="advanced_10",
+        ),
+        player_steps.RollingShareStep(
+            value_column="minutes", window=_PLAYER_WINDOW, label="minutes_share_10"
+        ),
+        derivation.RollingMeanStep(
+            value_columns=("starter",),
+            window=_PLAYER_WINDOW,
+            group_by=("player_id",),
+            label="starter_rate_10",
+        ),
+        # The advanced join is ~7.5% null against ESPN box scores (28,989
+        # of 31,340 matched, verified 2026-08-02), so the flag keeps "no
+        # advanced row" distinguishable from "a usage rate of zero" the
+        # way FlagNullsStep does for pace.
+        cleaning.FlagNullsStep(columns=("usage_pct",), step_name="flag_advanced_nulls"),
+    )
+    pipeline = (
+        player_form(source, minimum_minutes=minimum_minutes)
+        .renamed("player_rates")
+        # Coercion must precede every window: the advanced columns are
+        # NUMERIC, and a Decimal meeting a float raises TypeError.
+        .insert_after(
+            "load_player_games",
+            cleaning.CoerceTypesStep(
+                coercions=_PLAYER_NUMERIC_COERCIONS, step_name="coerce_player_rates"
+            ),
+        )
+    )
+    anchor = "rolling_player_5"
+    for step in rate_block:
+        pipeline = pipeline.insert_after(anchor, step)
+        anchor = step.name
+    return pipeline
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
@@ -431,6 +585,7 @@ STRATEGIES: Mapping[str, StrategyFactory] = {
     "team_matchup": team_matchup,
     "team_style": team_style,
     "player_form": player_form,
+    "player_rates": player_rates,
 }
 
 

@@ -295,6 +295,30 @@ PLAYER_GAME_COLUMNS: tuple[str, ...] = (
     "three_pointers_made",
     "starter",
     "did_not_play",
+    # -- attempt counts and the remaining counting stats ---------------
+    # Needed for the per-36 rates and shot-mix shares that
+    # analysis/style.py's PLAYER_DIMENSIONS are built from. They were
+    # absent because the original frame only served rolling points /
+    # rebounds / assists; a share needs its own denominator in the same
+    # row or the ratio has to be taken across rows, which is the "mean of
+    # ratios" MODELING_FINDINGS.md measures as biased.
+    "field_goals_attempted",
+    "three_pointers_attempted",
+    "free_throws_attempted",
+    "offensive_rebounds",
+    "steals",
+    "blocks",
+    "turnovers",
+    # -- balldontlie advanced stats, LEFT JOINed -----------------------
+    # Rates the box score cannot produce. Null wherever balldontlie has no
+    # advanced row for an ESPN box-score row: 28,989 of 31,340 matched as
+    # of 2026-08-02, so expect ~7.5% null and treat it the way `pace` is
+    # treated at team grain.
+    "usage_pct",
+    "true_shooting_pct",
+    "assist_pct",
+    "rebound_pct",
+    "pie",
 )
 
 _PLAYER_GAMES_SQL = """
@@ -318,13 +342,47 @@ SELECT
     pgs.assists                     AS assists,
     pgs.three_pointers_made         AS three_pointers_made,
     pgs.starter                     AS starter,
-    pgs.did_not_play                AS did_not_play
+    pgs.did_not_play                AS did_not_play,
+    pgs.field_goals_attempted       AS field_goals_attempted,
+    pgs.three_pointers_attempted    AS three_pointers_attempted,
+    pgs.free_throws_attempted       AS free_throws_attempted,
+    pgs.offensive_rebounds          AS offensive_rebounds,
+    pgs.steals                      AS steals,
+    pgs.blocks                      AS blocks,
+    pgs.turnovers                   AS turnovers,
+    pas.usage_percentage                AS usage_pct,
+    pas.true_shooting_percentage        AS true_shooting_pct,
+    pas.assist_percentage               AS assist_pct,
+    pas.rebound_percentage              AS rebound_pct,
+    pas.pie                             AS pie
 FROM player_game_stats pgs
 JOIN games g   ON g.id = pgs.game_id
 JOIN players p ON p.id = pgs.player_id
 JOIN teams t   ON t.id = pgs.team_id
+-- The advanced source is pinned explicitly even though balldontlie is
+-- currently the only one. player_advanced_stats is UNIQUE(game_id,
+-- player_id, source), so a second provider appearing would silently turn
+-- one row per (player, game) into two -- exactly the doubling that
+-- player_game_stats.source already caused once and that this loader's
+-- own box_score_source filter exists to prevent.
+LEFT JOIN player_advanced_stats pas
+       ON pas.game_id = pgs.game_id
+      AND pas.player_id = pgs.player_id
+      AND pas.source = %(advanced_source)s
+-- `result_known_at`, NOT `start_time`. This filter read
+-- `g.start_time <= %(as_of)s` until 2026-08-02, which admitted a game
+-- that TIPPED OFF before the boundary and finished after it -- and then
+-- declared result_known_at as an as-of anchor, so the guard rejected the
+-- frame it had just built. `uv run wnba-engine build-features --as-of
+-- 2026-07-29 --strategy player_form`, the example in the package README,
+-- raised LeakageError on a game starting 2026-07-28T23:30Z. The guard
+-- was right: the box score of a game still being played is not
+-- observable at the boundary. The team-game query above always used the
+-- COALESCE form; this one was not updated when
+-- db/migrations/0024_game_final_observed_at.sql landed.
 WHERE pgs.source = %(box_score_source)s
-  AND g.start_time <= %(as_of)s
+  AND COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
+      <= %(as_of)s
   AND g.status = 'final'
   AND g.season_type = ANY(%(season_types)s::text[])
   AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
@@ -339,9 +397,11 @@ def load_player_games(
     season_types: Sequence[str],
     seasons: Sequence[int] | None,
     box_score_source: str,
+    advanced_source: str,
     completion_margin: timedelta = DEFAULT_COMPLETION_MARGIN,
 ) -> tuple[Row, ...]:
-    """One row per (game, player) from ONE box-score source.
+    """One row per (game, player) from ONE box-score source, with that
+    player's advanced rates for the same game LEFT JOINed on.
 
     `box_score_source` has no default on purpose. player_game_stats holds
     two independent sources for the same games -- 31,096 ESPN rows and
@@ -349,7 +409,28 @@ def load_player_games(
     explicit that the second exists for cross-source validation, not
     extra coverage. Omitting the filter silently doubles most players'
     game counts and halves every per-game average, which looks like a
-    modelling problem rather than a query bug.
+    modelling problem rather than a query bug. `advanced_source` has no
+    default for the same reason, one table over.
+
+    THE TWO SIDES OF THIS JOIN COME FROM DIFFERENT PROVIDERS. The box
+    score is ESPN by default and player_advanced_stats is balldontlie
+    only, joined on our canonical (game_id, player_id) rather than on
+    either provider's ids -- which is exactly what the provider_entity_map
+    crosswalk exists to make possible, and why AGENTS.md's warning that
+    "balldontlie issues different player ids for the same person across
+    its own endpoints" does not bite here. Verified against this database
+    on 2026-08-02: 28,989 of 31,340 ESPN rows find an advanced row, i.e.
+    92.5%, ranging 87.8% (2026) to 94.0% (2024). The missing 7.5% get
+    nulls, which is the honest answer and the same shape `pace` already
+    has at team grain.
+
+    NOT SELECTED, deliberately: `player_advanced_stats.minutes`. It is
+    TEXT in "MM:SS" form ("37:46") while `player_game_stats.minutes` is
+    an INTEGER, and FEATURE_ROADMAP.md ss5 flags the mismatch as the
+    hazard for this row. Reading both would put two differently-typed
+    minutes columns in one frame and make "which minutes did that rate
+    divide by" a question rather than a fact. Every rate built on this
+    frame uses the integer.
     """
     return execute_point_in_time(
         conn,
@@ -359,6 +440,7 @@ def load_player_games(
             "season_types": list(season_types),
             "seasons": list(seasons) if seasons else None,
             "box_score_source": box_score_source,
+            "advanced_source": advanced_source,
             "completion_margin": completion_margin,
         },
     )
