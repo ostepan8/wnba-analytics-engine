@@ -387,6 +387,41 @@ Any future ROI in this file must use `analysis/clv.american_to_profit`
 against a real quoted price. A win RATE may be compared to a break-even
 threshold; a RETURN may not be computed from one.
 
+### Out-of-sample confirmation: the Kalshi result was a home-bias proxy (2026-08-04)
+
+The 2026-only caveat on the Kalshi result is gone, because the missing
+season was never missing -- it was behind a different API tier.
+
+Kalshi partitions exchange data at a cutoff (`GET /historical/cutoff`,
+2026-06-05). Markets settled earlier are served ONLY from `/historical/*`
+and are invisible to `/markets`. For KXWNBAGAME that is 364 markets from
+2026-05-22 against **760 from 2025-05-23**. Candlesticks 404 for those, but
+`/historical/trades` returns timestamped prints: 536,844 trades across 593
+markets and 297 games of the 2025 season, now in `kalshi_trades` (0027).
+
+Re-running "follow Kalshi when it disagrees with the books" on 2025, at
+best real prices:
+
+| | 2025 (out of sample) | 2026 (in sample) |
+|---|---:|---:|
+| follow Kalshi | +9.40% (t=+1.33) | +3.66% (t=+0.51) |
+| **bet HOME every game** | **+9.25% (t=+1.15)** | +12.71%* |
+| paired difference | **+0.15%, t = +0.02** | -- |
+| strategy picks home | 72% of games | 71% |
+| season home win rate | 56.9% | 57.3% |
+
+\* the 2026 control figure is at flat -110; see the pricing correction above.
+
+**The paired difference is +0.15% at t = +0.02.** Following Kalshi adds
+nothing measurable over a blind home bet, in either season independently.
+Both seasons had home teams above the 54.2% long-run rate, which is what
+made the blind bet look good -- and over 1,278 games at real prices,
+betting home is **-4.17%**.
+
+So the diagnosis holds, now with a genuine out-of-sample season rather than
+an argument. Worth stating what actually settled it: not a statistic, but
+running the dumbest available control and pairing against it.
+
 ### Favourite-longshot bias: present in shape, absent in significance
 
 Bucketing every side bet by its de-vigged probability, at best real prices:

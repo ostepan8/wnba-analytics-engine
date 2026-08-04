@@ -82,3 +82,30 @@ class KalshiCandle:
     volume: float | None
     open_interest: float | None
     captured_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class KalshiTrade:
+    """One trade from Kalshi's HISTORICAL tier.
+
+    `yes_price` is stored regardless of which side the taker took, so a
+    market's series is directly comparable trade to trade. Kalshi contracts
+    settle at $0 or $1, so it is already a probability -- no de-vig, the
+    same property that makes Polymarket fills a clean reference.
+
+    `size` is CONTRACTS, not dollars. These markets are an order of
+    magnitude more liquid than the WNBA Polymarket ones (median 112,951
+    contracts per 2025 market), which matters for any question about
+    whether an observed price was actually gettable.
+    """
+
+    trade_id: str
+    market_ticker: str
+    series_ticker: str | None
+    yes_price: float
+    no_price: float | None
+    size: float | None
+    taker_side: str | None
+    is_block_trade: bool | None
+    traded_at: datetime
+    captured_at: datetime

@@ -57,10 +57,12 @@ from wnba_engine.pipeline.focused_odds_capture import (
 )
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
 from wnba_engine.pipeline.kalshi_candle_backfill import (
+    DERIVATIVE_SERIES,
     GAME_SERIES,
     backfill_kalshi_candles,
 )
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
+from wnba_engine.pipeline.kalshi_trade_backfill import backfill_kalshi_trades
 from wnba_engine.pipeline.lead_lag_report import build_lead_lag_report
 from wnba_engine.pipeline.market_capture_ingest import ingest_captures
 from wnba_engine.pipeline.market_game_relink import relink_market_snapshots
@@ -500,6 +502,10 @@ def backfill_polymarket_trades_cmd(no_resume: bool, market_limit: int | None) ->
 @cli.command("backfill-kalshi-candles")
 @click.option("--series", "series_tickers", multiple=True, help="Limit to specific series.")
 @click.option(
+    "--derivatives", is_flag=True,
+    help="Sweep quarter/half totals and winners instead of the full-game series.",
+)
+@click.option(
     "--period",
     "period_minutes",
     type=click.Choice(["1", "60", "1440"]),
@@ -510,7 +516,8 @@ def backfill_polymarket_trades_cmd(no_resume: bool, market_limit: int | None) ->
 )
 @click.option("--limit", "market_limit", type=int, default=None, help="Cap markets per series.")
 def backfill_kalshi_candles_cmd(
-    series_tickers: tuple[str, ...], period_minutes: str, market_limit: int | None
+    series_tickers: tuple[str, ...], derivatives: bool,
+    period_minutes: str, market_limit: int | None
 ) -> None:
     """Backfill Kalshi OHLC bars for WNBA game markets.
 
@@ -527,7 +534,7 @@ def backfill_kalshi_candles_cmd(
                 backfill_kalshi_candles(
                     db,
                     client,
-                    series=series_tickers or GAME_SERIES,
+                    series=series_tickers or (DERIVATIVE_SERIES if derivatives else GAME_SERIES),
                     period_minutes=int(period_minutes),
                     market_limit=market_limit,
                 )
@@ -609,6 +616,41 @@ def capture_odds_focused(window_hours: int, min_fills: int) -> None:
                     client,
                     window=timedelta(hours=window_hours),
                     min_fills=min_fills,
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("backfill-kalshi-trades")
+@click.option("--series", "series_tickers", multiple=True, default=("KXWNBAGAME",),
+              show_default=True, help="Series to sweep.")
+@click.option("--before", type=click.DateTime(["%Y-%m-%d"]), default=None,
+              help="Only markets closing before this date (e.g. 2026-01-01 for 2025 only).")
+@click.option("--no-resume", is_flag=True, help="Re-fetch markets already stored.")
+@click.option("--limit", "market_limit", type=int, default=None)
+def backfill_kalshi_trades_cmd(series_tickers, before, no_resume, market_limit) -> None:
+    """Backfill Kalshi trades from the HISTORICAL tier.
+
+    Kalshi splits its data at a cutoff and serves older markets only from
+    /historical/*. Every other Kalshi command here reads the live tier and
+    therefore cannot see anything settled before 2026-06-05 -- which for
+    KXWNBAGAME means the whole 2025 season, including the Finals.
+
+    That season is the out-of-sample year MODELING_FINDINGS.md says the
+    Kalshi analysis lacks, so `--before 2026-01-01` is the interesting run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with KalshiClient(settings) as client:
+            click.echo(
+                backfill_kalshi_trades(
+                    db, client,
+                    series=series_tickers,
+                    resume=not no_resume,
+                    before=before.replace(tzinfo=UTC) if before else None,
+                    market_limit=market_limit,
                 )
             )
     finally:

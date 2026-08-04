@@ -35,6 +35,23 @@ logger = logging.getLogger(__name__)
 #: the two price sources become directly comparable.
 GAME_SERIES: tuple[str, ...] = ("KXWNBAGAME", "KXWNBASPREAD", "KXWNBATOTAL")
 
+#: Period-level derivatives: quarter and half totals and winners. Thinner
+#: markets than the full-game ones, and gradeable exactly -- FEATURE_ROADMAP
+#: ss9's play aggregation gives per-period scoring, so a quarter total can
+#: be settled from our own data rather than taken on trust.
+#:
+#: Not in GAME_SERIES because they are a separate, larger sweep (7,259
+#: settled markets) and because they exist only from 2026-05-26 -- one
+#: partial season, with no out-of-sample year. That is the same limitation
+#: that turned out to explain the Kalshi moneyline result, so anything
+#: measured here inherits the caveat.
+DERIVATIVE_SERIES: tuple[str, ...] = (
+    "KXWNBA1QTOTAL", "KXWNBA2QTOTAL", "KXWNBA3QTOTAL", "KXWNBA4QTOTAL",
+    "KXWNBA1HTOTAL", "KXWNBA2HTOTAL",
+    "KXWNBA1QWINNER", "KXWNBA2QWINNER", "KXWNBA3QWINNER", "KXWNBA4QWINNER",
+    "KXWNBA1HWINNER", "KXWNBA2HWINNER",
+)
+
 #: Ticker-encoded dates are exact, so a tight window (matches kalshi_ingest).
 GAME_DATE_MATCH_WINDOW = timedelta(days=1)
 

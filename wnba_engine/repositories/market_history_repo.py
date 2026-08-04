@@ -16,7 +16,11 @@ from collections.abc import Mapping, Sequence
 
 from psycopg import Connection
 
-from wnba_engine.models.market_history import KalshiCandle, PolymarketTrade
+from wnba_engine.models.market_history import (
+    KalshiCandle,
+    KalshiTrade,
+    PolymarketTrade,
+)
 
 _INSERT_TRADE = """
 INSERT INTO polymarket_trades (
@@ -169,3 +173,49 @@ def latest_candle_end(conn: Connection, market_ticker: str, period_minutes: int)
         (market_ticker, period_minutes),
     ).fetchone()
     return row[0] if row else None
+
+
+_INSERT_KALSHI_TRADE = """
+INSERT INTO kalshi_trades (
+    trade_id, market_ticker, series_ticker, yes_price, no_price, size,
+    taker_side, is_block_trade, traded_at, game_id, captured_at
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT ON CONSTRAINT kalshi_trades_trade_key DO NOTHING
+"""
+
+
+def insert_kalshi_trades(
+    conn: Connection,
+    trades: Sequence[KalshiTrade],
+    *,
+    game_id_by_market: Mapping[str, int] | None = None,
+) -> int:
+    """Append trades; returns how many were ACTUALLY written.
+
+    Keyed on `trade_id` alone -- Kalshi issues a UUID per trade, so unlike
+    polymarket_trades there is no need to compose an identity out of the
+    participants. captured_at is recorded but not part of the key, for the
+    same reason as everywhere in this module: a trade is an immutable fact.
+    """
+    by_market = game_id_by_market or {}
+    if not trades:
+        return 0
+    with conn.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_KALSHI_TRADE,
+            [
+                (
+                    t.trade_id, t.market_ticker, t.series_ticker, t.yes_price,
+                    t.no_price, t.size, t.taker_side, t.is_block_trade,
+                    t.traded_at, by_market.get(t.market_ticker), t.captured_at,
+                )
+                for t in trades
+            ],
+        )
+        return max(cursor.rowcount, 0)
+
+
+def known_kalshi_trade_markets(conn: Connection) -> frozenset[str]:
+    """Market tickers that already have at least one stored trade."""
+    rows = conn.execute("SELECT DISTINCT market_ticker FROM kalshi_trades").fetchall()
+    return frozenset(str(row[0]) for row in rows)

@@ -61,3 +61,28 @@ def test_the_pre_2026_07_27_title_format_still_resolves() -> None:
         "Indiana",
         "Phoenix",
     )
+
+
+def test_the_2025_title_shapes_from_the_historical_tier_resolve() -> None:
+    """A FOURTH title format, invisible until the historical tier was used.
+
+    Kalshi serves markets settled before its cutoff only from
+    /historical/*, and the 2025 WNBA season lives there. Its titles differ
+    from every 2026 shape already handled:
+
+        558 markets  "New York vs Chicago Winner?"        (capital W)
+         38 markets  "Las Vegas vs Phoenix (Game 4) Winner?"  (playoffs)
+
+    Without both, the entire out-of-sample season imports with a NULL
+    game_id -- the same silent failure mode as the 2026-07 rewrite, and
+    the reason a matcher change here always needs a real title corpus
+    rather than a remembered one.
+    """
+    assert parse_matchup("KXWNBAGAME-25MAY22NYCHI", "New York vs Chicago Winner?") == (
+        date(2025, 5, 22),
+        "New York",
+        "Chicago",
+    )
+    assert parse_matchup(
+        "KXWNBAGAME-25OCT10LVAPHX", "Las Vegas vs Phoenix (Game 4) Winner?"
+    ) == (date(2025, 10, 10), "Las Vegas", "Phoenix")

@@ -28,8 +28,23 @@ _TICKER_DATE_RE = re.compile(r"^KXWNBAGAME-(\d{2})([A-Z]{3})(\d{2})")
 #: The old shape is kept rather than replaced. The database still holds rows
 #: written in it, and a re-ingest that only understood the new one would
 #: orphan them in the opposite direction.
+#: FOUR shapes now, across two data tiers and two seasons:
+#:
+#:   2025 (historical tier)  "New York vs Chicago Winner?"
+#:   2025 playoffs           "Las Vegas vs Phoenix (Game 4) Winner?"
+#:   2026 pre-07-27          "Indiana vs Phoenix winner?"
+#:   2026 post-rewrite       "... women's Pro Basketball game: Chicago wins?"
+#:
+#: IGNORECASE because the capitalisation of "Winner" changed between
+#: seasons, and the parenthetical is optional because playoff markets name
+#: the series game. Each shape was discovered by importing real titles and
+#: finding game_id NULL afterwards, never by reading a spec -- which is why
+#: this pattern is deliberately permissive about the tail and strict about
+#: the "A vs B" head that actually carries the teams.
 _TITLE_RE = re.compile(
-    r"^(.+?) vs (.+?)(?: winner\?|(?: women's Pro Basketball game)?: .+ wins\?)$"
+    r"^(.+?) vs (.+?)(?:\s*\(Game \d+\))?"
+    r"(?: winner\?|(?: women's Pro Basketball game)?: .+ wins\?)$",
+    re.IGNORECASE,
 )
 
 _MONTHS = {

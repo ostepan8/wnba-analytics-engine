@@ -85,6 +85,38 @@ class KalshiClient:
             },
         )
 
+    def fetch_historical_markets_page(
+        self, series_ticker: str, *, cursor: str | None = None, limit: int = 1000
+    ) -> object:
+        """GET /historical/markets -- the OTHER tier, and it holds a season.
+
+        Kalshi splits exchange data at a cutoff (GET /historical/cutoff;
+        2026-06-05 as of writing). Everything settled before it is served
+        here and is INVISIBLE to /markets. For KXWNBAGAME that is the
+        difference between 364 markets from 2026-05-22 and 760 markets from
+        2025-05-23 -- an entire extra WNBA season, including the 2025
+        Finals.
+        """
+        params: dict[str, object] = {"series_ticker": series_ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("historical/markets", params=params)
+
+    def fetch_historical_trades_page(
+        self, market_ticker: str, *, cursor: str | None = None, limit: int = 1000
+    ) -> object:
+        """GET /historical/trades?ticker=... -- trade-level price history.
+
+        The candlesticks route 404s for pre-cutoff markets, so this is the
+        only way to price them. It is also better: individual trades with
+        timestamps rather than hourly bars, the same shape that made
+        polymarket_trades more useful than its quote snapshots.
+        """
+        params: dict[str, object] = {"ticker": market_ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("historical/trades", params=params)
+
     def close(self) -> None:
         self._http.close()
 
