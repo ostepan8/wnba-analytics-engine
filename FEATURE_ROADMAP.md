@@ -225,7 +225,13 @@ looked correct:
 
 ## 9. Play-by-play derived
 
-504,231 plays, currently zero features.
+Two sources now. `balldontlie` (509,119 plays) has no player attribution;
+`wnba_stats` -- the league's own feed, added 2026-08-04 -- carries
+`PLAYER1/2/3_ID` on 97% of events and shot coordinates, and reaches back to
+1997. Both reconcile to the final score on 318 of 318 overlapping games.
+
+The blocked row below is no longer blocked: it was a property of the
+provider we happened to use, not of the sport.
 
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
@@ -233,7 +239,9 @@ looked correct:
 | largest run / lead changes | `game_plays` | **todo** | none |
 | clutch performance (last 5 min, within 5) | `game_plays` | **todo** | none |
 | scoring by period, rolling | `game_plays` | **todo** | none |
-| player-level PBP | `game_plays` | **blocked** | **no player id on plays** -- names are free text only |
+| player-level PBP | `game_plays` (`source='wnba_stats'`) | **unblocked** | resolution is by NAME on first sight, so a misspelling forks an identity -- see `player_aliases.py` |
+| shot location / quality | `shot_locations` | **todo** | `LOC_X`/`LOC_Y` are the row's own game -- targets, roll them |
+| assist and defensive networks | `game_plays` player2/player3 | **todo** | slots are not interchangeable; 2 is the assister/shooter, 3 the third party |
 
 ## 10. Context
 

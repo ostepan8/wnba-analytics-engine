@@ -34,6 +34,7 @@ from dataclasses import dataclass
 CHECK_DUPLICATE_CROSSWALK = "duplicate_crosswalk_mappings"
 CHECK_PLAYS_FINAL_SCORE = "plays_final_score_matches_game_score"
 CHECK_GAME_COUNTS = "regular_season_game_counts"
+CHECK_PLAY_POINTS = "play_points_match_final_score"
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +229,58 @@ ACKNOWLEDGEMENTS: tuple[Acknowledgement, ...] = (
             "toward regular-season standings, so both finalists show one "
             "extra game. The game was really played and its box score is "
             "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="131/balldontlie:136",
+        reason=(
+            "balldontlie's play feed for this 2022 game is incomplete: its "
+            "scoring plays sum to 136 against a final score of 135. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="1367/balldontlie:174",
+        reason=(
+            "balldontlie's play feed for this 2026 game is incomplete: its "
+            "scoring plays sum to 174 against a final score of 207. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="577/balldontlie:173",
+        reason=(
+            "balldontlie's play feed for this 2023 game is incomplete: its "
+            "scoring plays sum to 173 against a final score of 175. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="694/balldontlie:181",
+        reason=(
+            "balldontlie's play feed for this 2024 game is incomplete: its "
+            "scoring plays sum to 181 against a final score of 173. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
         ),
         verified_on="2026-08-04",
     ),

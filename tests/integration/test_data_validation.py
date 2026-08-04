@@ -495,5 +495,5 @@ def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
     final being counted as a regular-season game.
     """
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 17
+    assert len(report.checks) == 18
     assert report.passed is True
