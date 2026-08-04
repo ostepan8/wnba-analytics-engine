@@ -32,6 +32,36 @@ STATS_TO_CANONICAL: dict[str, str] = {
     "LVA": "LV",
     "NYL": "NY",
     "WAS": "WSH",
+    # Phoenix is PHO for 1997-2024 and PHX from 2025. Same franchise
+    # throughout; the feed simply changed how it writes it. Building this
+    # table from the 2025 game log alone missed it, and the cost was 40 of
+    # 240 games in 2024 resolving to no team -- silently, as a NULL game_id.
+    "PHO": "PHX",
+    # Portland Fire, 2026 expansion. PDX is the city's airport code.
+    "PDX": "POR",
+}
+
+#: Franchises that existed in the feed's history but not in our `teams`
+#: table. Listed rather than mapped, because none of them is the SAME
+#: entity as a current team even where the franchise later relocated -- a
+#: 2005 Sacramento Monarchs game is not a Las Vegas Aces game, and folding
+#: them together would corrupt every historical team record.
+#:
+#: Ingesting seasons before 2010 therefore needs these created first. They
+#: are absent, not wrong, and `to_canonical` passing them through unchanged
+#: makes the game fail to resolve loudly rather than attach to the wrong
+#: franchise.
+HISTORICAL_ONLY: dict[str, str] = {
+    "SAN": "San Antonio Silver Stars (2003-2017)",
+    "SAC": "Sacramento Monarchs (1997-2009)",
+    "HOU": "Houston Comets (1997-2008)",
+    "DET": "Detroit Shock (1998-2009)",
+    "CHA": "Charlotte Sting (1997-2006)",
+    "CLE": "Cleveland Rockers (1997-2003)",
+    "UTA": "Utah Starzz (1997-2002)",
+    "TUL": "Tulsa Shock (2010-2015)",
+    "ORL": "Orlando Miracle (1999-2002)",
+    "MIA": "Miami Sol (2000-2002)",
 }
 
 

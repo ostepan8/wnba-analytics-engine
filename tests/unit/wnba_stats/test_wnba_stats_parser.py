@@ -140,3 +140,30 @@ def test_abbreviations_are_mapped_not_guessed() -> None:
 def test_a_payload_without_result_sets_is_rejected() -> None:
     with pytest.raises(ProviderValidationError):
         parser.parse_play_by_play({"foo": "bar"})
+
+
+def test_phoenix_resolves_under_both_abbreviations() -> None:
+    """The feed writes PHO for 1997-2024 and PHX from 2025.
+
+    Building the abbreviation table from the 2025 game log alone missed it,
+    and 40 of 240 games in 2024 resolved to no team -- silently, as a NULL
+    game_id. A mapping derived from one season is a mapping that has only
+    been tested on one season.
+    """
+    assert to_canonical("PHO") == "PHX"
+    assert to_canonical("PHX") == "PHX"
+
+
+def test_defunct_franchises_are_not_folded_into_their_successors() -> None:
+    """Sacramento is not Las Vegas and Tulsa is not Dallas.
+
+    Several historical franchises relocated, but a 2005 Monarchs game is
+    not an Aces game -- mapping them onto a current team would corrupt
+    every historical team record. They pass through unchanged so the game
+    fails to resolve loudly instead.
+    """
+    from wnba_engine.wnba_stats.team_matching import HISTORICAL_ONLY
+
+    for abbreviation in ("SAC", "HOU", "TUL", "DET"):
+        assert abbreviation in HISTORICAL_ONLY
+        assert to_canonical(abbreviation) == abbreviation
