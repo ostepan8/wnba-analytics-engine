@@ -70,10 +70,21 @@ class WnbaStatsClient:
         )
 
     def fetch_play_by_play(self, game_id: str) -> object:
-        """GET /playbyplayv2 -- events with PLAYER1/2/3_ID attribution."""
+        """GET /playbyplayv2 -- events with PLAYER1/2/3_ID attribution.
+
+        EndPeriod=10, and the value is load-bearing. 14 makes the endpoint
+        return HTTP 500 for many games with no indication that the
+        PARAMETER is the problem -- it reads as a flaky upstream. Measured
+        on three games that 500'd at 14: all three returned in ~0.3s at 10.
+        The retries those false failures triggered were also the reason a
+        sweep looked like 8s a game rather than under two.
+
+        10 still covers six overtime periods, which is more than any WNBA
+        game has ever needed.
+        """
         return self._http.get_json(
             "playbyplayv2",
-            params={"GameID": game_id, "StartPeriod": 1, "EndPeriod": 14},
+            params={"GameID": game_id, "StartPeriod": 1, "EndPeriod": 10},
         )
 
     def fetch_shot_chart(self, game_id: str, season: int) -> object:

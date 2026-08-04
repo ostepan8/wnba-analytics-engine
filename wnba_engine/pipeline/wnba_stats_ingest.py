@@ -80,6 +80,8 @@ def ingest_season(
         done_shots = stats_play_repo.games_with_shots(conn, PROVIDER) if resume else frozenset()
 
     seen = resolved = skipped = plays = shots = unresolved = failed = 0
+    # provider player id -> canonical id, for the whole run.
+    player_cache: dict[str, int | None] = {}
     players: set[int] = set()
     items = list(by_game.items())
     if game_limit is not None:
@@ -110,7 +112,7 @@ def ingest_season(
                 logger.warning("wnba_stats plays failed for %s: %s", stats_game_id, exc)
                 events = ()
             with db.connection() as conn:
-                rows, touched = _play_rows(conn, game_id, events)
+                rows, touched = _play_rows(conn, game_id, events, player_cache)
                 plays += stats_play_repo.insert_plays(conn, rows)
                 players |= touched
                 conn.commit()
@@ -124,7 +126,7 @@ def ingest_season(
                 logger.warning("wnba_stats shots failed for %s: %s", stats_game_id, exc)
                 attempts = ()
             with db.connection() as conn:
-                rows, touched = _shot_rows(conn, game_id, attempts)
+                rows, touched = _shot_rows(conn, game_id, attempts, player_cache)
                 shots += stats_play_repo.insert_shots(conn, rows)
                 players |= touched
                 conn.commit()
@@ -170,25 +172,40 @@ def _team_name(conn: Connection, team_id: int) -> str:
 
 
 def _player_id(
-    conn: Connection, external_id: str | None, name: str | None
+    conn: Connection,
+    external_id: str | None,
+    name: str | None,
+    cache: dict[str, int | None],
 ) -> int | None:
     """Resolve one participant, or None when the slot was empty.
 
     A name is required as well as an id: the crosswalk is keyed on the
     provider id, but on FIRST sight there is nothing to look up, and the
     name is what joins this player onto the canonical one ESPN created.
+
+    CACHED FOR THE RUN, and that is not a micro-optimisation. A game has
+    ~1,200 filled participant slots drawn from ~25 distinct players, so the
+    uncached version issues fifty times the queries it needs and drops the
+    sweep to ~2 games a minute -- 53 hours for the full history. The cache
+    is safe because a provider id maps to exactly one canonical player and
+    that mapping cannot change mid-run.
     """
     if not external_id or not name:
         return None
-    return entity_repo.resolve_or_create_player_by_name(
+    if external_id in cache:
+        return cache[external_id]
+    resolved = entity_repo.resolve_or_create_player_by_name(
         conn, PROVIDER, external_id, name,
         position=None, height=None, weight=None,
         jersey_number=None, college=None, age=None,
     )
+    cache[external_id] = resolved
+    return resolved
 
 
 def _play_rows(
-    conn: Connection, game_id: int, events: Sequence[parser.StatsPlay]
+    conn: Connection, game_id: int, events: Sequence[parser.StatsPlay],
+    cache: dict[str, int | None],
 ) -> tuple[list[tuple], set[int]]:
     rows: list[tuple] = []
     touched: set[int] = set()
@@ -199,9 +216,9 @@ def _play_rows(
     # play, which is what a mid-game query wants.
     home_running, away_running = 0, 0
     for event in events:
-        p1 = _player_id(conn, event.player1_external_id, event.player1_name)
-        p2 = _player_id(conn, event.player2_external_id, event.player2_name)
-        p3 = _player_id(conn, event.player3_external_id, event.player3_name)
+        p1 = _player_id(conn, event.player1_external_id, event.player1_name, cache)
+        p2 = _player_id(conn, event.player2_external_id, event.player2_name, cache)
+        p3 = _player_id(conn, event.player3_external_id, event.player3_name, cache)
         touched |= {p for p in (p1, p2, p3) if p is not None}
         home, away = _split_score(event.score)
         scored = home is not None and away is not None
@@ -229,12 +246,13 @@ def _play_rows(
 
 
 def _shot_rows(
-    conn: Connection, game_id: int, attempts: Sequence[parser.StatsShot]
+    conn: Connection, game_id: int, attempts: Sequence[parser.StatsShot],
+    cache: dict[str, int | None],
 ) -> tuple[list[tuple], set[int]]:
     rows: list[tuple] = []
     touched: set[int] = set()
     for shot in attempts:
-        player = _player_id(conn, shot.player_external_id, shot.player_name)
+        player = _player_id(conn, shot.player_external_id, shot.player_name, cache)
         if player is not None:
             touched.add(player)
         rows.append(
