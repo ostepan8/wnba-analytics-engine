@@ -125,3 +125,45 @@ def test_the_older_two_team_shapes_are_unaffected() -> None:
     assert parse_two_team_market(
         "KXWNBAOT-26JUL08GSTOR", "Golden State vs Toronto on Jul 8, 2026: Overtime?"
     ) == (date(2026, 7, 8), "Golden State", "Toronto")
+
+
+def test_the_2026_spread_title_inserts_the_game_and_still_resolves() -> None:
+    """The THIRD matcher broken by Kalshi's 2026-07-27 title rewrite.
+
+    game_matching and the two-team pattern were fixed when the KXWNBAGAME
+    and KXWNBATOTAL breakage surfaced. The single-team spread shape was
+    missed, because the clause it gained is different:
+
+        before: "Indiana wins by over 7.5 points?"
+        after:  "Las Vegas wins the game by over 19.5 points?"
+
+    Consequence: every one of 68,963 KXWNBASPREAD candlestick bars was
+    stored with a NULL game_id, and re-running the backfill could not fix
+    it because the title never parsed at all.
+    """
+    assert parse_single_team_market(
+        "KXWNBASPREAD-26JUL28PDXLV", "Las Vegas wins the game by over 19.5 points?"
+    ) == (date(2026, 7, 28), "Las Vegas")
+
+
+def test_a_market_ticker_resolves_as_well_as_its_event_ticker() -> None:
+    """Callers hold different halves of the identity.
+
+    kalshi_ingest has the event ticker; relink-market-games only has the
+    MARKET ticker, which carries a trailing outcome segment
+    ('...-GS26'). The date regex is end-anchored, so the market form
+    matched nothing and the repair silently resolved zero markets.
+    """
+    expected = (date(2026, 8, 2), "Golden State")
+    title = "Golden State wins the game by over 25.5 points?"
+    assert parse_single_team_market("KXWNBASPREAD-26AUG02TORGS", title) == expected
+    assert parse_single_team_market("KXWNBASPREAD-26AUG02TORGS-GS26", title) == expected
+
+
+def test_the_pre_rewrite_spread_shapes_still_resolve() -> None:
+    assert parse_single_team_market(
+        "KXWNBASPREAD-26JUL09INDPHX", "Indiana wins by over 7.5 points?"
+    ) == (date(2026, 7, 9), "Indiana")
+    assert parse_single_team_market(
+        "KXWNBA1HSPREAD-26JUL09INDATL", "Will Atlanta win the 1H by over 1.5 points?"
+    ) == (date(2026, 7, 9), "Atlanta")
