@@ -490,7 +490,10 @@ def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
 
     12 -> 16 when the polymarket_trades / kalshi_candlesticks checks
     landed (db/migrations/0025).
+    16 -> 17 when check_regular_season_game_counts landed, after verifying
+    our 2025 standings against Wikipedia surfaced the Commissioner's Cup
+    final being counted as a regular-season game.
     """
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 16
+    assert len(report.checks) == 17
     assert report.passed is True
