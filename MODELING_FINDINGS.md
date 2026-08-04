@@ -474,6 +474,58 @@ So the answer stands, and now stands on a much wider base: **across 110
 features spanning form, matchup, style, rest, pace and player role,
 nothing holds information the closing line has not already priced.**
 
+## Player props: the unders bias is real, priced, and not the edge (2026-08-04)
+
+The largest sample in this file -- **24,011 graded (line, outcome) pairs**
+across points, rebounds, assists and threes, 2023-2026 -- and the first
+result that survives every control, though not the one it looked like.
+
+**Prop lines carry no discriminating skill, by construction.** Brier
+0.243-0.249, skill 0.002-0.017. That is not a criticism: a prop line is
+SET to make over/under a coin flip, so measuring its resolution is
+measuring the wrong thing.
+
+**Unders win more than the price implies.** De-vigged fair over price
+against realised over rate, all four markets in the same direction:
+
+| prop | n | fair over | realised | gap |
+|---|---:|---:|---:|---:|
+| points | 8,362 | 0.497 | 0.473 | -2.4 pts |
+| rebounds | 6,793 | 0.491 | 0.463 | -2.8 pts |
+| assists | 4,379 | 0.485 | 0.469 | -1.6 pts |
+| threes | 4,476 | 0.471 | 0.446 | -2.5 pts |
+
+Betting every under at the best of eleven books returns **+2.27%
+(t = +3.65, n = 24,011)**, positive in 4 of 4 prop types and 4 of 4
+seasons, with a player-clustered bootstrap giving P(ROI <= 0) = 0.0000 and
+a 95% CI of +1.04% to +3.53% -- clearing a 6.75% prop vig, half again the
+moneyline's.
+
+**But the edge is the SHOPPING, not the bias:**
+
+| strategy | ROI | t |
+|---|---:|---:|
+| under, best of 11 books | **+2.27%** | +3.64 |
+| under, median price | **-2.34%** | -3.95 |
+| over, best price (mirror) | -7.18% | -11.01 |
+| under, at each book individually | **-0.7% to -2.5%** | all negative |
+
+At a single book the under loses about half the vig, which is what an
+efficiently-priced bias looks like -- the books know, and they charge for
+it. Taking the best of eleven quotes swings 4.6 points and is the entire
+result.
+
+**So this is the same finding as everywhere else in this file, finally
+measured properly: execution, not prediction.** It is worth more on props
+(4.6 points) than on moneylines (~3 points at close), because prop lines
+disagree across books more than game lines do.
+
+Caveats before anyone acts on it: it assumes the best quote is gettable at
+the close on every one of 24,011 bets, books limit prop bettors faster than
+any other market, and +2.27% is before any friction. What it is NOT is a
+forecasting edge -- nothing here predicts a player's stat line better than
+the market does.
+
 ## What would change the answer
 
 None of these is a modeling problem:

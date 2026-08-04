@@ -186,34 +186,40 @@ def test_rolling_step_rejects_a_nonsense_window() -> None:
         RollingMeanStep(value_columns=(), window=3)
 
 
-def test_target_columns_covers_every_same_game_outcome_the_loader_selects() -> None:
-    """The list must not drift behind the loader.
+def test_every_loader_column_is_classified_as_target_or_context() -> None:
+    """A NEW column on the team-game loader must fail until classified.
 
-    `TARGET_COLUMNS` documents itself as the one-line drop before training,
-    and for a long time it named only the four scoring columns while
-    `load_team_games` also selected thirteen advanced-stat columns for the
-    row's OWN game. Correlated against what the closing line got wrong,
-    `offensive_rating` scored r=+0.431 (t=+23.9) -- a caller following the
-    docstring exactly would have trained on the box score of the game it
-    was predicting.
+    The first version of this test listed the outcome columns by hand and
+    intersected them with the loader. That guards only what its author
+    already knew about: adding the nine play-by-play columns
+    (FEATURE_ROADMAP.md ss9) left it green while every one of them was an
+    unmarked same-game outcome -- the exact bug it was written to prevent,
+    reintroduced on the very next change.
 
-    The leakage guard cannot catch it: these are row-local source columns
-    like `points_scored`, and nothing about their timestamp is wrong. Only
-    their meaning is. So the protection has to be this test.
+    So the direction is inverted. CONTEXT is the closed list: identity,
+    schedule and opponent labels, none of which say anything about how the
+    game went. Everything else the loader selects must be a target. A new
+    column therefore fails by default and has to be classified deliberately,
+    which is the only arrangement that survives someone adding a column
+    without reading this file.
+
+    Why it matters, measured: `offensive_rating` correlates with what the
+    closing line got wrong at r = +0.431 (t = +23.9). A model trained on an
+    unmarked outcome column backtests spectacularly and knows nothing.
     """
     from wnba_engine.features.steps.derivation import TARGET_COLUMNS
     from wnba_engine.repositories import feature_repo
 
-    same_game_outcomes = {
-        "points_scored", "points_allowed", "pace", "possessions",
-        "offensive_rating", "defensive_rating",
-        "efg", "tov_ratio", "oreb_pct", "ftr", "ast_pct",
-        "opp_efg", "opp_tov_pct", "opp_oreb_pct", "opp_ftr",
+    context = {
+        "game_id", "season", "season_type", "start_time", "result_known_at",
+        "team_id", "team_abbrev", "team_is_franchise",
+        "opponent_team_id", "opponent_abbrev", "opponent_is_franchise",
+        "is_home",
     }
-    loaded = set(feature_repo.TEAM_GAME_COLUMNS)
-    missing = (same_game_outcomes & loaded) - set(TARGET_COLUMNS)
-    assert not missing, (
-        f"the loader selects same-game outcome columns not named as targets: {sorted(missing)}"
+    unclassified = set(feature_repo.TEAM_GAME_COLUMNS) - context - set(TARGET_COLUMNS)
+    assert not unclassified, (
+        "these loader columns are neither schedule context nor declared targets; "
+        f"classify each one: {sorted(unclassified)}"
     )
 
 

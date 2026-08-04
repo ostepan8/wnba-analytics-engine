@@ -57,6 +57,7 @@ from wnba_engine.features.steps import (
     loading,
     market_steps,
     matchup_steps,
+    play_steps,
     player_steps,
     style_steps,
 )
@@ -654,11 +655,68 @@ def player_market(source: FeatureRowSource, *, minimum_minutes: int = 5) -> Pipe
     )
 
 
+#: Play-derived outcome columns worth rolling. Raw values are TARGETS
+#: (derivation.TARGET_COLUMNS); these rolled means are the features.
+_PLAY_COLUMNS: tuple[str, ...] = (
+    "clutch_points",
+    "largest_run",
+    "lead_changes",
+    "largest_lead",
+    "period_1_share",
+    "period_2_share",
+    "period_3_share",
+    "period_4_share",
+    "second_half_share",
+    "clutch_share",
+    "run_dominance",
+    "lead_change_rate",
+)
+
+
+def team_play_shape(source: FeatureRowSource) -> Pipeline:
+    """team_form plus FEATURE_ROADMAP.md ss9: how a team's games UNFOLD.
+
+    509,119 plays had produced zero features before this. What it adds over
+    the box score is timing and shape -- when a team scores, whether its
+    points arrive in bursts, how often its games change hands -- none of
+    which a final margin can express.
+
+    THE ROW-LOCAL STEPS RUN BEFORE THE WINDOWS, and the order is
+    load-bearing. `ScoringProfileStep` and `GameVolatilityStep` describe
+    the row's OWN game and are therefore targets in exactly the sense
+    `MarginProfileStep` documents; the features are the rolling means
+    taken over them here. Feeding the row-local versions to a model tells
+    it how the game it is predicting actually went.
+    """
+    block: tuple[PreprocessingStep, ...] = (
+        play_steps.ScoringProfileStep(),
+        play_steps.GameVolatilityStep(),
+        derivation.RollingMeanStep(
+            value_columns=_PLAY_COLUMNS,
+            window=10,
+            group_by=("team_id",),
+            label="play_shape_10",
+        ),
+        form_steps.RollingDispersionStep(
+            value_columns=("largest_run", "lead_changes"),
+            window=10,
+            label="play_dispersion_10",
+        ),
+    )
+    pipeline = team_form(source).renamed("team_play_shape")
+    anchor = "opponent_season_form"
+    for step in block:
+        pipeline = pipeline.insert_after(anchor, step)
+        anchor = step.name
+    return pipeline
+
+
 STRATEGIES: Mapping[str, StrategyFactory] = {
     "situational_baseline": situational_baseline,
     "team_form": team_form,
     "team_form_multi": team_form_multi,
     "team_market": team_market,
+    "team_play_shape": team_play_shape,
     "team_matchup": team_matchup,
     "team_style": team_style,
     "player_form": player_form,

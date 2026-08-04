@@ -98,6 +98,20 @@ TARGET_COLUMNS: tuple[str, ...] = (
     "opp_tov_pct",
     "opp_oreb_pct",
     "opp_ftr",
+    # play-by-play shape (FEATURE_ROADMAP.md ss9). Same rule again: these
+    # describe how the row's own game unfolded, so the raw column is a
+    # target and the FEATURE is the rolled version. `lead_changes` and
+    # `largest_lead` are properties of the GAME rather than of either team,
+    # so both of its rows carry the same value -- still an outcome.
+    "period_1_points",
+    "period_2_points",
+    "period_3_points",
+    "period_4_points",
+    "overtime_points",
+    "clutch_points",
+    "largest_run",
+    "lead_changes",
+    "largest_lead",
 )
 
 

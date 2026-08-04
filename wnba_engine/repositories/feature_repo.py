@@ -190,7 +190,114 @@ TEAM_GAME_COLUMNS: tuple[str, ...] = (
     "opp_tov_pct",
     "opp_oreb_pct",
     "opp_ftr",
+    # -- play-by-play shape of the row's OWN game ----------------------
+    # FEATURE_ROADMAP.md ss9. Every one of these is an OUTCOME of the game
+    # on this row, not a feature for it -- they are in TARGET_COLUMNS for
+    # the same reason `points_scored` is, and the FEATURE is the rolled
+    # version a windowed step builds from past rows.
+    #
+    # Derived from game_plays rather than stored: 509,119 plays across
+    # 1,300 games, and the period sums reconcile against the final box
+    # score on 2,594 of 2,600 team-games (99.8%), so the aggregation is
+    # trustworthy without a new table.
+    "period_1_points",
+    "period_2_points",
+    "period_3_points",
+    "period_4_points",
+    "overtime_points",
+    "clutch_points",
+    "largest_run",
+    "lead_changes",
+    "largest_lead",
 )
+
+#: Aggregates game_plays to one row per (game, team). Kept as a subquery
+#: rather than a table because it is derived, cheap enough at this scale,
+#: and a materialised copy would need its own staleness story.
+#:
+#: `clock` is 'M:SS' TEXT, so clutch time is parsed rather than compared --
+#: and guarded by a regex, because a malformed clock silently becomes NULL
+#: under a bare split_part and would quietly drop clutch plays.
+_PLAY_AGGREGATE_SQL = """
+WITH scoring AS (
+    SELECT p.game_id, p.team_id, p.sequence, p.period, p.score_value,
+           CASE WHEN p.clock ~ '^[0-9]+:[0-9]{2}$'
+                THEN split_part(p.clock, ':', 1)::int * 60
+                   + split_part(p.clock, ':', 2)::int
+           END AS seconds_left,
+           p.home_score, p.away_score
+    FROM game_plays p
+    WHERE p.scoring_play AND p.score_value > 0 AND p.team_id IS NOT NULL
+),
+runs AS (
+    -- Gaps and islands: consecutive scoring plays by the same team are one
+    -- run. The difference of two row_numbers is constant exactly while the
+    -- scoring team does not change.
+    SELECT game_id, team_id, sum(score_value) AS run_points
+    FROM (
+        SELECT s.*,
+               row_number() OVER (PARTITION BY game_id ORDER BY sequence)
+             - row_number() OVER (PARTITION BY game_id, team_id ORDER BY sequence)
+               AS island
+        FROM scoring s
+    ) x
+    GROUP BY game_id, team_id, island
+),
+margins AS (
+    SELECT game_id, home_score - away_score AS margin,
+           lag(home_score - away_score) OVER (PARTITION BY game_id ORDER BY sequence)
+             AS previous_margin
+    FROM scoring
+),
+game_shape AS (
+    -- Both are properties of the GAME, so each of its two team rows gets
+    -- the same value. That is correct and worth stating: a lead change is
+    -- not something one team does.
+    SELECT game_id,
+           count(*) FILTER (
+               WHERE sign(margin) <> sign(previous_margin)
+                 AND sign(margin) <> 0 AND sign(previous_margin) <> 0
+           ) AS lead_changes,
+           max(abs(margin)) AS largest_lead
+    FROM margins
+    GROUP BY game_id
+),
+per_period AS (
+    -- Aggregated in its OWN CTE, never in a SELECT that also joins `runs`.
+    -- `runs` holds one row per scoring RUN (~15 per team-game), so joining
+    -- it before summing fans every scoring play out and multiplies each
+    -- total by the run count. That version passed a spot check because
+    -- max(run_points), lead_changes and largest_lead are all invariant
+    -- under duplication -- only the sums were wrong, and they were wrong by
+    -- ~25x (a median period_1_points of 504 against a true ~20).
+    SELECT game_id, team_id,
+           sum(score_value) FILTER (WHERE period = 1) AS period_1_points,
+           sum(score_value) FILTER (WHERE period = 2) AS period_2_points,
+           sum(score_value) FILTER (WHERE period = 3) AS period_3_points,
+           sum(score_value) FILTER (WHERE period = 4) AS period_4_points,
+           sum(score_value) FILTER (WHERE period >= 5) AS overtime_points,
+           -- "Clutch" = the last five minutes of regulation or any
+           -- overtime. Deliberately NOT conditioned on the game being
+           -- close: a margin filter would make the column's meaning depend
+           -- on the outcome it is meant to help predict.
+           sum(score_value) FILTER (
+               WHERE period >= 4 AND seconds_left <= 300
+           ) AS clutch_points
+    FROM scoring
+    GROUP BY game_id, team_id
+),
+team_runs AS (
+    SELECT game_id, team_id, max(run_points) AS largest_run
+    FROM runs GROUP BY game_id, team_id
+)
+SELECT pp.game_id, pp.team_id,
+       pp.period_1_points, pp.period_2_points, pp.period_3_points,
+       pp.period_4_points, pp.overtime_points, pp.clutch_points,
+       tr.largest_run, gs.lead_changes, gs.largest_lead
+FROM per_period pp
+JOIN team_runs tr ON tr.game_id = pp.game_id AND tr.team_id = pp.team_id
+JOIN game_shape gs ON gs.game_id = pp.game_id
+"""
 
 _TEAM_GAMES_SQL = """
 SELECT
@@ -223,7 +330,16 @@ SELECT
     tas.opp_effective_field_goal_percentage  AS opp_efg,
     tas.opp_team_turnover_percentage         AS opp_tov_pct,
     tas.opp_offensive_rebound_percentage     AS opp_oreb_pct,
-    tas.opp_free_throw_attempt_rate          AS opp_ftr
+    tas.opp_free_throw_attempt_rate          AS opp_ftr,
+    plays.period_1_points   AS period_1_points,
+    plays.period_2_points   AS period_2_points,
+    plays.period_3_points   AS period_3_points,
+    plays.period_4_points   AS period_4_points,
+    plays.overtime_points   AS overtime_points,
+    plays.clutch_points     AS clutch_points,
+    plays.largest_run       AS largest_run,
+    plays.lead_changes      AS lead_changes,
+    plays.largest_lead      AS largest_lead
 FROM games g
 CROSS JOIN LATERAL (
     VALUES (g.home_team_id, g.away_team_id), (g.away_team_id, g.home_team_id)
@@ -232,6 +348,10 @@ JOIN teams t ON t.id = s.team_id
 JOIN teams o ON o.id = s.opponent_id
 LEFT JOIN team_advanced_stats tas
     ON tas.game_id = g.id AND tas.team_id = s.team_id
+-- LEFT, because play-by-play is not universal: 1,300 of 1,377 games have
+-- plays. A missing game must produce nulls, not vanish from the frame.
+LEFT JOIN (__PLAY_AGGREGATE__) plays
+    ON plays.game_id = g.id AND plays.team_id = s.team_id
 WHERE COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
       <= %(as_of)s
   AND g.status = 'final'
@@ -239,6 +359,16 @@ WHERE COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
   AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
 ORDER BY g.start_time, g.id, s.team_id
 """
+
+
+def _team_games_sql() -> str:
+    """The team-game query with the play aggregate spliced in.
+
+    Composed at call time rather than written as one literal so the
+    aggregate stays independently readable and testable; `%` is not used
+    anywhere in it, so there is no interaction with psycopg's placeholders.
+    """
+    return _TEAM_GAMES_SQL.replace("__PLAY_AGGREGATE__", _PLAY_AGGREGATE_SQL)
 
 
 def load_team_games(
@@ -264,7 +394,7 @@ def load_team_games(
     """
     return execute_point_in_time(
         conn,
-        _TEAM_GAMES_SQL,
+        _team_games_sql(),
         {
             "as_of": as_of,
             "season_types": list(season_types),
