@@ -80,10 +80,12 @@ from wnba_engine.pipeline.odds_api_scores_ingest import (
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.pipeline.polymarket_trade_backfill import backfill_polymarket_trades
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
+from wnba_engine.pipeline.wnba_stats_ingest import ingest_season as ingest_wnba_stats_season
 from wnba_engine.polymarket.client import PolymarketClient
 from wnba_engine.polymarket.data_client import PolymarketDataClient
 from wnba_engine.repositories import style_repo
 from wnba_engine.validation.runner import run_all_checks
+from wnba_engine.wnba_stats.client import WnbaStatsClient
 
 
 @click.group()
@@ -653,6 +655,40 @@ def backfill_kalshi_trades_cmd(series_tickers, before, no_resume, market_limit) 
                     market_limit=market_limit,
                 )
             )
+    finally:
+        db.close()
+
+
+@cli.command("ingest-wnba-stats")
+@click.option("--season", "seasons", multiple=True, type=int, required=True,
+              help="Season start year; repeatable (e.g. --season 2025 --season 2026).")
+@click.option("--no-shots", is_flag=True, help="Plays only, skip the shot chart.")
+@click.option("--no-resume", is_flag=True, help="Re-fetch games already ingested.")
+@click.option("--limit", "game_limit", type=int, default=None, help="Cap games per season.")
+def ingest_wnba_stats(seasons, no_shots, no_resume, game_limit) -> None:
+    """Ingest player-attributed plays and shot locations from stats.wnba.com.
+
+    The league's own feed, and the only source here that puts a PLAYER on a
+    play -- FEATURE_ROADMAP.md ss9 lists player-level play-by-play as
+    blocked because balldontlie publishes none. It also carries shot
+    coordinates, and it goes back to 1997.
+
+    Plays land in game_plays under source='wnba_stats', beside the
+    balldontlie rows rather than replacing them.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with WnbaStatsClient(settings) as client:
+            for season in seasons:
+                click.echo(
+                    ingest_wnba_stats_season(
+                        db, client, season,
+                        resume=not no_resume,
+                        include_shots=not no_shots,
+                        game_limit=game_limit,
+                    )
+                )
     finally:
         db.close()
 
