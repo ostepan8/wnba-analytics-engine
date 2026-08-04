@@ -272,8 +272,10 @@ Break-even is a Polymarket move of **~3.83 points**, which is 7.3% of
 observations -- about 40 opportunities per WNBA season.
 
 Compare that against the false positive rejected the same day: "follow
-Polymarket when it disagrees with the books" returned +15.34% on 96 games
-(t=1.60) but its threshold profile INVERTED -- +16.1% at >=0.0075, +5.7%
+Polymarket when it disagrees with the books" appeared to return +15.34% on
+96 games (t=1.60) -- a figure computed at a flat -110 and therefore
+overstated, see the pricing correction below -- but its threshold profile
+INVERTED -- +16.1% at >=0.0075, +5.7%
 at >=0.015, -4.6% at >=0.02 -- and every game was 2026. Monotonicity is
 the difference, and it is a cheaper test than any statistic.
 
@@ -349,6 +351,60 @@ direct counterexample: 72% direction accuracy, negative ROI.
 Anything built on CLV as a proxy metric here must be validated against
 outcomes as well, not instead.
 
+## Methodological correction: flat -110 overstates every moneyline result
+
+**Several ROI figures recorded earlier on 2026-08-04 assumed a flat -110
+price. That is wrong for a moneyline and it inflates in one direction.**
+A -110 payout is 0.909 per unit; a real favourite at -180 pays 0.556 and a
+real dog at +160 pays 1.60. Any strategy that leans toward favourites gets
+systematically overpaid by the assumption.
+
+Measured against the best available closing price per side, 1,278 games:
+
+| strategy | flat -110 | **best real price** |
+|---|---:|---:|
+| bet the home team every game | +3.48% | **-4.17%** (t = -1.30) |
+| "follow Kalshi when it disagrees with the books" | +21.91% | **+3.66%** (t = +0.51) |
+| same, divergence >= 1pt | +36.36% | **+7.74%** (t = +0.94) |
+| same, divergence >= 2pt | +44.63% | **+9.73%** (t = +0.78) |
+
+The Kalshi result had looked like the strongest finding in this file --
+63.9% at z=+3.57, rising monotonically to 75.8%. It was three artefacts
+stacked:
+
+1. **Flat -110 pricing.** "Follow Kalshi" picks the HOME side on 71% of
+   games, because Kalshi sits +0.74 points higher on home systematically.
+   Home teams are usually favourites, so the assumption overpaid nearly
+   every bet.
+2. **A home-heavy sample.** Home teams won 57.3% of the 178 Kalshi-covered
+   games against a 54.2% long-run rate. Betting home BLIND in that sample
+   "returned" +12.71% under the same flat pricing -- no model required.
+   The control is what exposed it.
+3. **One partial season.** Every Kalshi bar is 2026-05 onward. No
+   out-of-sample year exists.
+
+Any future ROI in this file must use `analysis/clv.american_to_profit`
+against a real quoted price. A win RATE may be compared to a break-even
+threshold; a RETURN may not be computed from one.
+
+### Favourite-longshot bias: present in shape, absent in significance
+
+Bucketing every side bet by its de-vigged probability, at best real prices:
+
+| fair P(side) | n | ROI | t | win% |
+|---|---:|---:|---:|---:|
+| 0.00-0.35 | 777 | +3.44% | +0.47 | 23.4% |
+| 0.35-0.45 | 357 | +3.68% | +0.56 | 41.5% |
+| 0.45-0.55 | 288 | -1.72% | -0.30 | 50.0% |
+| 0.55-0.65 | 357 | -5.12% | -1.21 | 58.5% |
+| 0.65-1.00 | 777 | -3.57% | -1.82 | 76.6% |
+
+The gradient runs the textbook direction -- dogs less bad than favourites
+-- but no bucket reaches \|t\| = 2, the two extreme buckets break
+monotonicity against each other, and "bet every away team" (+3.30%,
+t=+0.79) is negative in two of five seasons. Consistent with the vig being
+distributed slightly unevenly, not with an exploitable bias.
+
 ## The residual test, re-run against every feature (2026-08-04)
 
 The "decisive test" above predates the 99 features added in August 2026
@@ -394,7 +450,9 @@ The count of "significant" features is indistinguishable from noise.
 
 `pace_gap` (difference in the two teams' rolling pace) reached r = -0.073,
 t = -3.66, and a betting test looked monotonic and profitable: +3.50% at
-1sd, **+10.18% at 1.5sd**, +12.50% at 2sd.
+1sd, **+10.18% at 1.5sd**, +12.50% at 2sd. (Those returns assume a flat
+-110 and are overstated for the same reason the Kalshi result was; the
+collapse below does not depend on them.)
 
 It does not survive the check this file already documents. **A team-game
 frame holds two rows per game, and `pace_gap` is exactly antisymmetric
