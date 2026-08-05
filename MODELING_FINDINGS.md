@@ -17,6 +17,15 @@ result that appeared to overturn it and did not (see the
 -- +2.27% at t=+3.65 became +0.66% at t=+1.10 once the bet was graded as
 a bet that could actually be placed).
 
+**One lead is genuinely open and is the best thing here:** cross-venue
+divergence between the sportsbooks and Polymarket's vig-free price is
+worth **+1.07 points of CLV over a matched control, t = +7.77**, and it is
+the only candidate that strengthened rather than weakened as controls were
+added. It is a lead and not a strategy: realised profit is unproven at
+n=398, and executability cannot be tested until the two-minute capture has
+run for a season. See
+[Cross-venue divergence](#cross-venue-divergence-the-first-thing-that-survives).
+
 **Read the file with its own multiplicity in mind.** Across 126 features,
 four prop markets, both venues and every slice tried, this project has run
 well over 200 hypothesis tests. At that count roughly 10 results with
@@ -57,6 +66,7 @@ thing: our sportsbook captures are 60 minutes apart and the phenomenon is
 | 11 | Multi-feature ridge / gradient boosting on totals | worse than naive on holdout |
 | 12 | Unders at the best of eleven books | **+0.66%, t=+1.10** -- the +2.27% was a grading bug, see retraction |
 | 13 | Prop shopping by market thinness / book disagreement | no residual edge once graded at one book |
+| 14 | **Cross-venue divergence (book vs Polymarket fair price)** | **+1.07 pts CLV over matched control, t=+7.77** -- survives every control; profit unproven |
 
 ## The three findings that explain the rest
 
@@ -597,6 +607,76 @@ vanished after (+0.35% at 1.0-1.5 apart).
 
 The lesson is now a rule for this repo: **a backtest that draws the line
 from one source and the price from another is not measuring a bet.**
+
+## Cross-venue divergence: the first thing that survives (2026-08-05)
+
+**The strongest result in this file, and the only one that got STRONGER as
+the controls got stricter rather than weaker.** It is not yet a
+demonstrated profit -- see the limits at the bottom -- but it is the first
+lead here that has earned further work.
+
+The idea is structural rather than predictive, which is why it is worth
+something: every other section of this file failed at forecasting, while
+execution kept being where the value was. Polymarket has no bookmaker vig,
+so its price is a fair probability rather than a padded one. The question
+is not whether Polymarket *predicts* the books (that is the lead-lag
+section, and it is weak) but whether the two venues simply **disagree at
+the same moment** by more than the cost of crossing. That needs no
+forecasting skill at all.
+
+Method: for each pre-tip sportsbook quote, a size-weighted Polymarket
+price over the preceding 10 minutes, requiring >= $1,000 of Polymarket
+volume in that window. A divergence is when the best book price for one
+side, vig included, is still cheaper than Polymarket's fair price for it.
+
+**It passes the monotonicity tests.** Arb rate rises with Polymarket
+liquidity -- 12.2% of moments at any volume, 13.2% above $1,000, 16.9%
+above $5,000, **31.0% above $20,000**. That direction is the whole reason
+to believe it: dust-trade noise produces *more* fake divergence at *low*
+liquidity, not less. The early version of this test was in fact ruined by
+exactly that artifact -- $6 and $10 fills sitting at p=0.500 on untraded
+markets while the book had the game at 29%, which is an uninitialised
+Polymarket market rather than a mispriced book.
+
+**And it passes the control that killed the props finding.** Selecting the
+cheapest book price at a moment makes it revert toward the close all by
+itself, so the comparison has to be against that, not against zero:
+
+| | n | CLV | t |
+|---|---:|---:|---:|
+| divergence bets | 398 | **+1.15 pts** | +8.52 |
+| best book price, no Polymarket test | 6,052 | +0.15 pts | +5.74 |
+| same moments, Polymarket says NO divergence | 5,654 | +0.08 pts | +3.07 |
+| **difference vs matched control** | | **+1.07 pts** | **+7.77** |
+
+Price reversion explains 0.08 of the 1.15. Polymarket carries about **1.07
+points of information the books have not yet priced**, and t = +7.77
+clears a Bonferroni threshold for the 200+ tests in this file (|t| ~ 3.5),
+which no previous candidate did. CLV also rises with the size of the
+divergence (+1.00, +1.07, +1.26 pts across 0-0.5%, 0.5-1%, 1-2% buckets).
+
+### What it is not
+
+**It is not a demonstrated profit.** Realised ROI is -4.66% at t = -0.56
+on 398 bets, with a game-clustered 95% CI of -34.55% to +33.32% and
+P(ROI<=0) = 0.612. That interval is useless in both directions: the sample
+proves nothing about profit either way. The mean divergence is only
+0.5-0.7%, so the theoretical edge is thin and needs a lot of bets. 2026 is
+weaker than 2025 (11.3% vs 16.0% arb rate).
+
+**Executability is unproven and is the real question.** The book price
+moved against us by the next capture in 303 of 384 cases -- which is the
+*good* reading (it is what positive CLV means) but also means the window
+is short. Our historical captures are ~60 minutes apart, so every
+divergence in this dataset was observed up to an hour late. Whether the
+price is still there when you can act on it is exactly the open question,
+and it cannot be answered from this data.
+
+**This is what the two-minute focused capture is for.** As of 2026-08-05
+that agent is fixed and running at a resolution that can measure it; the
+answer needs a season of accumulation. Until then this is a strong lead
+and not a strategy, and the distinction matters -- the retracted props
+finding in this file is what happens when that line gets blurred.
 
 ## Injury-driven usage: refuted again, on better data (2026-08-05)
 
