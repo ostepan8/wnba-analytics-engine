@@ -30,20 +30,20 @@ canonical crosswalk). This doc is the what.
 
 ## Snapshot
 
-Real row counts as of 2026-08-04 (see bottom of this doc for the query
+Real row counts as of 2026-08-05 (see bottom of this doc for the query
 to get current numbers):
 
 | Table | Rows | Table | Rows |
-| `game_plays` | 978,128 | `game_officials` | 4,162 |
+| `game_plays` | 978,128 | `game_officials` | 4,165 |
 | `polymarket_trades` | 606,068 | `team_advanced_stats` | 2,572 |
-| `kalshi_trades` | 550,958 | `games` | 1,377 |
-| `market_price_snapshots` | 481,397 | `players` | 1,010 |
+| `kalshi_trades` | 550,958 | `games` | 1,398 |
+| `market_price_snapshots` | 490,687 | `players` | 1,010 |
 | `sportsbook_player_prop_odds` | 304,829 | `player_shot_zone_stats` | 880 |
 | `shot_locations` | 164,143 | `player_transactions` | 600 |
 | `kalshi_candlesticks` | 163,914 | `team_standings_history` | 205 |
-| `sportsbook_game_odds` | 125,919 | `season_awards` | 129 |
-| `player_game_stats` | 60,744 | `balldontlie_injury_reports` | 79 |
-| `injury_reports` | 33,283 | `odds_api_game_scores` | 67 |
+| `sportsbook_game_odds` | 129,822 | `season_awards` | 129 |
+| `player_game_stats` | 60,768 | `balldontlie_injury_reports` | 79 |
+| `injury_reports` | 33,422 | `odds_api_game_scores` | 68 |
 | `player_advanced_stats` | 28,995 | `team_shot_zone_stats` | 64 |
-| `provider_entity_map` | 5,805 | `team_standings` | 64 |
-| `team_game_stats` | 5,318 | `teams` | 28 (15 real franchises) |
+| `provider_entity_map` | 5,828 | `team_standings` | 64 |
+| `team_game_stats` | 5,320 | `teams` | 28 (15 real franchises) |
