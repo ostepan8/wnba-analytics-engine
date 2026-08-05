@@ -102,7 +102,7 @@ pipeline.py     Pipeline -- immutable ordered stack + with_step/without/...
 source.py       FeatureRowSource protocol; Postgres and in-memory impls.
 strategies.py   Named, pre-composed pipelines.
 steps/          loading | cleaning | filtering | derivation | form
-                matchup | player | style | encoding
+                matchup | player | style | market | encoding
 _windowing.py   the one invariant every WINDOWED step shares (see below)
 ```
 
@@ -211,6 +211,30 @@ through `execute_point_in_time` (or `execute_time_invariant` with a
 justification). Declare its column tuple as a module constant and point
 the step's `adds_columns` at it -- the guard then keeps the SQL and the
 declaration in sync for you.
+
+## Market features are quarantined on purpose
+
+`team_market` is the only strategy carrying `sportsbook_game_odds` or
+`polymarket_trades` columns, and that separation is a containment decision
+rather than a cost one. The line is the best single forecast of a game in
+existence, so a frame holding it beats every basketball feature here on any
+metric while teaching nothing -- it is a copy of someone else's model. Anyone
+comparing strategies has to be unable to include it by accident.
+
+What it IS for: measuring whether anything else in this package adds
+information the market has not already priced. `MODELING_FINDINGS.md` records
+that nothing has yet.
+
+Two traps that both produced a frame which looked fine:
+
+- `sportsbook_game_odds.captured_at` is each BOOK's own `last_update`, so
+  books almost never share an instant. A consensus bucketed by exact
+  timestamp is usually one book (median `book_count` of 1) with a null
+  dispersion. `JoinMarketOddsStep` therefore keeps a running consensus.
+- An as-of anchor declared in `provenance.as_of_columns` but never written
+  into the joined cells arrives NULL, and **the guard reads a null anchor as
+  "no observation" and passes**. Declaring the anchor is not enough; the
+  step has to emit it.
 
 ## Adding a strategy
 

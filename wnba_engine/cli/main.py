@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from wnba_engine.analysis import style as style_space
+from wnba_engine.analysis.lead_lag import t_statistic as lead_lag_t
 from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
@@ -50,9 +51,21 @@ from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
 )
 from wnba_engine.pipeline.feature_build import build_features
+from wnba_engine.pipeline.focused_odds_capture import (
+    DEFAULT_MIN_FILLS,
+    capture_focused_odds,
+)
 from wnba_engine.pipeline.injury_ingest import ingest_current_injury_report
+from wnba_engine.pipeline.kalshi_candle_backfill import (
+    DERIVATIVE_SERIES,
+    GAME_SERIES,
+    backfill_kalshi_candles,
+)
 from wnba_engine.pipeline.kalshi_ingest import ingest_kalshi_wnba_markets
+from wnba_engine.pipeline.kalshi_trade_backfill import backfill_kalshi_trades
+from wnba_engine.pipeline.lead_lag_report import build_lead_lag_report
 from wnba_engine.pipeline.market_capture_ingest import ingest_captures
+from wnba_engine.pipeline.market_game_relink import relink_market_snapshots
 from wnba_engine.pipeline.odds_api_ingest import backfill_history as backfill_odds_api_history
 from wnba_engine.pipeline.odds_api_ingest import snapshot_current_odds as snapshot_odds_api_odds
 from wnba_engine.pipeline.odds_api_player_props_ingest import (
@@ -65,10 +78,14 @@ from wnba_engine.pipeline.odds_api_scores_ingest import (
     snapshot_current_scores as snapshot_odds_api_scores,
 )
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
+from wnba_engine.pipeline.polymarket_trade_backfill import backfill_polymarket_trades
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
+from wnba_engine.pipeline.wnba_stats_ingest import ingest_season as ingest_wnba_stats_season
 from wnba_engine.polymarket.client import PolymarketClient
+from wnba_engine.polymarket.data_client import PolymarketDataClient
 from wnba_engine.repositories import style_repo
 from wnba_engine.validation.runner import run_all_checks
+from wnba_engine.wnba_stats.client import WnbaStatsClient
 
 
 @click.group()
@@ -447,6 +464,249 @@ def snapshot_polymarket() -> None:
     try:
         with PolymarketClient(settings) as client:
             click.echo(ingest_polymarket_wnba_markets(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("backfill-polymarket-trades")
+@click.option(
+    "--no-resume",
+    "no_resume",
+    is_flag=True,
+    help="Re-fetch markets that already have stored fills (needed to pick up "
+    "new trades on markets that are still open).",
+)
+@click.option("--limit", "market_limit", type=int, default=None, help="Cap markets processed.")
+def backfill_polymarket_trades_cmd(no_resume: bool, market_limit: int | None) -> None:
+    """Backfill every on-chain Polymarket fill for WNBA markets.
+
+    REAL history, unlike snapshot-polymarket. The CLOB's price endpoint is a
+    rolling ~30-day cache, but data-api serves every fill back to 2024-09-20
+    -- so a market that resolved in June is still fully recoverable today.
+
+    Each fill records the outcome as a team name, which the snapshot table
+    cannot do: Gamma leaves groupItemTitle null on two-way game markets, so
+    which side its probability describes has to be inferred there.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with PolymarketClient(settings) as gamma, PolymarketDataClient(settings) as data:
+            click.echo(
+                backfill_polymarket_trades(
+                    db, gamma, data, resume=not no_resume, market_limit=market_limit
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("backfill-kalshi-candles")
+@click.option("--series", "series_tickers", multiple=True, help="Limit to specific series.")
+@click.option(
+    "--derivatives", is_flag=True,
+    help="Sweep quarter/half totals and winners instead of the full-game series.",
+)
+@click.option(
+    "--period",
+    "period_minutes",
+    type=click.Choice(["1", "60", "1440"]),
+    default="60",
+    show_default=True,
+    help="Bar size. 1-minute is capped at a ~3-day request window, so a full "
+    "sweep at that resolution costs ~50x the requests of hourly.",
+)
+@click.option("--limit", "market_limit", type=int, default=None, help="Cap markets per series.")
+def backfill_kalshi_candles_cmd(
+    series_tickers: tuple[str, ...], derivatives: bool,
+    period_minutes: str, market_limit: int | None
+) -> None:
+    """Backfill Kalshi OHLC bars for WNBA game markets.
+
+    Bars go back to market creation, so this is genuine history rather than
+    a snapshot. Keeps yes_bid and yes_ask separately rather than a midpoint:
+    the spread is how an empty book is told apart from a real quote, and
+    empty books are what make a naive lead-lag study meaningless.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with KalshiClient(settings) as client:
+            click.echo(
+                backfill_kalshi_candles(
+                    db,
+                    client,
+                    series=series_tickers or (DERIVATIVE_SERIES if derivatives else GAME_SERIES),
+                    period_minutes=int(period_minutes),
+                    market_limit=market_limit,
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("lead-lag-report")
+def lead_lag_report() -> None:
+    """Measure whether Polymarket or the sportsbooks move first.
+
+    The one hypothesis MODELING_FINDINGS.md lists as untested rather than
+    refuted. It was untested because 30-minute quote snapshots cannot see a
+    16-29 minute lag; polymarket_trades carries exact fill timestamps, so
+    both sides are now event-timed.
+
+    A lead is a NECESSARY condition for an edge, never a sufficient one --
+    this repo already found one real price-direction signal (72.6%
+    accuracy) that still lost money.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        report = build_lead_lag_report(db)
+        click.echo(f"games with both venues: {report.games_considered}")
+        for label, result in (
+            ("polymarket -> books", report.polymarket_leads_books),
+            ("books -> polymarket", report.books_lead_polymarket),
+        ):
+            click.echo(f"\n{label}  ({result.games} games)")
+            for lag in result.by_lag:
+                t = lead_lag_t(lag.correlation, lag.pairs)
+                click.echo(
+                    f"  lag {lag.lag_minutes:>+4}m  r={lag.correlation:>+7.4f}  "
+                    f"n={lag.pairs:>7,}  t={t:>+7.2f}" if t is not None else
+                    f"  lag {lag.lag_minutes:>+4}m  r={lag.correlation:>+7.4f}  n={lag.pairs:>7,}"
+                )
+            click.echo(
+                f"  best: lag={result.best_lag_minutes}m r={result.best_correlation}"
+            )
+        click.echo("\ngame-clustered bootstrap (polymarket -> books, a priori lags):")
+        for check in report.bootstrap:
+            click.echo(
+                f"  lag {check.lag_minutes:>+4}m  r={check.correlation}  "
+                f"P(r<=0)={check.share_at_or_below_zero}  games={check.games}"
+            )
+    finally:
+        db.close()
+
+
+@cli.command("capture-odds-focused")
+@click.option("--window-hours", default=6, show_default=True,
+              help="How long before tip-off a game becomes worth watching.")
+@click.option("--min-fills", default=DEFAULT_MIN_FILLS, show_default=True,
+              help="Minimum Polymarket fills on a game before it is watched.")
+def capture_odds_focused(window_hours: int, min_fills: int) -> None:
+    """High-frequency sportsbook capture near tip-off, quota-gated.
+
+    Answers ONE question, from MODELING_FINDINGS.md: when Polymarket moves,
+    is the book's old price still there? Our normal captures are 60 minutes
+    apart and the follow-through lands inside that gap, so the economics of
+    the cross-venue lead cannot currently be tested.
+
+    Spends ZERO requests unless a game is inside the window AND has enough
+    prediction-market activity to produce the move being studied. When it
+    does spend, it spends exactly one -- the-odds-api bills /odds per market
+    and region, not per event.
+
+    Read-only price capture. This is not a trading system; see ROADMAP.md.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with OddsApiClient(settings) as client:
+            click.echo(
+                capture_focused_odds(
+                    db,
+                    client,
+                    window=timedelta(hours=window_hours),
+                    min_fills=min_fills,
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("backfill-kalshi-trades")
+@click.option("--series", "series_tickers", multiple=True, default=("KXWNBAGAME",),
+              show_default=True, help="Series to sweep.")
+@click.option("--before", type=click.DateTime(["%Y-%m-%d"]), default=None,
+              help="Only markets closing before this date (e.g. 2026-01-01 for 2025 only).")
+@click.option("--no-resume", is_flag=True, help="Re-fetch markets already stored.")
+@click.option("--limit", "market_limit", type=int, default=None)
+def backfill_kalshi_trades_cmd(series_tickers, before, no_resume, market_limit) -> None:
+    """Backfill Kalshi trades from the HISTORICAL tier.
+
+    Kalshi splits its data at a cutoff and serves older markets only from
+    /historical/*. Every other Kalshi command here reads the live tier and
+    therefore cannot see anything settled before 2026-06-05 -- which for
+    KXWNBAGAME means the whole 2025 season, including the Finals.
+
+    That season is the out-of-sample year MODELING_FINDINGS.md says the
+    Kalshi analysis lacks, so `--before 2026-01-01` is the interesting run.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with KalshiClient(settings) as client:
+            click.echo(
+                backfill_kalshi_trades(
+                    db, client,
+                    series=series_tickers,
+                    resume=not no_resume,
+                    before=before.replace(tzinfo=UTC) if before else None,
+                    market_limit=market_limit,
+                )
+            )
+    finally:
+        db.close()
+
+
+@cli.command("ingest-wnba-stats")
+@click.option("--season", "seasons", multiple=True, type=int, required=True,
+              help="Season start year; repeatable (e.g. --season 2025 --season 2026).")
+@click.option("--no-shots", is_flag=True, help="Plays only, skip the shot chart.")
+@click.option("--no-resume", is_flag=True, help="Re-fetch games already ingested.")
+@click.option("--limit", "game_limit", type=int, default=None, help="Cap games per season.")
+def ingest_wnba_stats(seasons, no_shots, no_resume, game_limit) -> None:
+    """Ingest player-attributed plays and shot locations from stats.wnba.com.
+
+    The league's own feed, and the only source here that puts a PLAYER on a
+    play -- FEATURE_ROADMAP.md ss9 lists player-level play-by-play as
+    blocked because balldontlie publishes none. It also carries shot
+    coordinates, and it goes back to 1997.
+
+    Plays land in game_plays under source='wnba_stats', beside the
+    balldontlie rows rather than replacing them.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with WnbaStatsClient(settings) as client:
+            for season in seasons:
+                click.echo(
+                    ingest_wnba_stats_season(
+                        db, client, season,
+                        resume=not no_resume,
+                        include_shots=not no_shots,
+                        game_limit=game_limit,
+                    )
+                )
+    finally:
+        db.close()
+
+
+@cli.command("relink-market-games")
+@click.option("--dry-run", is_flag=True, help="Report what would link, write nothing.")
+def relink_market_games(dry_run: bool) -> None:
+    """Fill NULL game_id on stored prediction-market snapshots.
+
+    ON CONFLICT DO NOTHING makes every ingest re-runnable but also means a
+    re-ingest cannot repair a row already stored -- so a matcher fix only
+    helps rows written after it. Run this after changing any market/game
+    matcher. Never overwrites a game_id that is already set.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(relink_market_snapshots(db, dry_run=dry_run))
     finally:
         db.close()
 

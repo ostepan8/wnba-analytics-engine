@@ -1,0 +1,24 @@
+-- Keep the market title alongside its bars, and let a re-ingest repair a
+-- NULL game_id.
+--
+-- Two defects, one cause. 0025 stored bars keyed on the ticker and threw
+-- the title away, because game resolution happened at ingest time and the
+-- title looked like a means to an end. It is not: the ticker encodes teams
+-- as CONCATENATED codes ("26AUG02TORGS"), which kalshi/game_matching.py
+-- explicitly refuses to split, so the title is the only place a team name
+-- is legible. Without it, nothing downstream can re-resolve a bar.
+--
+-- That mattered immediately. The first sweep resolved only KXWNBAGAME --
+-- `_resolve_game_id` called `parse_matchup` alone -- leaving 118,495 of
+-- 138,171 bars unlinked, i.e. every spread and total, which are precisely
+-- the markets worth comparing against sportsbook_game_odds. And
+-- ON CONFLICT DO NOTHING meant fixing the resolver could not repair them:
+-- the rows were already there.
+--
+-- So the insert becomes a CONFLICT-UPDATE that fills NULLs and nothing
+-- else (see market_history_repo). It stays idempotent in the sense that
+-- matters -- re-running converges and never flips a value -- while making
+-- the table self-heal when a matcher improves, which is the general
+-- problem relink-market-games exists to work around elsewhere.
+
+ALTER TABLE kalshi_candlesticks ADD COLUMN title TEXT;

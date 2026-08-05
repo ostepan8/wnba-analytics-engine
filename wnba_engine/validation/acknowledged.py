@@ -33,6 +33,8 @@ from dataclasses import dataclass
 
 CHECK_DUPLICATE_CROSSWALK = "duplicate_crosswalk_mappings"
 CHECK_PLAYS_FINAL_SCORE = "plays_final_score_matches_game_score"
+CHECK_GAME_COUNTS = "regular_season_game_counts"
+CHECK_PLAY_POINTS = "play_points_match_final_score"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +135,154 @@ ACKNOWLEDGEMENTS: tuple[Acknowledgement, ...] = (
         key="1218:69-79:67-79",
         reason="balldontlie play-by-play vs ESPN scoreboard, 2pt upstream disagreement",
         verified_on="2026-07-29",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2022/Chicago Sky:37",
+        reason=(
+            "the 2022 Commissioner's Cup final (2022-07-26, Las Vegas 93, Chicago 83) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2022/Las Vegas Aces:37",
+        reason=(
+            "the 2022 Commissioner's Cup final (2022-07-26, Las Vegas 93, Chicago 83) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2023/Las Vegas Aces:41",
+        reason=(
+            "the 2023 Commissioner's Cup final (2023-08-15, New York 82, Las Vegas 63) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2023/New York Liberty:41",
+        reason=(
+            "the 2023 Commissioner's Cup final (2023-08-15, New York 82, Las Vegas 63) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2024/Minnesota Lynx:41",
+        reason=(
+            "the 2024 Commissioner's Cup final (2024-06-25, Minnesota 94, New York 89) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2024/New York Liberty:41",
+        reason=(
+            "the 2024 Commissioner's Cup final (2024-06-25, Minnesota 94, New York 89) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2025/Indiana Fever:45",
+        reason=(
+            "the 2025 Commissioner's Cup final (2025-07-01, Indiana 74, Minnesota 59) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_GAME_COUNTS,
+        key="2025/Minnesota Lynx:45",
+        reason=(
+            "the 2025 Commissioner's Cup final (2025-07-01, Indiana 74, Minnesota 59) is reported "
+            "by ESPN with season_type='regular-season' but does not count "
+            "toward regular-season standings, so both finalists show one "
+            "extra game. The game was really played and its box score is "
+            "real, so it is kept rather than dropped."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="131/balldontlie:136",
+        reason=(
+            "balldontlie's play feed for this 2022 game is incomplete: its "
+            "scoring plays sum to 136 against a final score of 135. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="1367/balldontlie:174",
+        reason=(
+            "balldontlie's play feed for this 2026 game is incomplete: its "
+            "scoring plays sum to 174 against a final score of 207. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="577/balldontlie:173",
+        reason=(
+            "balldontlie's play feed for this 2023 game is incomplete: its "
+            "scoring plays sum to 173 against a final score of 175. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
+    ),
+    Acknowledgement(
+        check_name=CHECK_PLAY_POINTS,
+        key="694/balldontlie:181",
+        reason=(
+            "balldontlie's play feed for this 2024 game is incomplete: its "
+            "scoring plays sum to 181 against a final score of 173. The box "
+            "score and final score are right, only the play stream is short. "
+            "stats.wnba.com reconciles exactly on every game it covers, so this "
+            "is an upstream gap in one provider rather than a game we have wrong "
+            "-- 4 of 1,300 balldontlie games, 0.3%."
+        ),
+        verified_on="2026-08-04",
     ),
 )
 

@@ -58,6 +58,14 @@ class FeatureRowSource(Protocol):
 
     def player_bios(self) -> tuple[Row, ...]: ...
 
+    def market_odds(self, context: FeatureContext) -> tuple[Row, ...]: ...
+
+    def prediction_market_prices(self, context: FeatureContext) -> tuple[Row, ...]: ...
+
+    def player_prop_lines(
+        self, context: FeatureContext, prop_types: Sequence[str]
+    ) -> tuple[Row, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class PostgresRowSource:
@@ -95,6 +103,33 @@ class PostgresRowSource:
     def player_bios(self) -> tuple[Row, ...]:
         return feature_repo.load_player_bios(self.conn)
 
+    def market_odds(self, context: FeatureContext) -> tuple[Row, ...]:
+        return feature_repo.load_market_odds(
+            self.conn,
+            as_of=context.as_of,
+            season_types=context.season_types,
+            seasons=context.seasons or None,
+        )
+
+    def prediction_market_prices(self, context: FeatureContext) -> tuple[Row, ...]:
+        return feature_repo.load_prediction_market_prices(
+            self.conn,
+            as_of=context.as_of,
+            season_types=context.season_types,
+            seasons=context.seasons or None,
+        )
+
+    def player_prop_lines(
+        self, context: FeatureContext, prop_types: Sequence[str]
+    ) -> tuple[Row, ...]:
+        return feature_repo.load_player_prop_lines(
+            self.conn,
+            as_of=context.as_of,
+            season_types=context.season_types,
+            seasons=context.seasons or None,
+            prop_types=prop_types,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class StaticRowSource:
@@ -111,6 +146,9 @@ class StaticRowSource:
     player_game_rows: Sequence[Row] = ()
     standings_rows: Sequence[Row] = ()
     bio_rows: Sequence[Row] = ()
+    market_odds_rows: Sequence[Row] = ()
+    prediction_market_rows: Sequence[Row] = ()
+    prop_line_rows: Sequence[Row] = ()
 
     def team_games(self, context: FeatureContext) -> tuple[Row, ...]:
         return tuple(self.team_game_rows)
@@ -123,3 +161,14 @@ class StaticRowSource:
 
     def player_bios(self) -> tuple[Row, ...]:
         return tuple(self.bio_rows)
+
+    def market_odds(self, context: FeatureContext) -> tuple[Row, ...]:
+        return tuple(self.market_odds_rows)
+
+    def prediction_market_prices(self, context: FeatureContext) -> tuple[Row, ...]:
+        return tuple(self.prediction_market_rows)
+
+    def player_prop_lines(
+        self, context: FeatureContext, prop_types: Sequence[str]
+    ) -> tuple[Row, ...]:
+        return tuple(self.prop_line_rows)

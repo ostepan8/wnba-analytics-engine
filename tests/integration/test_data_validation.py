@@ -481,6 +481,19 @@ def test_non_franchise_team_in_regular_season_ignores_non_regular_season_games(c
 
 
 def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
+    """The count is deliberately hard-coded.
+
+    A check that exists but was never added to `_CHECKS` runs nowhere and
+    protects nothing, and that failure is invisible -- the suite stays
+    green and the gate stays quiet. Failing here forces the registration
+    to be a conscious act. Bump the number when you add one.
+
+    12 -> 16 when the polymarket_trades / kalshi_candlesticks checks
+    landed (db/migrations/0025).
+    16 -> 17 when check_regular_season_game_counts landed, after verifying
+    our 2025 standings against Wikipedia surfaced the Commissioner's Cup
+    final being counted as a regular-season game.
+    """
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 12
+    assert len(report.checks) == 18
     assert report.passed is True

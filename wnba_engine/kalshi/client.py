@@ -52,6 +52,71 @@ class KalshiClient:
             params["cursor"] = cursor
         return self._http.get_json("markets", params=params)
 
+    def fetch_candlesticks(
+        self,
+        series_ticker: str,
+        market_ticker: str,
+        *,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int,
+    ) -> object:
+        """GET /series/{s}/markets/{t}/candlesticks -- OHLC bars.
+
+        Unlike the snapshot endpoints this is genuinely HISTORICAL: bars go
+        back to market creation, not to some rolling window (verified
+        2026-08-03 -- a season future opened 2026-05-22 still returns its
+        first bar when queried with a 180-day lookback).
+
+        THE WINDOW IS CAPPED AND THE CAP DEPENDS ON `period_interval`.
+        Measured against the live API on the same date: 60-minute bars
+        accept ~180 days per request and 400 was rejected with HTTP 400;
+        1-minute bars accept ~3 days and 7 was rejected. The error is a bare
+        400 with no explanation, so a caller that guesses too wide sees what
+        looks like a broken endpoint. `backfill_candlesticks` chunks against
+        `MAX_WINDOW_DAYS` for exactly this reason.
+        """
+        return self._http.get_json(
+            f"series/{series_ticker}/markets/{market_ticker}/candlesticks",
+            params={
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "period_interval": period_interval,
+            },
+        )
+
+    def fetch_historical_markets_page(
+        self, series_ticker: str, *, cursor: str | None = None, limit: int = 1000
+    ) -> object:
+        """GET /historical/markets -- the OTHER tier, and it holds a season.
+
+        Kalshi splits exchange data at a cutoff (GET /historical/cutoff;
+        2026-06-05 as of writing). Everything settled before it is served
+        here and is INVISIBLE to /markets. For KXWNBAGAME that is the
+        difference between 364 markets from 2026-05-22 and 760 markets from
+        2025-05-23 -- an entire extra WNBA season, including the 2025
+        Finals.
+        """
+        params: dict[str, object] = {"series_ticker": series_ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("historical/markets", params=params)
+
+    def fetch_historical_trades_page(
+        self, market_ticker: str, *, cursor: str | None = None, limit: int = 1000
+    ) -> object:
+        """GET /historical/trades?ticker=... -- trade-level price history.
+
+        The candlesticks route 404s for pre-cutoff markets, so this is the
+        only way to price them. It is also better: individual trades with
+        timestamps rather than hourly bars, the same shape that made
+        polymarket_trades more useful than its quote snapshots.
+        """
+        params: dict[str, object] = {"ticker": market_ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("historical/trades", params=params)
+
     def close(self) -> None:
         self._http.close()
 

@@ -144,18 +144,51 @@ recorded payload MUST pass the file's real capture time. Hardcoding
 `datetime.now()` silently rewrites history to claim every past observation
 happened at ingest.
 
-### Some feeds are unrecoverable
+### Some feeds are unrecoverable -- but fewer than this file used to claim
 
-Kalshi prices, Polymarket prices, and ESPN's injury report are
-**current-state only, with no historical endpoint**. An observation not
-recorded at the time is gone forever. A 14-day outage in July 2026
-destroyed two thirds of all prediction-market data ever collected.
+This section previously said Kalshi and Polymarket prices were
+current-state only with **no historical endpoint**, and that an unrecorded
+observation was gone forever. That was wrong, and believing it caused a
+14-day July 2026 outage to be written off as unrecoverable when most of it
+could have been refetched. Corrected 2026-08-03, verified live:
 
-These are captured every 30 minutes on an always-on host and replayed here
+| feed | recoverable? | how |
+|---|---|---|
+| Polymarket **fills** | **yes, fully** | `data-api.polymarket.com/trades?market=<conditionId>`, every fill back to 2024-09-20, paginated. `backfill-polymarket-trades`. |
+| Polymarket **quotes** | ~30 days | `clob.polymarket.com/prices-history` is a rolling cache, NOT an archive -- a June market with $377k volume returns zero points. |
+| Kalshi **OHLC bars** | **yes, to market creation** | `/series/{s}/markets/{t}/candlesticks`. `backfill-kalshi-candles`. |
+| Kalshi/Polymarket **order books** | no | depth is never republished. |
+| ESPN **injury report** | no | current-state only; see `backfill-injuries-wayback` for a partial archive. |
+
+So the capture host still earns its keep -- it holds the order book and the
+quote history that nothing republishes -- but it is no longer the only path
+to prediction-market history, and a gap in it is no longer fatal.
+
+Captures run every 30 minutes on an always-on host and replay here
 (`market_capture/`, `scripts/deploy-capture-host.sh`,
-`scripts/sync-market-captures.sh`). When adding a provider, ask first
-whether its data is recoverable later. If not, it belongs in the capture
-host, not a laptop cron.
+`scripts/sync-market-captures.sh`). **The pull side is manual and has been
+missed for days at a time** -- on 2026-08-03 the host had 189 unsynced
+files per provider going back to 2026-07-30. When adding a provider, ask
+first whether its data is recoverable later, and check rather than assume.
+
+### A fixed matcher does not repair rows already stored
+
+`ON CONFLICT DO NOTHING` is what makes every ingest re-runnable, and it is
+also why a re-ingest **cannot** correct a row it already has. Fix a matcher
+and only rows written afterwards benefit.
+
+Kalshi rewrote its market titles between 2026-07-13 and 2026-07-27 --
+`"Indiana vs Phoenix winner?"` became `"Las Vegas vs Chicago women's Pro
+Basketball game: Chicago wins?"` -- and both `kalshi/game_matching.py` and
+`kalshi/team_market_matching.py` stopped resolving games. The KXWNBAGAME
+match rate went from 31-34% to **0.0%**, and 18,042 rows were written
+unlinked before anyone noticed, because an unparseable title and a market
+we deliberately do not map produce the identical outcome: a NULL `game_id`.
+
+`uv run wnba-engine relink-market-games` fills NULL `game_id` using the
+current matchers, and never overwrites one that is already set. **Run it
+after touching any matcher.** `scripts/backfill-prediction-markets.sh` ends
+with it for that reason.
 
 ### Point-in-time correctness
 

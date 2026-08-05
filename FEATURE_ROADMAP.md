@@ -197,18 +197,41 @@ single forecast available -- but a frame containing the line will look
 brilliant and teach nothing. Keep market features in a separate strategy
 so they can never silently enter a "pure basketball" model.
 
+Built as two strategies, `team_market` (game grain) and `player_market`
+(player grain), both in `wnba_engine/features/steps/market_steps.py`. Kept
+separate from the basketball strategies for the reason stated above, not
+for cost.
+
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
-| consensus line / total, de-vigged | `sportsbook_game_odds` | **todo** | must be pre-tip captures only |
-| cross-book dispersion | same | **todo** | none |
-| line movement, open -> current | same | **todo** | none |
-| implied win probability | same | **todo** | de-vig first |
-| prop line vs rolling mean | `sportsbook_player_prop_odds` | **todo** | none |
-| prediction-market divergence | `market_price_snapshots` | **todo** | **only 2026-07 onward** -- unusable historically |
+| consensus line / total, de-vigged | `sportsbook_game_odds` | **done** | de-vig PER BOOK before averaging; a mean of raw implied probabilities is not a probability |
+| cross-book dispersion | same | **done** | meaningless unless the de-vig happens first |
+| line movement, open -> current | same | **done** | none; the opening quote is knowable at every later instant |
+| implied win probability | same | **done** | none |
+| prop line vs rolling mean | `sportsbook_player_prop_odds` | **done** | player grain (`player_market`); pair against a ROLLING mean, never a season average |
+| prediction-market divergence | `polymarket_trades` | **done** | ~~only 2026-07 onward~~ -- **superseded**: on-chain fills go back to 2024-09, so the historical limit is gone |
+
+Two traps found while building it, both of which produced a frame that
+looked correct:
+
+- **`captured_at` is each BOOK's own `last_update`**, so books almost never
+  share an instant. Bucketing by exact timestamp gave a median `book_count`
+  of 1 and an all-null dispersion. The consensus has to be a running one:
+  each book's latest quote as of each moment.
+- **An as-of anchor named only in `provenance` arrives NULL.**
+  `AsOfJoinStep` copies the chosen cells verbatim, and the guard reads a
+  null anchor as "no observation" and passes -- so the check silently
+  checked nothing. The anchor must be written into the cells.
 
 ## 9. Play-by-play derived
 
-504,231 plays, currently zero features.
+Two sources now. `balldontlie` (509,119 plays) has no player attribution;
+`wnba_stats` -- the league's own feed, added 2026-08-04 -- carries
+`PLAYER1/2/3_ID` on 97% of events and shot coordinates, and reaches back to
+1997. Both reconcile to the final score on 318 of 318 overlapping games.
+
+The blocked row below is no longer blocked: it was a property of the
+provider we happened to use, not of the sport.
 
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
@@ -216,7 +239,9 @@ so they can never silently enter a "pure basketball" model.
 | largest run / lead changes | `game_plays` | **todo** | none |
 | clutch performance (last 5 min, within 5) | `game_plays` | **todo** | none |
 | scoring by period, rolling | `game_plays` | **todo** | none |
-| player-level PBP | `game_plays` | **blocked** | **no player id on plays** -- names are free text only |
+| player-level PBP | `game_plays` (`source='wnba_stats'`) | **unblocked** | resolution is by NAME on first sight, so a misspelling forks an identity -- see `player_aliases.py` |
+| shot location / quality | `shot_locations` | **todo** | `LOC_X`/`LOC_Y` are the row's own game -- targets, roll them |
+| assist and defensive networks | `game_plays` player2/player3 | **todo** | slots are not interchangeable; 2 is the assister/shooter, 3 the third party |
 
 ## 10. Context
 

@@ -5,7 +5,7 @@
   runs off-box at all: these prices have no historical endpoint, so an
   observation not recorded at the time is gone permanently.
 
-  Installed by scripts/deploy-capture-host.sh -- do not hand-edit on the
+  Installed by scripts/deploy-capture-host.sh - do not hand-edit on the
   host, or the next deploy silently reverts it.
 
   StartInterval rather than StartCalendarInterval: the cadence matters,

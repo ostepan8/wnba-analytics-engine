@@ -13,7 +13,18 @@ DEFAULT_DATABASE_URL = "postgresql://wnba:wnba@localhost:5434/wnba_engine"
 DEFAULT_ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba"
 DEFAULT_KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 DEFAULT_POLYMARKET_GAMMA_BASE_URL = "https://gamma-api.polymarket.com"
+# A SECOND Polymarket host, and the distinction matters. Gamma serves market
+# metadata and a current quote; data-api serves the on-chain fill history.
+# Only the latter survives -- clob.polymarket.com/prices-history is a rolling
+# ~30-day cache (verified 2026-08-03: a June market with $377k volume returns
+# zero points), while data-api returns every fill back to 2024-09-20 for WNBA.
+DEFAULT_POLYMARKET_DATA_BASE_URL = "https://data-api.polymarket.com"
 DEFAULT_WAYBACK_BASE_URL = "https://web.archive.org"
+DEFAULT_WNBA_STATS_BASE_URL = "https://stats.wnba.com/stats"
+# Unauthenticated public endpoint with no published quota, and a full
+# historical sweep is thousands of requests. Slower than every other
+# provider here on purpose.
+DEFAULT_WNBA_STATS_MIN_REQUEST_INTERVAL_SECONDS = 0.6
 DEFAULT_BALLDONTLIE_BASE_URL = "https://api.balldontlie.io"
 DEFAULT_ODDS_API_BASE_URL = "https://api.the-odds-api.com"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 15.0
@@ -37,7 +48,10 @@ class Settings:
     espn_base_url: str
     kalshi_base_url: str
     polymarket_gamma_base_url: str
+    polymarket_data_base_url: str
     wayback_base_url: str
+    wnba_stats_base_url: str
+    wnba_stats_min_request_interval_seconds: float
     balldontlie_base_url: str
     odds_api_base_url: str
     request_timeout_seconds: float
@@ -64,7 +78,19 @@ def load_settings() -> Settings:
         polymarket_gamma_base_url=os.environ.get(
             "WNBA_ENGINE_POLYMARKET_GAMMA_BASE_URL", DEFAULT_POLYMARKET_GAMMA_BASE_URL
         ),
+        polymarket_data_base_url=os.environ.get(
+            "WNBA_ENGINE_POLYMARKET_DATA_BASE_URL", DEFAULT_POLYMARKET_DATA_BASE_URL
+        ),
         wayback_base_url=os.environ.get("WNBA_ENGINE_WAYBACK_BASE_URL", DEFAULT_WAYBACK_BASE_URL),
+        wnba_stats_base_url=os.environ.get(
+            "WNBA_ENGINE_WNBA_STATS_BASE_URL", DEFAULT_WNBA_STATS_BASE_URL
+        ),
+        wnba_stats_min_request_interval_seconds=float(
+            os.environ.get(
+                "WNBA_ENGINE_WNBA_STATS_MIN_REQUEST_INTERVAL_SECONDS",
+                DEFAULT_WNBA_STATS_MIN_REQUEST_INTERVAL_SECONDS,
+            )
+        ),
         balldontlie_base_url=os.environ.get(
             "WNBA_ENGINE_BALLDONTLIE_BASE_URL", DEFAULT_BALLDONTLIE_BASE_URL
         ),

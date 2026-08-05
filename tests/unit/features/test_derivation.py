@@ -184,3 +184,53 @@ def test_rolling_step_rejects_a_nonsense_window() -> None:
         RollingMeanStep(value_columns=("points_scored",), window=0)
     with pytest.raises(StepContractError):
         RollingMeanStep(value_columns=(), window=3)
+
+
+def test_every_loader_column_is_classified_as_target_or_context() -> None:
+    """A NEW column on the team-game loader must fail until classified.
+
+    The first version of this test listed the outcome columns by hand and
+    intersected them with the loader. That guards only what its author
+    already knew about: adding the nine play-by-play columns
+    (FEATURE_ROADMAP.md ss9) left it green while every one of them was an
+    unmarked same-game outcome -- the exact bug it was written to prevent,
+    reintroduced on the very next change.
+
+    So the direction is inverted. CONTEXT is the closed list: identity,
+    schedule and opponent labels, none of which say anything about how the
+    game went. Everything else the loader selects must be a target. A new
+    column therefore fails by default and has to be classified deliberately,
+    which is the only arrangement that survives someone adding a column
+    without reading this file.
+
+    Why it matters, measured: `offensive_rating` correlates with what the
+    closing line got wrong at r = +0.431 (t = +23.9). A model trained on an
+    unmarked outcome column backtests spectacularly and knows nothing.
+    """
+    from wnba_engine.features.steps.derivation import TARGET_COLUMNS
+    from wnba_engine.repositories import feature_repo
+
+    context = {
+        "game_id", "season", "season_type", "start_time", "result_known_at",
+        "team_id", "team_abbrev", "team_is_franchise",
+        "opponent_team_id", "opponent_abbrev", "opponent_is_franchise",
+        "is_home",
+    }
+    unclassified = set(feature_repo.TEAM_GAME_COLUMNS) - context - set(TARGET_COLUMNS)
+    assert not unclassified, (
+        "these loader columns are neither schedule context nor declared targets; "
+        f"classify each one: {sorted(unclassified)}"
+    )
+
+
+def test_drop_targets_removes_them_and_keeps_everything_else() -> None:
+    from wnba_engine.features.steps.derivation import TARGET_COLUMNS, drop_targets
+
+    row = {"team_id": 1, "points_scored": 90, "offensive_rating": 112.4,
+           "points_scored_mean_5": 82.1, "rest_days": 2.0}
+    (out,) = drop_targets([row])
+    assert "points_scored" not in out
+    assert "offensive_rating" not in out
+    assert out["points_scored_mean_5"] == 82.1  # the rolled feature survives
+    assert out["rest_days"] == 2.0
+    assert not set(out) & set(TARGET_COLUMNS)

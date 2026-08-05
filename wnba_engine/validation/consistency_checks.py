@@ -169,3 +169,41 @@ def check_odds_api_score_matches_game_score(conn: Connection) -> CheckResult:
         rows=rows,
         formatter=lambda r: f"game={r[0]} games_score={r[1]}-{r[2]} odds_api_score={r[3]}-{r[4]}",
     )
+
+
+_PLAY_SOURCE_SCORE_SQL = """
+WITH per_source AS (
+    SELECT p.game_id, p.source,
+           sum(p.score_value) FILTER (WHERE p.scoring_play) AS play_points
+    FROM game_plays p
+    GROUP BY 1, 2
+)
+SELECT s.game_id, s.source, s.play_points, g.home_score + g.away_score AS final_points
+FROM per_source s
+JOIN games g ON g.id = s.game_id
+WHERE g.status = 'final'
+  AND g.home_score IS NOT NULL
+  AND s.play_points IS DISTINCT FROM g.home_score + g.away_score
+"""
+
+
+def check_play_points_match_final_score(conn: Connection) -> CheckResult:
+    """Scoring plays must add up to the game's final score, per SOURCE.
+
+    Two independent feeds now populate `game_plays` -- balldontlie and
+    stats.wnba.com -- and each is checked separately rather than pooled,
+    because pooling would hide one source being wrong whenever the other
+    covers the same game.
+
+    This is the check that catches a play feed silently losing events, and
+    it is cheap: at the time it was added both sources reconciled on 318 of
+    318 overlapping games, so any violation is new.
+    """
+    rows = conn.execute(_PLAY_SOURCE_SCORE_SQL).fetchall()
+    return build_check_result(
+        name="play_points_match_final_score",
+        description="scoring plays sum to the final score, checked per source",
+        rows=rows,
+        formatter=lambda r: f"game={r[0]} source={r[1]} plays={r[2]} final={r[3]}",
+        key_fn=lambda r: f"{r[0]}/{r[1]}:{r[2]}",
+    )

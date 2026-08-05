@@ -190,7 +190,114 @@ TEAM_GAME_COLUMNS: tuple[str, ...] = (
     "opp_tov_pct",
     "opp_oreb_pct",
     "opp_ftr",
+    # -- play-by-play shape of the row's OWN game ----------------------
+    # FEATURE_ROADMAP.md ss9. Every one of these is an OUTCOME of the game
+    # on this row, not a feature for it -- they are in TARGET_COLUMNS for
+    # the same reason `points_scored` is, and the FEATURE is the rolled
+    # version a windowed step builds from past rows.
+    #
+    # Derived from game_plays rather than stored: 509,119 plays across
+    # 1,300 games, and the period sums reconcile against the final box
+    # score on 2,594 of 2,600 team-games (99.8%), so the aggregation is
+    # trustworthy without a new table.
+    "period_1_points",
+    "period_2_points",
+    "period_3_points",
+    "period_4_points",
+    "overtime_points",
+    "clutch_points",
+    "largest_run",
+    "lead_changes",
+    "largest_lead",
 )
+
+#: Aggregates game_plays to one row per (game, team). Kept as a subquery
+#: rather than a table because it is derived, cheap enough at this scale,
+#: and a materialised copy would need its own staleness story.
+#:
+#: `clock` is 'M:SS' TEXT, so clutch time is parsed rather than compared --
+#: and guarded by a regex, because a malformed clock silently becomes NULL
+#: under a bare split_part and would quietly drop clutch plays.
+_PLAY_AGGREGATE_SQL = """
+WITH scoring AS (
+    SELECT p.game_id, p.team_id, p.sequence, p.period, p.score_value,
+           CASE WHEN p.clock ~ '^[0-9]+:[0-9]{2}$'
+                THEN split_part(p.clock, ':', 1)::int * 60
+                   + split_part(p.clock, ':', 2)::int
+           END AS seconds_left,
+           p.home_score, p.away_score
+    FROM game_plays p
+    WHERE p.scoring_play AND p.score_value > 0 AND p.team_id IS NOT NULL
+),
+runs AS (
+    -- Gaps and islands: consecutive scoring plays by the same team are one
+    -- run. The difference of two row_numbers is constant exactly while the
+    -- scoring team does not change.
+    SELECT game_id, team_id, sum(score_value) AS run_points
+    FROM (
+        SELECT s.*,
+               row_number() OVER (PARTITION BY game_id ORDER BY sequence)
+             - row_number() OVER (PARTITION BY game_id, team_id ORDER BY sequence)
+               AS island
+        FROM scoring s
+    ) x
+    GROUP BY game_id, team_id, island
+),
+margins AS (
+    SELECT game_id, home_score - away_score AS margin,
+           lag(home_score - away_score) OVER (PARTITION BY game_id ORDER BY sequence)
+             AS previous_margin
+    FROM scoring
+),
+game_shape AS (
+    -- Both are properties of the GAME, so each of its two team rows gets
+    -- the same value. That is correct and worth stating: a lead change is
+    -- not something one team does.
+    SELECT game_id,
+           count(*) FILTER (
+               WHERE sign(margin) <> sign(previous_margin)
+                 AND sign(margin) <> 0 AND sign(previous_margin) <> 0
+           ) AS lead_changes,
+           max(abs(margin)) AS largest_lead
+    FROM margins
+    GROUP BY game_id
+),
+per_period AS (
+    -- Aggregated in its OWN CTE, never in a SELECT that also joins `runs`.
+    -- `runs` holds one row per scoring RUN (~15 per team-game), so joining
+    -- it before summing fans every scoring play out and multiplies each
+    -- total by the run count. That version passed a spot check because
+    -- max(run_points), lead_changes and largest_lead are all invariant
+    -- under duplication -- only the sums were wrong, and they were wrong by
+    -- ~25x (a median period_1_points of 504 against a true ~20).
+    SELECT game_id, team_id,
+           sum(score_value) FILTER (WHERE period = 1) AS period_1_points,
+           sum(score_value) FILTER (WHERE period = 2) AS period_2_points,
+           sum(score_value) FILTER (WHERE period = 3) AS period_3_points,
+           sum(score_value) FILTER (WHERE period = 4) AS period_4_points,
+           sum(score_value) FILTER (WHERE period >= 5) AS overtime_points,
+           -- "Clutch" = the last five minutes of regulation or any
+           -- overtime. Deliberately NOT conditioned on the game being
+           -- close: a margin filter would make the column's meaning depend
+           -- on the outcome it is meant to help predict.
+           sum(score_value) FILTER (
+               WHERE period >= 4 AND seconds_left <= 300
+           ) AS clutch_points
+    FROM scoring
+    GROUP BY game_id, team_id
+),
+team_runs AS (
+    SELECT game_id, team_id, max(run_points) AS largest_run
+    FROM runs GROUP BY game_id, team_id
+)
+SELECT pp.game_id, pp.team_id,
+       pp.period_1_points, pp.period_2_points, pp.period_3_points,
+       pp.period_4_points, pp.overtime_points, pp.clutch_points,
+       tr.largest_run, gs.lead_changes, gs.largest_lead
+FROM per_period pp
+JOIN team_runs tr ON tr.game_id = pp.game_id AND tr.team_id = pp.team_id
+JOIN game_shape gs ON gs.game_id = pp.game_id
+"""
 
 _TEAM_GAMES_SQL = """
 SELECT
@@ -223,7 +330,16 @@ SELECT
     tas.opp_effective_field_goal_percentage  AS opp_efg,
     tas.opp_team_turnover_percentage         AS opp_tov_pct,
     tas.opp_offensive_rebound_percentage     AS opp_oreb_pct,
-    tas.opp_free_throw_attempt_rate          AS opp_ftr
+    tas.opp_free_throw_attempt_rate          AS opp_ftr,
+    plays.period_1_points   AS period_1_points,
+    plays.period_2_points   AS period_2_points,
+    plays.period_3_points   AS period_3_points,
+    plays.period_4_points   AS period_4_points,
+    plays.overtime_points   AS overtime_points,
+    plays.clutch_points     AS clutch_points,
+    plays.largest_run       AS largest_run,
+    plays.lead_changes      AS lead_changes,
+    plays.largest_lead      AS largest_lead
 FROM games g
 CROSS JOIN LATERAL (
     VALUES (g.home_team_id, g.away_team_id), (g.away_team_id, g.home_team_id)
@@ -232,6 +348,10 @@ JOIN teams t ON t.id = s.team_id
 JOIN teams o ON o.id = s.opponent_id
 LEFT JOIN team_advanced_stats tas
     ON tas.game_id = g.id AND tas.team_id = s.team_id
+-- LEFT, because play-by-play is not universal: 1,300 of 1,377 games have
+-- plays. A missing game must produce nulls, not vanish from the frame.
+LEFT JOIN (__PLAY_AGGREGATE__) plays
+    ON plays.game_id = g.id AND plays.team_id = s.team_id
 WHERE COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
       <= %(as_of)s
   AND g.status = 'final'
@@ -239,6 +359,16 @@ WHERE COALESCE(g.final_observed_at, g.start_time + %(completion_margin)s)
   AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
 ORDER BY g.start_time, g.id, s.team_id
 """
+
+
+def _team_games_sql() -> str:
+    """The team-game query with the play aggregate spliced in.
+
+    Composed at call time rather than written as one literal so the
+    aggregate stays independently readable and testable; `%` is not used
+    anywhere in it, so there is no interaction with psycopg's placeholders.
+    """
+    return _TEAM_GAMES_SQL.replace("__PLAY_AGGREGATE__", _PLAY_AGGREGATE_SQL)
 
 
 def load_team_games(
@@ -264,7 +394,7 @@ def load_team_games(
     """
     return execute_point_in_time(
         conn,
-        _TEAM_GAMES_SQL,
+        _team_games_sql(),
         {
             "as_of": as_of,
             "season_types": list(season_types),
@@ -540,4 +670,202 @@ def load_player_bios(conn: Connection) -> tuple[Row, ...]:
     """
     return execute_time_invariant(
         conn, _PLAYER_BIO_SQL, {}, justification=_PLAYER_BIO_JUSTIFICATION
+    )
+
+
+# -- market observations (as-of joins) ---------------------------------
+
+MARKET_ODDS_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "odds_captured_at",
+    "vendor",
+    "moneyline_home_odds",
+    "moneyline_away_odds",
+    "spread_home_value",
+    "total_value",
+)
+
+_MARKET_ODDS_SQL = """
+SELECT
+    o.game_id                AS game_id,
+    o.captured_at            AS odds_captured_at,
+    o.vendor                 AS vendor,
+    o.moneyline_home_odds    AS moneyline_home_odds,
+    o.moneyline_away_odds    AS moneyline_away_odds,
+    o.spread_home_value      AS spread_home_value,
+    o.total_value            AS total_value
+FROM sportsbook_game_odds o
+JOIN games g ON g.id = o.game_id
+WHERE o.captured_at <= %(as_of)s
+  AND o.game_id IS NOT NULL
+  AND o.moneyline_home_odds IS NOT NULL
+  AND o.moneyline_away_odds IS NOT NULL
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY o.game_id, o.captured_at, o.vendor
+"""
+
+
+def load_market_odds(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary sportsbook quote, one row per (game, capture, book).
+
+    Deliberately NOT pre-aggregated to a consensus in SQL. De-vigging is a
+    per-BOOK operation -- each book carries its own margin -- and averaging
+    prices before removing the vig produces a number that is not a
+    probability of anything. The caller de-vigs each row and then
+    aggregates, which is also what makes cross-book dispersion available
+    for free.
+
+    Deliberately NOT `DISTINCT ON (game_id) ... ORDER BY captured_at DESC`
+    either, for the same reason `load_standings_snapshots` refuses that
+    shape: "the latest quote we had by the boundary" joined onto a
+    full-season frame hands a May game a July line. The as-of join needs
+    the whole series to pick the quote preceding each individual game.
+
+    `captured_at` here is the BOOK's own `last_update`, not our fetch time
+    (see AGENTS.md), which is what makes it usable as an as-of anchor at
+    all -- it is when the price existed, not when we happened to look.
+    """
+    return execute_point_in_time(
+        conn,
+        _MARKET_ODDS_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+        },
+    )
+
+
+PREDICTION_MARKET_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "prediction_traded_at",
+    "prediction_home_probability",
+    "prediction_size",
+)
+
+# The home-side probability is resolved IN SQL from the stated outcome,
+# because polymarket_trades.outcome carries the team NAME. Fills naming
+# neither team (props and derivatives on the same game) are dropped rather
+# than forced onto a side.
+_PREDICTION_MARKET_SQL = """
+SELECT
+    t.game_id       AS game_id,
+    t.traded_at     AS prediction_traded_at,
+    CASE
+        WHEN t.outcome = h.name THEN t.price
+        ELSE 1 - t.price
+    END             AS prediction_home_probability,
+    t.size          AS prediction_size
+FROM polymarket_trades t
+JOIN games g ON g.id = t.game_id
+JOIN teams h ON h.id = g.home_team_id
+JOIN teams a ON a.id = g.away_team_id
+WHERE t.traded_at <= %(as_of)s
+  AND t.outcome IN (h.name, a.name)
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY t.game_id, t.traded_at
+"""
+
+
+def load_prediction_market_prices(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary Polymarket fill on a game's moneyline.
+
+    Fills, not quote snapshots. FEATURE_ROADMAP.md marked this row
+    "**only 2026-07 onward** -- unusable historically" because
+    `market_price_snapshots` starts when the capture host did. The on-chain
+    trade history goes back to 2024-09, so that limitation is gone.
+
+    `traded_at` is a cleaner as-of anchor than any `captured_at` in this
+    schema: it is when the fact HAPPENED, not when we observed it. Nothing
+    about it depends on our polling having been running.
+
+    No de-vig, because there is nothing to remove -- Polymarket's two
+    outcomes are complementary shares of one dollar, so a fill price is
+    already a probability.
+    """
+    return execute_point_in_time(
+        conn,
+        _PREDICTION_MARKET_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+        },
+    )
+
+
+PLAYER_PROP_LINE_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "player_id",
+    "prop_captured_at",
+    "prop_type",
+    "line_value",
+)
+
+# over_under only. `milestone` markets ("20+ points") are a different
+# question with a different payoff shape, and pooling the two would put a
+# threshold and a median side by side in one column.
+_PLAYER_PROP_LINE_SQL = """
+SELECT
+    p.game_id      AS game_id,
+    p.player_id    AS player_id,
+    p.captured_at  AS prop_captured_at,
+    p.prop_type    AS prop_type,
+    p.line_value   AS line_value
+FROM sportsbook_player_prop_odds p
+JOIN games g ON g.id = p.game_id
+WHERE p.captured_at <= %(as_of)s
+  AND p.game_id IS NOT NULL
+  AND p.player_id IS NOT NULL
+  AND p.line_value IS NOT NULL
+  AND p.market_type = 'over_under'
+  AND p.prop_type = ANY(%(prop_types)s::text[])
+  AND g.season_type = ANY(%(season_types)s::text[])
+  AND (%(seasons)s::int[] IS NULL OR g.season = ANY(%(seasons)s::int[]))
+ORDER BY p.game_id, p.player_id, p.captured_at
+"""
+
+
+def load_player_prop_lines(
+    conn: Connection,
+    *,
+    as_of: datetime,
+    season_types: Sequence[str],
+    seasons: Sequence[int] | None,
+    prop_types: Sequence[str],
+) -> tuple[Row, ...]:
+    """EVERY pre-boundary prop quote, one row per (game, player, book, capture).
+
+    Not aggregated in SQL for the same reason `load_market_odds` is not: a
+    consensus is a statement about the books at one moment, and the caller
+    needs the whole series to pick what preceded each individual game.
+
+    Books are NOT distinguished here, unlike the game-odds loader. A prop
+    line is a number on a half-point grid rather than a price with a
+    margin, so there is nothing to de-vig per book and the median across
+    whoever has posted is the honest consensus.
+    """
+    return execute_point_in_time(
+        conn,
+        _PLAYER_PROP_LINE_SQL,
+        {
+            "as_of": as_of,
+            "season_types": list(season_types),
+            "seasons": list(seasons) if seasons else None,
+            "prop_types": list(prop_types),
+        },
     )

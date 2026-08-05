@@ -239,13 +239,27 @@ def _resolve_team_market_ids(
     for snap in snapshots:
         if snap.event_external_id is None or snap.market_external_id in already_resolved:
             continue
-        game_id = _resolve_one_team_market(conn, snap.event_external_id, snap.title)
+        game_id = resolve_team_market_game_id(conn, snap.event_external_id, snap.title)
         if game_id is not None:
             game_id_by_market[snap.market_external_id] = game_id
     return game_id_by_market
 
 
-def _resolve_one_team_market(conn: Connection, event_external_id: str, title: str) -> int | None:
+def resolve_team_market_game_id(
+    conn: Connection, event_external_id: str, title: str
+) -> int | None:
+    """Canonical game id for a Kalshi team-level derivative market.
+
+    Public because three callers need identical behaviour -- this ingest,
+    the candlestick backfill, and relink-market-games -- and a second copy
+    is how KXWNBASPREAD ended up unlinked in the first place: the backfill
+    grew its own resolver that only understood KXWNBAGAME.
+
+    TWO title shapes, and the spread markets use the one that looks least
+    like a matchup: "Atlanta wins the game by over 1.5 points?" names a
+    single team, so it resolves through team + ticker date rather than
+    through a pair.
+    """
     two_team = parse_two_team_market(event_external_id, title)
     if two_team is not None:
         game_date, team_a, team_b = two_team

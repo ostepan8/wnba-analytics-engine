@@ -22,6 +22,7 @@ and cannot be thrown off by a date boundary.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -52,7 +53,79 @@ BACK_TO_BACK_MAX_GAP = timedelta(hours=36)
 #: results) and must never be fed to a model as features FOR that row --
 #: they are what the row is trying to predict. Named here so a caller can
 #: drop them in one line before training.
-TARGET_COLUMNS: tuple[str, ...] = ("points_scored", "points_allowed", "point_margin", "won")
+#:
+#: THE ADVANCED-STAT HALF OF THIS LIST WAS MISSING UNTIL 2026-08-04, and
+#: the omission was not academic. `load_team_games` selects thirteen
+#: columns from `team_advanced_stats` for the row's OWN game -- efficiency
+#: ratings, four factors, and their opponent mirrors -- and every one of
+#: them describes how that game went. Correlated against what the closing
+#: line got wrong, over 2,506 rows:
+#:
+#:     offensive_rating   r = +0.431   t = +23.9
+#:     efg                r = +0.393   t = +21.4
+#:     tov_ratio          r = -0.112   t =  -5.7
+#:
+#: A caller who followed this list's own advice -- "drop them in one line"
+#: -- would have kept all thirteen and produced a spectacular backtest
+#: built entirely on knowing the box score of the game it was predicting.
+#: The leakage guard cannot catch this: these columns are row-local source
+#: data, exactly like `points_scored`, and nothing about their TIMESTAMP is
+#: wrong. Only their meaning is.
+#:
+#: `pace` and `possessions` are here for the same reason `points_scored`
+#: is: the raw column is the game's own outcome, and the FEATURE is the
+#: rolled version (`pace_mean_5`), which is built from past rows.
+TARGET_COLUMNS: tuple[str, ...] = (
+    # scoring
+    "points_scored",
+    "points_allowed",
+    "point_margin",
+    "won",
+    # tempo
+    "pace",
+    "possessions",
+    # efficiency
+    "offensive_rating",
+    "defensive_rating",
+    # four factors, own
+    "efg",
+    "tov_ratio",
+    "oreb_pct",
+    "ftr",
+    "ast_pct",
+    # four factors, opponent
+    "opp_efg",
+    "opp_tov_pct",
+    "opp_oreb_pct",
+    "opp_ftr",
+    # play-by-play shape (FEATURE_ROADMAP.md ss9). Same rule again: these
+    # describe how the row's own game unfolded, so the raw column is a
+    # target and the FEATURE is the rolled version. `lead_changes` and
+    # `largest_lead` are properties of the GAME rather than of either team,
+    # so both of its rows carry the same value -- still an outcome.
+    "period_1_points",
+    "period_2_points",
+    "period_3_points",
+    "period_4_points",
+    "overtime_points",
+    "clutch_points",
+    "largest_run",
+    "lead_changes",
+    "largest_lead",
+)
+
+
+def drop_targets(rows: Sequence[Row]) -> tuple[Row, ...]:
+    """Every row without its own game's outcome columns.
+
+    Exists because "drop them in one line before training" was advice the
+    list could not actually support while it was incomplete. A function
+    that reads the list cannot drift from it the way a hand-written
+    exclusion in a notebook does.
+    """
+    return tuple(
+        {k: v for k, v in row.items() if k not in TARGET_COLUMNS} for row in rows
+    )
 
 
 @dataclass(frozen=True, slots=True)

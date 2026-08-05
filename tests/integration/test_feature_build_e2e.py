@@ -429,3 +429,62 @@ def test_a_pipeline_pointed_past_the_boundary_fails_against_real_data(clean_db) 
         strategies.situational_baseline(StaticRowSource(team_game_rows=rows)).run(
             context=_context(TIP_ONE + 2 * DAY)
         )
+
+
+def test_play_aggregates_reconcile_against_the_final_score(clean_db) -> None:
+    """The regression test for a JOIN fan-out, which unit tests cannot see.
+
+    `_PLAY_AGGREGATE_SQL` joins a per-RUN CTE (~15 rows per team-game).
+    Aggregating in a SELECT that also carries that join fans every scoring
+    play out and multiplies each period sum by the run count -- the first
+    version did exactly that and produced a median `period_1_points` of
+    504 against a true ~20.
+
+    It survived a spot check because `max(run_points)`, `lead_changes` and
+    `largest_lead` are all invariant under duplication; only the SUMS were
+    wrong. So the assertion has to be that the periods add up to the score,
+    which is the one thing a fan-out cannot fake.
+    """
+    with clean_db.connection() as conn:
+        seeded = _seed_schedule(conn)
+        game_id = seeded["games"][0]  # type: ignore[index]
+        home = seeded["home"]  # type: ignore[index]
+        away = seeded["away"]  # type: ignore[index]
+        # Home 12 (alternating, so several runs), away 8 in one long run.
+        plays = [
+            (1, "8:00", home, 2), (1, "7:00", away, 2), (1, "6:00", home, 3),
+            (2, "5:00", home, 2), (2, "4:00", away, 2),
+            (3, "3:00", home, 3), (3, "2:00", away, 2),
+            (4, "4:59", home, 2), (4, "0:30", away, 2),
+        ]
+        for index, (period, clock, team, value) in enumerate(plays):
+            conn.execute(
+                "INSERT INTO game_plays (game_id, team_id, source, sequence, period, "
+                "clock, play_type, scoring_play, score_value, home_score, away_score) "
+                "VALUES (%s, %s, 'balldontlie', %s, %s, %s, 'Jump Shot', true, %s, 0, 0)",
+                (game_id, team, index, period, clock, value),
+            )
+        conn.commit()
+        rows = feature_repo.load_team_games(
+            conn,
+            as_of=TIP_ONE + 30 * DAY,
+            season_types=("regular-season",),
+            seasons=(SEASON,),
+        )
+
+    by_team = {row["team_id"]: row for row in rows if row["game_id"] == game_id}
+    home_row = by_team[home]
+    # 2+3 in Q1, 2 in Q2, 3 in Q3, 2 in Q4 = 12. A fan-out would multiply
+    # each of these by the number of runs.
+    assert home_row["period_1_points"] == 5
+    assert home_row["period_2_points"] == 2
+    assert home_row["period_3_points"] == 3
+    assert home_row["period_4_points"] == 2
+    # Only the 4th-quarter plays inside the last five minutes count.
+    assert home_row["clutch_points"] == 2
+    assert by_team[away]["clutch_points"] == 2
+    # Runs are consecutive scoring plays by the same team in GLOBAL
+    # sequence, so they cross period boundaries. Home scores at sequences
+    # 0, 2, 3, 5, 7 and away at 1, 4, 6, 8, making the home islands
+    # [2], [3, 2], [3], [2] -- longest 5.
+    assert home_row["largest_run"] == 5

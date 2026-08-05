@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  High-frequency sportsbook capture near tip-off, every 5 minutes.
+
+  Exists to answer ONE question from MODELING_FINDINGS.md: when Polymarket
+  moves, is the book's old price still available? Our routine captures are
+  60.1 minutes apart and the follow-through lands inside that gap, so the
+  economics of the cross-venue lead cannot currently be tested at all.
+
+  Installed by scripts/install-market-sync.sh.
+
+  5 minutes looks aggressive and is not, because the command gates itself:
+  it spends ZERO requests unless a game is inside the window AND has enough
+  Polymarket activity to produce the move being studied. Off-season, an
+  empty afternoon, or a slate nobody trades all cost nothing. On a WNBA
+  game day the real spend is roughly 6 hours x 12 per hour = ~72 requests.
+
+  Read-only price capture. There is no order placement anywhere in this
+  codebase and none should be added (ROADMAP.md non-goals).
+
+  Runs HERE rather than on the capture host, unlike the Kalshi/Polymarket
+  recorder. That one records feeds whose quotes are unrecoverable; this one
+  reads a paid API with a shared quota, and pointing two machines at the
+  same key would double the burn while halving nobody's uncertainty.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ostepan.wnba-odds-focused</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused</string>
+    </array>
+
+    <!-- 5 minutes. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <!-- Deliberately NOT RunAtLoad. Unlike the capture agent, a missed
+         window here is not lost data - the routine hourly snapshot still
+         runs - so there is no reason to fire an extra request on every
+         reload while iterating on the plist. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/odds-focused.log</string>
+    <key>StandardErrorPath</key>
+    <string>PLACEHOLDER_HOME/wnba-market-capture/logs/odds-focused.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>PLACEHOLDER_REPO</string>
+</dict>
+</plist>

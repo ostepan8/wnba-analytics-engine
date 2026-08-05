@@ -4,6 +4,9 @@
 - `cleaning`   -- null policy, type coercion, duplicate handling.
 - `filtering`  -- row selection (franchise, season type, minimum minutes).
 - `derivation` -- situational features; every cross-row one is windowed.
+- `market_steps` -- FEATURE_ROADMAP.md ss8: sportsbook consensus and
+  prediction-market price as of each game, and their divergence. Kept in
+  their own strategy so the line can never leak into a basketball model.
 - `form_steps` -- multi-window team form: expanding and exponential
   levels, dispersion, trend, home/road splits, streaks, margin profile.
 - `matchup_steps` -- features of the RELATIONSHIP between two teams:
