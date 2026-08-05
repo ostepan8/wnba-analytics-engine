@@ -48,7 +48,18 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   exit 0
 fi
 
-mkdir -p "${HOME}/Library/LaunchAgents" "${HOME}/wnba-market-capture/logs"
+mkdir -p "${HOME}/Library/LaunchAgents" "${HOME}/wnba-market-capture/logs" \
+         "${HOME}/wnba-market-capture/bin"
+
+# Stage the sync script outside the repo.
+#
+# A launchd-spawned /bin/zsh cannot READ files under ~/Desktop (TCC): it
+# can stat them, so the path looks fine, but opening the script fails and
+# the agent exits 127 forever. ~/wnba-market-capture is not protected.
+# Refreshed on every install so the copy cannot drift from the repo.
+echo "==> staging sync script outside the TCC-protected repo"
+install -m 0755 "${REPO_ROOT}/scripts/sync-market-captures.sh" \
+                "${HOME}/wnba-market-capture/bin/sync-market-captures.sh"
 
 for label in "${LABELS[@]}"; do
   dest="${HOME}/Library/LaunchAgents/${label}.plist"

@@ -27,11 +27,24 @@
     <key>Label</key>
     <string>com.ostepan.wnba-market-sync</string>
 
+    <!-- Runs the COPY at ~/wnba-market-capture/bin, never the one in the
+         repo. The repo is under ~/Desktop, and a launchd-spawned /bin/zsh
+         is denied read access there by TCC: it can stat the script but not
+         open it, so this exited 127 on every fire while the file sat there
+         perfectly readable from a terminal. install-market-sync.sh
+         refreshes the copy. See the header of sync-market-captures.sh. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>PLACEHOLDER_REPO/scripts/sync-market-captures.sh</string>
+        <string>PLACEHOLDER_HOME/wnba-market-capture/bin/sync-market-captures.sh</string>
     </array>
+
+    <!-- The copy is outside the repo, so it is told where the repo is. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WNBA_REPO_ROOT</key>
+        <string>PLACEHOLDER_REPO</string>
+    </dict>
 
     <!-- 1 hour. -->
     <key>StartInterval</key>
