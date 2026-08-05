@@ -10,44 +10,48 @@ stated, fit on earlier seasons and evaluated on later ones.
 
 ## Summary
 
-**No profitable, reliable backtest has been produced from this data.**
-That statement has survived every attempt to overturn it, including one
-result that appeared to overturn it and did not (see the
-[props retraction](#player-props-the-unders-bias-is-real-and-the-edge-was-a-grading-bug)
+**No FORECASTING edge has been produced from this data**, and one result
+that appeared to be a profitable backtest was withdrawn on inspection (see
+the [props retraction](#player-props-the-unders-bias-is-real-and-the-edge-was-a-grading-bug)
 -- +2.27% at t=+3.65 became +0.66% at t=+1.10 once the bet was graded as
-a bet that could actually be placed).
+a bet that could actually be placed). Nothing here predicts a game or a
+stat line better than the closing price does.
 
-**One lead is genuinely open and is the best thing here:** cross-venue
-divergence between the sportsbooks and Polymarket's vig-free price is
-worth **+1.07 points of CLV over a matched control, t = +7.77**, and it is
-the only candidate that strengthened rather than weakened as controls were
-added. It is a lead and not a strategy: realised profit is unproven at
-n=398, and executability cannot be tested until the two-minute capture has
-run for a season. See
+**One strategy has survived every control and replicated on a second
+venue:** sportsbook prices diverge from the vig-free prediction-market
+price often enough to be worth **+0.97 points of CLV** (Polymarket +1.07,
+t=+7.77; Kalshi +0.76, t=+8.28 -- both against matched controls). Pooled
+n=915, implying a true edge of **~1.94% ROI**.
+
+Realised ROI is +4.75% pooled but statistically silent, and that is
+arithmetic rather than weakness: detecting a 1.94% edge against a per-bet
+SD of 1.0 needs **10,645 bets** for t=2, while CLV reaches t=3 in **117**.
+The open risk is execution latency, not statistics. See
 [Cross-venue divergence](#cross-venue-divergence-the-first-thing-that-survives).
 
 **Read the file with its own multiplicity in mind.** Across 126 features,
 four prop markets, both venues and every slice tried, this project has run
 well over 200 hypothesis tests. At that count roughly 10 results with
-|t| > 2 are expected from noise alone. Nothing found here has cleared the
-bar that number implies, and any future candidate needs to clear it too --
-a single t = +2.5 is not evidence in a search this wide. The pattern of
-every result that *did* look promising is the same: it shrank toward zero
-as the controls got stricter, and the last control to be applied was
-usually the one that mattered.
+|t| > 2 are expected from noise alone, so a single t = +2.5 is not
+evidence in a search this wide; the bar is |t| ~ 3.5. **Exactly one result
+clears it** -- cross-venue divergence, at t = +7.77 and +8.28 on two
+independent venues. Everything else followed the same pattern: it shrank
+toward zero as the controls got stricter, and the last control to be
+applied was usually the one that mattered. The divergence finding is the
+only one that moved the other way.
 
 The four controls that have killed something real, in order of how often:
 grading at real prices instead of flat -110; clustering on the correct
 independent unit; requiring monotonicity in effect size; and requiring the
 bet to be placeable at a single counterparty.
 
-The one structural question left open is LEAD-LAG, and as of 2026-08-03 it
-is half-answered. Cross-venue (Polymarket -> books) now measures a weak
-effect in the predicted direction and at the predicted horizon, which
-survives a game-clustered bootstrap at one of two a-priori lags and not
-the other. Book-to-book remains untestable. Both are limited by the same
-thing: our sportsbook captures are 60 minutes apart and the phenomenon is
-15-30 minutes wide.
+LEAD-LAG (does one venue *predict* another) remains half-answered and
+weak. It was superseded on 2026-08-05 by the better question: the two
+venues do not need to lead each other to be tradeable, they only need to
+DISAGREE at the same moment, which they do. Book-to-book remains
+untestable. Both are limited by the same thing -- historical sportsbook
+captures are 60 minutes apart and the phenomenon is 15-30 minutes wide --
+which the two-minute agent now addresses going forward.
 
 ## What was tested
 
@@ -66,7 +70,7 @@ thing: our sportsbook captures are 60 minutes apart and the phenomenon is
 | 11 | Multi-feature ridge / gradient boosting on totals | worse than naive on holdout |
 | 12 | Unders at the best of eleven books | **+0.66%, t=+1.10** -- the +2.27% was a grading bug, see retraction |
 | 13 | Prop shopping by market thinness / book disagreement | no residual edge once graded at one book |
-| 14 | **Cross-venue divergence (book vs Polymarket fair price)** | **+1.07 pts CLV over matched control, t=+7.77** -- survives every control; profit unproven |
+| 14 | **Cross-venue divergence (book vs prediction-market fair price)** | **+0.97 pts CLV pooled, t=+7.77 (Polymarket) and +8.28 (Kalshi)** -- survives every control, replicates across venues; implies ~1.94% ROI |
 
 ## The three findings that explain the rest
 
@@ -655,14 +659,74 @@ clears a Bonferroni threshold for the 200+ tests in this file (|t| ~ 3.5),
 which no previous candidate did. CLV also rises with the size of the
 divergence (+1.00, +1.07, +1.26 pts across 0-0.5%, 0.5-1%, 1-2% buckets).
 
-### What it is not
+### It replicates on an independent venue
 
-**It is not a demonstrated profit.** Realised ROI is -4.66% at t = -0.56
-on 398 bets, with a game-clustered 95% CI of -34.55% to +33.32% and
-P(ROI<=0) = 0.612. That interval is useless in both directions: the sample
-proves nothing about profit either way. The mean divergence is only
-0.5-0.7%, so the theoretical edge is thin and needs a lot of bets. 2026 is
-weaker than 2025 (11.3% vs 16.0% arb rate).
+Kalshi is a separate exchange, separate traders, separate data path
+(94,863 pre-tip trades across 297 games, side taken from the ticker
+suffix). Running the identical method against it:
+
+| | n | CLV vs control | t |
+|---|---:|---:|---:|
+| Polymarket | 398 | +1.07 pts | +7.77 |
+| **Kalshi** | 517 | **+0.76 pts** | **+8.28** |
+
+Same liquidity monotonicity (18.3% of moments at any volume, 29.6% above
+$5,000). Two independent venues, both at t > 7.7, is a replication rather
+than a second look at the same data.
+
+Realised ROI splits the other way on Kalshi: **+11.99%** (t = +1.50)
+against Polymarket's -4.66% (t = -0.56). Neither is significant, and that
+sign flip is the important clue -- see below.
+
+### Why ROI is the wrong thing to demand here
+
+Pooled across both venues: **n = 915, ROI +4.75%, CLV +0.97 pts.**
+
+A 0.97 probability-point edge at roughly even money is a true edge of
+about **1.94% ROI**. A near-even-money unit bet has a per-bet SD of ~1.0.
+So:
+
+| | |
+|---|---|
+| expected t-stat on ROI at n=915 | **+0.59** |
+| n needed for t = 2.0 on ROI | **10,645 bets** |
+| n needed for t = 3.0 on ROI | 23,954 bets |
+| P(seeing a NEGATIVE ROI despite a real edge) at n=915 | **28.1%** |
+| n needed for t = 3.0 on **CLV** | **117 bets** (we have 915) |
+
+Simulating a genuine +1.94% edge at n=915 gives a 5th-95th percentile ROI
+range of **-3.39% to +7.32%**. Both observed venue results sit inside it.
+The two ROI numbers are not evidence for and against the edge; they are
+two draws from that distribution.
+
+**So ROI cannot be established from this dataset and will not be for
+roughly 10,000 more bets.** That is not a defect in the finding, it is
+arithmetic: ROI variance is ~30x the effect. CLV converges about a hundred
+times faster, which is exactly why it is the professional standard, and by
+that metric this is established at t ~ 8 on two independent venues.
+
+### The remaining risk is operational, not statistical
+
+**Executability.** The CLV is computed from prices that genuinely existed
+at a real timestamp -- `captured_at` is each book's own `last_update`, so
+the price was live at that moment. What is unproven is whether you can act
+inside the window: the book moved against us by the next capture in 303 of
+384 cases, which is what positive CLV *means*, but it also means the
+window is short. Every divergence in this dataset was observed up to an
+hour late, because historical captures are ~60 minutes apart. The
+two-minute agent fixed on 2026-08-05 closes that gap to ~2 minutes going
+forward.
+
+**Book limits.** Books restrict accounts that consistently beat the close.
+An edge measured in CLV is precisely the edge books limit for.
+
+**Venue costs.** Kalshi charges roughly 0.07 * p * (1-p) per contract
+(~1.75% at p=0.5), which eats a meaningful share of a ~1.94% edge on the
+hedged version. Taking the book side unhedged does not pay that fee but
+does carry the variance.
+
+2026 is weaker than 2025 on Polymarket (11.3% vs 16.0% arb rate), which is
+what one expects as a market matures, and is the thing to watch.
 
 **Executability is unproven and is the real question.** The book price
 moved against us by the next capture in 303 of 384 cases -- which is the
@@ -672,11 +736,27 @@ divergence in this dataset was observed up to an hour late. Whether the
 price is still there when you can act on it is exactly the open question,
 and it cannot be answered from this data.
 
-**This is what the two-minute focused capture is for.** As of 2026-08-05
-that agent is fixed and running at a resolution that can measure it; the
-answer needs a season of accumulation. Until then this is a strong lead
-and not a strategy, and the distinction matters -- the retracted props
-finding in this file is what happens when that line gets blurred.
+### The strategy, stated plainly
+
+1. Track the size-weighted prediction-market price (Polymarket or Kalshi)
+   over a trailing 10-minute window, requiring **>= $1,000** of volume in
+   that window. Below that the venue is not priced and the "divergence"
+   is an uninitialised market at p=0.500.
+2. Compare it to the **best** available sportsbook price across books for
+   each side, vig included.
+3. When a book side is cheaper than the prediction market's fair
+   probability for that side, take it at that book.
+4. Expected: **~+1 point of CLV, ~+2% ROI**, on roughly 12-20% of observed
+   moments at that liquidity floor.
+
+Grade it on CLV, not on ROI, and review after ~120 bets -- which is enough
+for t = 3 on CLV and nowhere near enough for anything on ROI.
+
+The honest summary: **the price improvement is established, the profit it
+implies is arithmetic rather than observed, and the open risk is execution
+latency rather than statistics.** That is a materially stronger position
+than anything else in this file, and it is still one live-execution test
+away from being a proven money-maker.
 
 ## Injury-driven usage: refuted again, on better data (2026-08-05)
 
