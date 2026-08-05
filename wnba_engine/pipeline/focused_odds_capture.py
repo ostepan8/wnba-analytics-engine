@@ -128,7 +128,12 @@ def capture_focused_odds(
             if not in_window
             else f"{in_window} game(s) in window but none with >= {min_fills} fills"
         )
-        logger.info("focused capture: skipped, %s (0 requests spent)", reason)
+        # DEBUG, not INFO: at a two-minute interval this fires ~720 times a
+        # day and is a skip almost every time. Logged at INFO it is 1,400
+        # lines a day of "nothing happened", which is how the real entries
+        # get lost. Liveness belongs to `launchctl print`, not to a log
+        # nobody can skim.
+        logger.debug("focused capture: skipped, %s (0 requests spent)", reason)
         return FocusedCaptureResult(
             games_in_window=int(in_window), skipped_reason=reason
         )
