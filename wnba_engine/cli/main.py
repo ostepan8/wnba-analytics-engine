@@ -148,15 +148,30 @@ def backfill_espn(since, until) -> None:
     show_default=True,
     help="Re-ingest a trailing window ending today, to pick up score/status corrections.",
 )
-def sync_recent(days: int) -> None:
-    """Ingest ESPN data for the last N days through today.
+@click.option(
+    "--days-ahead",
+    default=7,
+    show_default=True,
+    help="Also ingest scheduled games this many days into the future.",
+)
+def sync_recent(days: int, days_ahead: int) -> None:
+    """Ingest ESPN data for a window around today.
 
     Meant for a recurring schedule (cron, launchd, ...): a short trailing
     window is cheap to re-sweep and catches games that were 'scheduled' on
     first ingest and have since gone final, without needing a full backfill.
+
+    The window also leads today, because other parts of the system need a
+    game to exist BEFORE it is played. The focused odds capture resolves
+    each odds row to a `games` row and drops the ones it cannot place; when
+    this swept backwards only, the schedule ended roughly at today and
+    every book quote for a game further out was discarded with nothing but
+    a WARNING in a launchd log. ESPN serves scheduled dates happily, so
+    leading by a week costs one cheap request per day and removes the
+    whole class of failure.
     """
     since = date.today() - timedelta(days=days)
-    until = date.today()
+    until = date.today() + timedelta(days=days_ahead)
     settings = load_settings()
     db = Database(settings.database_url)
     try:
