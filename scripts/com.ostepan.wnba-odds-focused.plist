@@ -24,6 +24,13 @@
   It still spends nothing when there is no game within 6 hours of tip, so
   the off-season and empty afternoons remain free.
 
+  The capture is followed by log-divergences, which spends NO requests.
+  It only reads what was just captured and compares it to the Polymarket
+  and Kalshi prices already in the database. That pairing is the point of
+  the two-minute cadence: MODELING_FINDINGS.md establishes the divergence
+  effect and cannot establish whether the price is still there when you
+  could act, because the historical captures were an hour apart.
+
   Read-only price capture. There is no order placement anywhere in this
   codebase and none should be added (ROADMAP.md non-goals).
 
@@ -41,7 +48,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused</string>
+        <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused &amp;&amp; uv run wnba-engine log-divergences</string>
     </array>
 
     <!-- 2 minutes. -->
