@@ -33,10 +33,16 @@
          open it, so this exited 127 on every fire while the file sat there
          perfectly readable from a terminal. install-market-sync.sh
          refreshes the copy. See the header of sync-market-captures.sh. -->
+    <!-- `-lc`, not a bare script path: launchd hands a job a minimal PATH
+         that does not include /opt/homebrew/bin, so `uv` is not found and
+         the script dies at the ingest step having already done the rsync.
+         A login shell sources the profile that puts uv on PATH. This is
+         the same form the odds-focused agent uses, for the same reason. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>PLACEHOLDER_HOME/wnba-market-capture/bin/sync-market-captures.sh</string>
+        <string>-lc</string>
+        <string>exec PLACEHOLDER_HOME/wnba-market-capture/bin/sync-market-captures.sh</string>
     </array>
 
     <!-- The copy is outside the repo, so it is told where the repo is. -->
