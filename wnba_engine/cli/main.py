@@ -609,17 +609,23 @@ def lead_lag_report() -> None:
 @click.option("--min-fills", default=DEFAULT_MIN_FILLS, show_default=True,
               help="Minimum Polymarket fills on a game before it is watched.")
 def capture_odds_focused(window_hours: int, min_fills: int) -> None:
-    """High-frequency sportsbook capture near tip-off, quota-gated.
+    """High-frequency sportsbook capture near tip-off.
 
     Answers ONE question, from MODELING_FINDINGS.md: when Polymarket moves,
     is the book's old price still there? Our normal captures are 60 minutes
     apart and the follow-through lands inside that gap, so the economics of
     the cross-venue lead cannot currently be tested.
 
-    Spends ZERO requests unless a game is inside the window AND has enough
-    prediction-market activity to produce the move being studied. When it
-    does spend, it spends exactly one -- the-odds-api bills /odds per market
-    and region, not per event.
+    Spends ZERO requests unless a game is inside the window, and exactly one
+    when there is -- the-odds-api bills /odds per market and region, not per
+    event. The --min-fills gate is off by default; see DEFAULT_MIN_FILLS for
+    why it stopped being a default.
+
+    Prints only when it actually captures. On the two-minute schedule this
+    runs ~720 times a day and nearly all of them are skips, which would bury
+    the real entries in the launchd log. Check liveness with
+    `launchctl print gui/$(id -u)/com.ostepan.wnba-odds-focused`, not by
+    looking for a heartbeat here.
 
     Read-only price capture. This is not a trading system; see ROADMAP.md.
     """
@@ -627,14 +633,14 @@ def capture_odds_focused(window_hours: int, min_fills: int) -> None:
     db = Database(settings.database_url)
     try:
         with OddsApiClient(settings) as client:
-            click.echo(
-                capture_focused_odds(
-                    db,
-                    client,
-                    window=timedelta(hours=window_hours),
-                    min_fills=min_fills,
-                )
+            result = capture_focused_odds(
+                db,
+                client,
+                window=timedelta(hours=window_hours),
+                min_fills=min_fills,
             )
+            if result.skipped_reason is None:
+                click.echo(result)
     finally:
         db.close()
 
