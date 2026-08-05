@@ -11,15 +11,28 @@ This exists to answer that one question and nothing else. It is not a
 trading system and there is no order placement anywhere in this codebase
 (see ROADMAP.md's non-goals).
 
-QUOTA DISCIPLINE IS THE WHOLE DESIGN. A naive 5-minute cron is 288 requests
-a day, most of them during an off-season or an empty afternoon, and the
-resulting series is mostly identical rows. So a run does nothing at all
-unless there is a game close enough to tip AND that game has enough
-prediction-market activity for the test to mean anything:
+ONE GATE, AND IT IS THE FREE ONE. A run does nothing unless a game is
+close enough to tip:
 
-  * no game inside the window        -> 0 requests
-  * games in window, none with fills -> 0 requests
-  * otherwise                        -> exactly ONE request
+  * no game inside the window -> 0 requests
+  * otherwise                 -> exactly ONE request
+
+That gate costs nothing to be right about -- an off-season or an empty
+afternoon has no game in the window, so it spends nothing -- and it does
+not depend on any other part of the system being healthy.
+
+There used to be a second gate requiring recorded Polymarket activity, and
+it is why this file has no data to show for the weeks it ran. See
+DEFAULT_MIN_FILLS. It survives as an opt-in parameter, not a default.
+
+Resolution matters more than frugality here. The follow-through being
+measured is 15-20 minutes wide, so the capture interval has to be a small
+fraction of that; the plist runs every two minutes. Dense polling is also
+cheaper than it looks in storage terms, because `captured_at` is each
+book's own `last_update` and the unique constraint is ON CONFLICT DO
+NOTHING -- a book that has not moved inserts nothing. The series that
+results is a record of actual price CHANGES with real timestamps, which is
+exactly what the lead-lag question needs and what hourly capture destroys.
 
 One request, because the-odds-api's /odds endpoint is billed per market and
 region rather than per event: a single call returns every listed WNBA game.
@@ -45,9 +58,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_WINDOW = timedelta(hours=6)
 
 #: Minimum Polymarket fills already recorded against a game for it to be
-#: worth watching. A game nobody trades on cannot produce the >=3.8 point
-#: move the test is about, so polling it burns quota to observe nothing.
-DEFAULT_MIN_FILLS = 25
+#: worth watching. **Defaults to 0 -- off.**
+#:
+#: This defaulted to 25 and cost the experiment its data. Fills only accrue
+#: against a game once the Polymarket sync has run, so when that sync broke
+#: (a stale worktree path, exit 127) the gate silently closed and every run
+#: for weeks reported "0 requests spent" while looking perfectly healthy.
+#: A capture agent whose default requires a *different* agent to be healthy
+#: is not a gate, it is a second point of failure -- and one that fails
+#: closed and quietly.
+#:
+#: The quota argument that justified it does not hold: the plan carries
+#: 5,000,000 requests (424 used as of 2026-08-05), and capturing every
+#: WNBA game for a whole season at two-minute resolution costs ~0.4% of it.
+#: Kept as an opt-in parameter because it is the right gate on a small
+#: plan, and wrong only as a default.
+DEFAULT_MIN_FILLS = 0
 
 _TARGETS_SQL = """
 SELECT g.id, g.start_time, count(t.id) AS fills

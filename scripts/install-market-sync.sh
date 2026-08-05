@@ -14,10 +14,30 @@ set -euo pipefail
 
 # Two agents, both local:
 #   market-sync    hourly, pulls captures off the always-on host
-#   odds-focused   every 5 min, but self-gating -- see its plist
+#   odds-focused   every 2 min, gated on a game being near tip -- see its plist
 LABELS=(com.ostepan.wnba-market-sync com.ostepan.wnba-odds-focused)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DOMAIN="gui/$(id -u)"
+
+# Refuse to install from a worktree.
+#
+# REPO_ROOT gets baked into both plists as an absolute path. Installing
+# from a worktree therefore points a permanent launchd agent at a
+# directory whose whole purpose is to be deleted. That happened: both
+# agents were installed from --pm-backfill, which was removed on merge,
+# after which odds-focused exited 78 and market-sync exited 127 on every
+# fire. launchd does not complain, the logs look like ordinary skips, and
+# the data loss is only visible weeks later as an absence.
+#
+# In a worktree these two differ; in the main checkout they are the same.
+if [[ "$(git -C "$REPO_ROOT" rev-parse --git-dir 2>/dev/null)" \
+   != "$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null)" ]]; then
+  echo "ERROR: ${REPO_ROOT} is a git worktree." >&2
+  echo "These agents outlive worktrees. Install from the main checkout:" >&2
+  echo "  cd \$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir)/.. \\" >&2
+  echo "    && scripts/install-market-sync.sh" >&2
+  exit 1
+fi
 
 if [[ "${1:-}" == "--uninstall" ]]; then
   for label in "${LABELS[@]}"; do
@@ -47,6 +67,6 @@ done
 
 echo
 echo "Pull runs hourly.        logs: ${HOME}/wnba-market-capture/logs/sync.log"
-echo "Focused odds every 5min. logs: ${HOME}/wnba-market-capture/logs/odds-focused.log"
-echo "  (spends 0 requests unless a traded game is within 6h of tip-off)"
+echo "Focused odds every 2min. logs: ${HOME}/wnba-market-capture/logs/odds-focused.log"
+echo "  (spends 0 requests unless a game is within 6h of tip-off)"
 echo "Full history sweep stays manual: scripts/backfill-prediction-markets.sh"
