@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from wnba_engine.analysis import style as style_space
+from wnba_engine.analysis.divergence import DEFAULT_MIN_VOLUME
 from wnba_engine.analysis.lead_lag import t_statistic as lead_lag_t
 from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
@@ -46,6 +47,11 @@ from wnba_engine.pipeline.balldontlie_team_advanced_stats_ingest import (
     backfill_season as backfill_team_advanced_stats_season,
 )
 from wnba_engine.pipeline.clv_report import build_clv_report
+from wnba_engine.pipeline.divergence_log import (
+    grade_closings,
+    log_divergences,
+    recheck_prices,
+)
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
@@ -599,6 +605,60 @@ def lead_lag_report() -> None:
                 f"  lag {check.lag_minutes:>+4}m  r={check.correlation}  "
                 f"P(r<=0)={check.share_at_or_below_zero}  games={check.games}"
             )
+    finally:
+        db.close()
+
+
+@cli.command("log-divergences")
+@click.option("--window-hours", default=6, show_default=True,
+              help="How long before tip-off a game becomes worth watching.")
+@click.option("--lookback-minutes", default=10, show_default=True,
+              help="Trailing window for the size-weighted venue price.")
+@click.option("--min-volume", default=DEFAULT_MIN_VOLUME, show_default=True,
+              help="Minimum venue volume in the lookback before it counts as priced.")
+def log_divergences_cmd(window_hours: int, lookback_minutes: int, min_volume: float) -> None:
+    """Record sportsbook prices that sit below prediction-market fair value.
+
+    The forward half of the one strategy in MODELING_FINDINGS.md that
+    survived every control. The effect is established (+0.97 pts CLV
+    pooled); what history CANNOT show is whether the price is still there
+    when you could act, because captures used to be 60 minutes apart and
+    the move happens inside that gap.
+
+    Meant to run right after each focused capture. Prints only when it
+    finds something.
+
+    Read-only price analysis; nothing here places a bet (see ROADMAP.md).
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        result = log_divergences(
+            db,
+            window=timedelta(hours=window_hours),
+            lookback=timedelta(minutes=lookback_minutes),
+            min_volume=min_volume,
+        )
+        if result.divergences_found:
+            click.echo(result)
+    finally:
+        db.close()
+
+
+@cli.command("grade-divergences")
+def grade_divergences_cmd() -> None:
+    """Fill in whether each logged price survived, and its closing value.
+
+    Two passes: `recheck` answers the executability question by asking
+    whether the same book's next quote was still as good, and `closings`
+    grades CLV once the game is final. Both only ever write into NULLs, so
+    running this on any cadence is safe.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(f"recheck:  {recheck_prices(db)}")
+        click.echo(f"closings: {grade_closings(db)}")
     finally:
         db.close()
 

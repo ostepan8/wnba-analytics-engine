@@ -54,3 +54,11 @@ done
 echo "==> ingesting"
 cd "$REPO_ROOT"
 uv run wnba-engine ingest-market-captures --dir "$LOCAL_ROOT"
+
+# Grade the forward divergence log. Hourly rather than on the two-minute
+# capture cadence because each pass scans every ungraded row, and because
+# neither half can be answered sooner anyway: the recheck needs a LATER
+# book quote to exist, and the closing grade needs the game to be final.
+# Both only write into NULLs, so running it on any cadence is safe.
+echo "==> grading divergence log"
+uv run wnba-engine grade-divergences
