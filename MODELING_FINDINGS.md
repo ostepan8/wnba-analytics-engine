@@ -561,6 +561,50 @@ any other market, and +2.27% is before any friction. What it is NOT is a
 forecasting edge -- nothing here predicts a player's stat line better than
 the market does.
 
+## Shot quality vs shot making, and a prop hypothesis that failed (2026-08-05)
+
+The first test built on stats.wnba.com's 164,143 shot locations, and the
+one hypothesis this file has had that was grounded in a measured property
+of the sport rather than in a market pattern.
+
+**The decomposition works and is worth keeping on its own.** Splitting each
+attempt into where it was taken (league expected points for that zone) and
+whether it went in:
+
+| | game-to-game autocorrelation |
+|---|---:|
+| shot QUALITY -- where a player shoots | **0.325** |
+| shot MAKING -- whether it went in | **0.048** |
+
+Shot selection is a stable player property; game-level shooting above or
+below expectation is very close to pure noise. The zone efficiencies that
+fall out are textbook: restricted area 1.260 points per attempt, corner
+threes 1.107, above-the-break threes 1.020, mid-range worst at 0.746.
+
+**The hypothesis:** if a prop line moves on recent shot MAKING, it is
+chasing noise, and the under should be profitable on players who have
+recently shot above expectation.
+
+**It does not survive.** 8,258 points props with five prior shot-games,
+under at the best of eleven books, split by the player's recent making:
+
+| tercile | n | mean making | ROI | t |
+|---|---:|---:|---:|---:|
+| cold | 2,752 | -0.187 | -0.92% | -0.50 |
+| **middle** | 2,752 | +0.018 | **+3.56%** | +1.93 |
+| hot | 2,754 | +0.229 | +3.17% | +1.72 |
+
+The middle tercile beats the hot one, so the ordering is wrong: a real
+overreaction would make the effect increase through the hot bucket, not
+peak in the middle. Hot minus cold is +4.09% at t = +1.57, and 2026 returns
+-2.60%. What survives is the base unders bias already recorded above, not
+anything shot-making adds to it.
+
+Worth noting what this rules out. The market prices a player's scoring
+without being fooled by a five-game hot streak, on a quantity the data
+shows is 95% noise. That is a more specific and more impressive statement
+about prop pricing than "the closing line is efficient".
+
 ## What would change the answer
 
 None of these is a modeling problem:
