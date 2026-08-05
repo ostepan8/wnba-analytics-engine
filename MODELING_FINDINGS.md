@@ -11,9 +11,26 @@ stated, fit on earlier seasons and evaluated on later ones.
 ## Summary
 
 **No profitable, reliable backtest has been produced from this data.**
-Ten hypotheses across player props, totals and spreads; the best
-survivor was +3.08% with t=0.55 and a confidence interval spanning
--7.8% to +14.0%.
+That statement has survived every attempt to overturn it, including one
+result that appeared to overturn it and did not (see the
+[props retraction](#player-props-the-unders-bias-is-real-and-the-edge-was-a-grading-bug)
+-- +2.27% at t=+3.65 became +0.66% at t=+1.10 once the bet was graded as
+a bet that could actually be placed).
+
+**Read the file with its own multiplicity in mind.** Across 126 features,
+four prop markets, both venues and every slice tried, this project has run
+well over 200 hypothesis tests. At that count roughly 10 results with
+|t| > 2 are expected from noise alone. Nothing found here has cleared the
+bar that number implies, and any future candidate needs to clear it too --
+a single t = +2.5 is not evidence in a search this wide. The pattern of
+every result that *did* look promising is the same: it shrank toward zero
+as the controls got stricter, and the last control to be applied was
+usually the one that mattered.
+
+The four controls that have killed something real, in order of how often:
+grading at real prices instead of flat -110; clustering on the correct
+independent unit; requiring monotonicity in effect size; and requiring the
+bet to be placeable at a single counterparty.
 
 The one structural question left open is LEAD-LAG, and as of 2026-08-03 it
 is half-answered. Cross-venue (Polymarket -> books) now measures a weak
@@ -31,13 +48,15 @@ thing: our sportsbook captures are 60 minutes apart and the phenomenon is
 | 2 | Line shopping best price across books | -0.25% at best |
 | 3 | Rolling-mean predictor, bucketed by disagreement | +14% (2023) decaying to -5% (2026) |
 | 4 | Follow the line move / fade the line move | -14.25% / -0.61% |
-| 5 | Teammate absence (usage redistribution) | no monotonic signal |
+| 5 | Teammate absence (usage redistribution) | no monotonic signal (re-tested 2026-08-05 on point-in-time injury data, same answer) |
 | 6 | Bet the book that deviates most from consensus | -0.57% at best |
 | 7 | +EV vs peer consensus, threshold swept | every CI spans zero |
 | 8 | Use the sharpest book as fair value | **no sharp book exists** -- see below |
 | 9 | Totals: rolling-mean disagreement | "t=3.35" collapsed to t=0.81 |
 | 10 | Spreads: rolling-margin disagreement | significantly **negative** (t=-2.62) |
 | 11 | Multi-feature ridge / gradient boosting on totals | worse than naive on holdout |
+| 12 | Unders at the best of eleven books | **+0.66%, t=+1.10** -- the +2.27% was a grading bug, see retraction |
+| 13 | Prop shopping by market thinness / book disagreement | no residual edge once graded at one book |
 
 ## The three findings that explain the rest
 
@@ -509,11 +528,23 @@ So the answer stands, and now stands on a much wider base: **across 110
 features spanning form, matchup, style, rest, pace and player role,
 nothing holds information the closing line has not already priced.**
 
-## Player props: the unders bias is real, priced, and not the edge (2026-08-04)
+## Player props: the unders bias is real, and the edge was a grading bug
+## (2026-08-04, RETRACTED 2026-08-05)
+
+> **RETRACTION.** This section originally reported +2.27% (t = +3.65) for
+> betting unders at the best of eleven books, and called it the first
+> result in this file to survive every control. It does not survive. The
+> bet as graded was not placeable: win/loss was settled against the
+> **consensus** line while the payout came from whichever book offered the
+> best under **odds** -- two different books, and systematically the two
+> that disagree most. Graded honestly (one book: its line settles, its
+> odds pay) the same strategy returns **+0.66%, t = +1.10**, with a
+> player-clustered bootstrap P(ROI <= 0) = 0.134 and a 95% CI of -0.52% to
+> +1.91%. See [the corrected numbers](#the-corrected-numbers) below. The
+> unders-bias measurement itself (next two paragraphs) is unaffected.
 
 The largest sample in this file -- **24,011 graded (line, outcome) pairs**
-across points, rebounds, assists and threes, 2023-2026 -- and the first
-result that survives every control, though not the one it looked like.
+across points, rebounds, assists and threes, 2023-2026.
 
 **Prop lines carry no discriminating skill, by construction.** Brier
 0.243-0.249, skill 0.002-0.017. That is not a criticism: a prop line is
@@ -530,36 +561,72 @@ against realised over rate, all four markets in the same direction:
 | assists | 4,379 | 0.485 | 0.469 | -1.6 pts |
 | threes | 4,476 | 0.471 | 0.446 | -2.5 pts |
 
-Betting every under at the best of eleven books returns **+2.27%
-(t = +3.65, n = 24,011)**, positive in 4 of 4 prop types and 4 of 4
-seasons, with a player-clustered bootstrap giving P(ROI <= 0) = 0.0000 and
-a 95% CI of +1.04% to +3.53% -- clearing a 6.75% prop vig, half again the
-moneyline's.
+That gap is a real property of the market. It is not a bet.
 
-**But the edge is the SHOPPING, not the bias:**
+### The corrected numbers
 
-| strategy | ROI | t |
-|---|---:|---:|
-| under, best of 11 books | **+2.27%** | +3.64 |
-| under, median price | **-2.34%** | -3.95 |
-| over, best price (mirror) | -7.18% | -11.01 |
-| under, at each book individually | **-0.7% to -2.5%** | all negative |
+Every strategy below settles and pays at **the same book**, which is the
+only way a prop bet exists. The line you are graded against is the line you
+took.
 
-At a single book the under loses about half the vig, which is what an
-efficiently-priced bias looks like -- the books know, and they charge for
-it. Taking the best of eleven quotes swings 4.6 points and is the entire
-result.
+| strategy (under side) | n | ROI | t |
+|---|---:|---:|---:|
+| best LINE (highest under number) | 24,096 | **+0.66%** | +1.10 |
+| best ODDS, at that book's own line | 24,096 | -0.21% | -0.33 |
+| median line | 24,096 | -1.77% | -2.99 |
+| worst line (control) | 24,096 | -4.27% | -7.16 |
+| *consensus line + best odds (the retracted bug)* | *24,011* | *+2.27%* | *+3.65* |
 
-**So this is the same finding as everywhere else in this file, finally
-measured properly: execution, not prediction.** It is worth more on props
-(4.6 points) than on moneylines (~3 points at close), because prop lines
-disagree across books more than game lines do.
+The ladder from worst line to best line is clean and monotonic and worth
+about **5 points**, which is the one durable fact here: shopping props is
+worth roughly 5 points of ROI, more than the ~3 points it is worth on
+moneylines, because prop lines disagree across books more than game lines
+do. But 5 points of shopping against a 6.75% prop vig lands you at
+**breakeven, not profit**. Recovering the vig is not beating it.
 
-Caveats before anyone acts on it: it assumes the best quote is gettable at
-the close on every one of 24,011 bets, books limit prop bettors faster than
-any other market, and +2.27% is before any friction. What it is NOT is a
-forecasting edge -- nothing here predicts a player's stat line better than
-the market does.
+Season stability confirms it: +1.78%, +2.17%, +0.79%, **-1.46%** for
+2023-2026. The most recent season is negative.
+
+**Why the bug flattered the result so specifically.** The book with the
+best under odds is disproportionately the book with the *lowest* under
+line -- that is what it is being paid for. Settling that bet against the
+higher consensus line credits wins that the actual ticket lost. The error
+is largest exactly where books disagree most, which is why the
+disagreement slice looked strongest (+8.04%) before correction and
+vanished after (+0.35% at 1.0-1.5 apart).
+
+The lesson is now a rule for this repo: **a backtest that draws the line
+from one source and the price from another is not measuring a bet.**
+
+## Injury-driven usage: refuted again, on better data (2026-08-05)
+
+This re-tests hypothesis **#5** in the table above, which the first pass
+recorded as "no monotonic signal". The re-test uses point-in-time injury
+reports rather than roster inference, sizes each absence by the absent
+player's prior scoring, and grades at one book. Same answer.
+
+The mechanism is the most strongly motivated one left: when a high-usage
+teammate is out, the remaining players absorb the vacated production, so
+overs on teammates of absent stars should beat the line if the market
+under-adjusts.
+
+Absences from 13,334 point-in-time `Out` reports (filed before tip,
+within 4 days), each absent player's prior production measured strictly
+from earlier games in the same season, aggregated to 6,271 (game, team)
+pairs. Overs graded at the best available line, same book.
+
+| vacated prior PPG | n | over ROI | t |
+|---|---:|---:|---:|
+| none out | 15,414 | -8.56% | -10.93 |
+| 0-8 pts out | 3,113 | -10.03% | -5.75 |
+| 8-15 pts out | 2,250 | -5.70% | -2.78 |
+| 15+ pts out | 3,319 | -8.15% | -4.82 |
+
+**No gradient.** Overs lose about the same in every bucket including
+"nobody out", which is just the vig plus the unders bias. The unders
+mirror shows no gradient either (+0.41%, +2.60%, -1.48%, +1.44% -- not
+monotonic, none significant). By prop type at 15+ vacated points, overs
+run -2.74% to -8.59%, all negative. The market prices injuries.
 
 ## Shot quality vs shot making, and a prop hypothesis that failed (2026-08-05)
 
