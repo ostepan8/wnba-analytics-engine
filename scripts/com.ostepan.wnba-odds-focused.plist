@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  High-frequency sportsbook capture near tip-off, every 5 minutes.
+  High-frequency sportsbook capture near tip-off, every 2 minutes.
 
   Exists to answer ONE question from MODELING_FINDINGS.md: when Polymarket
   moves, is the book's old price still available? Our routine captures are
@@ -9,11 +9,20 @@
 
   Installed by scripts/install-market-sync.sh.
 
-  5 minutes looks aggressive and is not, because the command gates itself:
-  it spends ZERO requests unless a game is inside the window AND has enough
-  Polymarket activity to produce the move being studied. Off-season, an
-  empty afternoon, or a slate nobody trades all cost nothing. On a WNBA
-  game day the real spend is roughly 6 hours x 12 per hour = ~72 requests.
+  MUST be installed from the MAIN checkout, never a worktree. PLACEHOLDER_REPO
+  is filled in from wherever the install script is run, and it was once run
+  from a worktree that was later deleted - after which this agent exited 78
+  on every fire and the sync agent exited 127, both silently, for weeks.
+
+  2 minutes is chosen from the phenomenon, not from the budget: the
+  follow-through is 15-20 minutes wide, so the sampling interval has to be
+  a small fraction of it. A 6-hour pre-tip window is ~180 requests per game
+  day and a full season is ~18,000 - against a plan holding 5,000,000
+  (424 used as of 2026-08-05). Frugality was the wrong axis to optimise:
+  the previous design spent 0 requests and produced 0 usable data.
+
+  It still spends nothing when there is no game within 6 hours of tip, so
+  the off-season and empty afternoons remain free.
 
   Read-only price capture. There is no order placement anywhere in this
   codebase and none should be added (ROADMAP.md non-goals).
@@ -35,9 +44,9 @@
         <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused</string>
     </array>
 
-    <!-- 5 minutes. -->
+    <!-- 2 minutes. -->
     <key>StartInterval</key>
-    <integer>300</integer>
+    <integer>120</integer>
 
     <!-- Deliberately NOT RunAtLoad. Unlike the capture agent, a missed
          window here is not lost data - the routine hourly snapshot still

@@ -58,6 +58,14 @@ def _seed_fills(conn, game_id: int, count: int) -> None:
         )
 
 
+def _fake_result(calls: list[int]) -> object:
+    """Stand-in for a real snapshot, recording that it was reached."""
+    from wnba_engine.pipeline.odds_api_ingest import OddsApiIngestResult
+
+    calls.append(1)
+    return OddsApiIngestResult(events_seen=2, rows_seen=10, rows_inserted=10)
+
+
 def test_no_game_in_the_window_spends_nothing(clean_db) -> None:
     with clean_db.connection() as conn:
         _seed_game(conn, start_time=NOW + timedelta(days=4))
@@ -68,21 +76,38 @@ def test_no_game_in_the_window_spends_nothing(clean_db) -> None:
     assert "no game" in (result.skipped_reason or "")
 
 
-def test_a_game_nobody_trades_spends_nothing(clean_db) -> None:
-    """The subtler gate. A game inside the window but with no
-    prediction-market activity cannot produce the >=3.8 point move the
-    experiment is about, so watching it observes nothing at full price.
+def test_a_game_nobody_trades_is_still_watched_by_default(
+    clean_db, monkeypatch
+) -> None:
+    """Regression test for the failure that made this agent record nothing.
+
+    The fills gate defaulted to 25 and matched ZERO upcoming games, because
+    fills only accrue against a game once the Polymarket sync has run --
+    and when that sync broke, the gate silently closed. A capture agent
+    whose default requires another agent to be healthy is not a gate, it is
+    a second point of failure. Quota does not justify it: the plan holds
+    5,000,000 requests and a full season of this costs ~0.4%.
     """
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "wnba_engine.pipeline.focused_odds_capture.snapshot_current_odds",
+        lambda db, client: _fake_result(calls),
+    )
     with clean_db.connection() as conn:
         _seed_game(conn, start_time=NOW + timedelta(hours=2))
         conn.commit()
-    result = capture_focused_odds(clean_db, _ExplodingClient(), now=NOW)
-    assert result.requests_spent == 0
-    assert result.games_in_window == 1
-    assert "none with" in (result.skipped_reason or "")
+
+    result = capture_focused_odds(clean_db, object(), now=NOW)
+    assert result.requests_spent == 1
+    assert result.games_watched == 1
+    assert result.skipped_reason is None
+    assert len(calls) == 1
 
 
-def test_a_thinly_traded_game_is_below_the_threshold(clean_db) -> None:
+def test_the_fills_gate_still_works_when_asked_for(clean_db) -> None:
+    """Kept as opt-in. The gate is right for a quota-constrained plan, it
+    was only wrong as a default.
+    """
     with clean_db.connection() as conn:
         game_id = _seed_game(conn, start_time=NOW + timedelta(hours=2))
         _seed_fills(conn, game_id, 5)
@@ -91,6 +116,8 @@ def test_a_thinly_traded_game_is_below_the_threshold(clean_db) -> None:
         clean_db, _ExplodingClient(), now=NOW, min_fills=25
     )
     assert result.requests_spent == 0
+    assert result.games_in_window == 1
+    assert "none with" in (result.skipped_reason or "")
 
 
 def test_a_final_game_is_never_watched(clean_db) -> None:
