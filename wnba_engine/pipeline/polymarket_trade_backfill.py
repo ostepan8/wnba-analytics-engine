@@ -67,6 +67,9 @@ def backfill_polymarket_trades(
     resume: bool = True,
     captured_at: datetime | None = None,
     market_limit: int | None = None,
+    open_only: bool = False,
+    close_within: timedelta | None = None,
+    require_game_match: bool = False,
 ) -> TradeBackfillResult:
     """Walk every WNBA market and store its complete fill history.
 
@@ -84,11 +87,19 @@ def backfill_polymarket_trades(
     # pages, which is the expensive part of this backfill.
     refs: list[MarketRef] = []
     seen_ids: set[str] = set()
-    for ref in _discover_markets(gamma):
+    for ref in _discover_markets(gamma, open_only=open_only):
         if ref.condition_id in seen_ids:
             continue
         seen_ids.add(ref.condition_id)
         refs.append(ref)
+    # Gamma's open list is dominated by season futures rather than games:
+    # a live run on 2026-08-05 returned 551 open markets, of which 17
+    # matched a game, and walking all of them took 4m53s -- longer than the
+    # two-minute cadence this is meant to run on. Filtering by close time
+    # first cuts it to the handful of games actually about to tip.
+    if close_within is not None:
+        horizon = stamped + close_within
+        refs = [r for r in refs if r.close_time is not None and r.close_time <= horizon]
     if market_limit is not None:
         refs = refs[:market_limit]
 
@@ -101,6 +112,20 @@ def backfill_polymarket_trades(
         if ref.condition_id in already:
             skipped += 1
             continue
+        # Resolve the game BEFORE paying for the fills when the caller only
+        # wants game markets. A live run on 2026-08-05 fetched 104 open
+        # markets to keep 7: Polymarket lists several markets per game plus
+        # season futures, and each unmatched fetch is a full paginated walk.
+        # Ordering it this way took the refresh from 65s to a few seconds,
+        # which is the difference between fitting the two-minute capture
+        # cadence and overlapping with the next run.
+        if require_game_match:
+            with db.connection() as conn:
+                pre_game_id = _resolve_game_id(conn, ref)
+            if pre_game_id is None:
+                skipped += 1
+                continue
+
         trades = _fetch_all_trades(data, ref.condition_id, stamped)
         fetched += 1
         if not trades:
@@ -127,15 +152,23 @@ def backfill_polymarket_trades(
     return TradeBackfillResult(seen, fetched, skipped, inserted, matched)
 
 
-def _discover_markets(gamma: PolymarketClient) -> Iterator[MarketRef]:
+def _discover_markets(
+    gamma: PolymarketClient, *, open_only: bool = False
+) -> Iterator[MarketRef]:
     """Every WNBA market Gamma will list, closed ones included.
 
     BOTH passes are required and the closed one carries almost everything:
     the live ingest only ever asks for `closed=false`, so a game that has
     already resolved is invisible to it. That is fine for a price snapshot
     and useless for a history backfill.
+
+    `open_only` skips the closed pass, which is what a recurring refresh
+    wants: a settled market cannot trade again, so re-walking thousands of
+    them every few minutes is pure cost. It is also the difference between
+    a job that fits in a two-minute window and one that does not.
     """
-    for closed in (True, False):
+    passes = (False,) if open_only else (True, False)
+    for closed in passes:
         for offset in range(0, MAX_EVENT_PAGES * 100, 100):
             payload = gamma.fetch_wnba_events_page(closed=closed, limit=100, offset=offset)
             if not isinstance(payload, Sequence) or not payload:

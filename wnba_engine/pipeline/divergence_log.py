@@ -83,11 +83,20 @@ WHERE t.game_id = ANY(%(games)s)
 GROUP BY t.game_id
 """
 
-# Kalshi: the ticker suffix is the team abbreviation. Four of them differ
-# from ours (CONN/GSV/LVA/NYL), so they are aliased inline rather than
-# silently dropped -- an unmapped suffix would look like a quiet market.
+# Kalshi: the ticker suffix is the team abbreviation, and five of them
+# differ from ours. Aliased inline rather than silently dropped -- an
+# unmapped suffix reads as a quiet market, not as an error, which is the
+# worst possible failure mode for a detector gated on liquidity.
+#
+# PDX (Portland Fire) was found missing on 2026-08-05 by diffing the LIVE
+# open-market list against `teams.abbreviation`, after the historical rows
+# had already been checked and matched 100%. History alone could not have
+# caught it: Portland is a 2026 expansion team with no settled markets in
+# the backfill, so the alias only becomes load-bearing now that the log
+# reads open markets. Worth re-running that diff when a franchise changes.
 _KX_VWAP = """
-WITH ali(k, t) AS (VALUES ('CONN','CON'),('GSV','GS'),('LVA','LV'),('NYL','NY')),
+WITH ali(k, t) AS (VALUES ('CONN','CON'),('GSV','GS'),('LVA','LV'),
+                          ('NYL','NY'),('PDX','POR')),
 tagged AS (
   SELECT k.game_id, k.size, k.yes_price,
          COALESCE(a.t, split_part(k.market_ticker,'-',3)) AS tm

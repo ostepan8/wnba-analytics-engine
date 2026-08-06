@@ -609,6 +609,44 @@ def lead_lag_report() -> None:
         db.close()
 
 
+@cli.command("refresh-venue-prices")
+@click.option("--series", "series_tickers", multiple=True, default=("KXWNBAGAME",),
+              show_default=True, help="Kalshi series to refresh.")
+def refresh_venue_prices(series_tickers: tuple[str, ...]) -> None:
+    """Pull fresh fills for markets that have NOT settled yet.
+
+    The divergence log reads `polymarket_trades` and `kalshi_trades`, and
+    nothing was keeping them current: both tables are written by history
+    backfills, so on 2026-08-05 the newest fill for any upcoming game was
+    two days old and Kalshi had none at all. A detector with a ten-minute
+    lookback can never fire against that.
+
+    Only OPEN markets, on both venues. A settled market cannot trade again,
+    so re-walking the archive every few minutes is pure cost -- and for
+    Kalshi it is also the wrong tier entirely, since the historical tier
+    serves what settled before the cutoff and cannot see tonight's game.
+
+    Free on both venues (no metered quota), which is why this can run on
+    the same two-minute cadence as the capture it feeds.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with PolymarketClient(settings) as gamma, PolymarketDataClient(settings) as data:
+            pm = backfill_polymarket_trades(
+                db, gamma, data, resume=False, open_only=True,
+                close_within=timedelta(hours=48), require_game_match=True,
+            )
+            click.echo(f"polymarket: {pm}")
+        with KalshiClient(settings) as kalshi:
+            kx = backfill_kalshi_trades(
+                db, kalshi, series=series_tickers, resume=False, live=True
+            )
+            click.echo(f"kalshi: {kx}")
+    finally:
+        db.close()
+
+
 @cli.command("log-divergences")
 @click.option("--window-hours", default=6, show_default=True,
               help="How long before tip-off a game becomes worth watching.")
