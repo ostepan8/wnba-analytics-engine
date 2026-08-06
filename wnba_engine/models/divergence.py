@@ -31,3 +31,10 @@ class DivergenceObservation:
     venue_volume: float
     venue_trade_count: int
     edge: float
+    #: True once the game has tipped. The same divergence means something
+    #: different either side of that line: pre-tip a stale book price is
+    #: minutes old at worst, in-play it can be seconds old and already
+    #: wrong. Split every result on this before reading it.
+    in_play: bool = False
+    #: Signed minutes from tip-off, negative before.
+    minutes_from_tip: float | None = None

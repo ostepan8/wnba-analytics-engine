@@ -57,6 +57,21 @@ logger = logging.getLogger(__name__)
 #: polling all day.
 DEFAULT_WINDOW = timedelta(hours=6)
 
+#: How long AFTER tip-off a game stays worth capturing.
+#:
+#: Added 2026-08-06. Until then this agent only watched games that had not
+#: started, which meant the sportsbook side of the in-play market was never
+#: deliberately captured -- the 3,888 in-play rows we had arrived by
+#: accident, from an hourly snapshot that happened not to filter by tip.
+#: That is the wrong two-thirds to be blind to: 65-78% of prediction-market
+#: volume trades after tip-off, and the divergence there is measured four
+#: times more often and five times larger.
+#:
+#: A WNBA game runs about two hours plus stoppages; three hours covers
+#: overtime and a late start without polling an already-finished game for
+#: long, since `status <> 'final'` closes it out anyway.
+DEFAULT_IN_PLAY_WINDOW = timedelta(hours=3)
+
 #: Minimum Polymarket fills already recorded against a game for it to be
 #: worth watching. **Defaults to 0 -- off.**
 #:
@@ -80,7 +95,7 @@ SELECT g.id, g.start_time, count(t.id) AS fills
 FROM games g
 LEFT JOIN polymarket_trades t ON t.game_id = g.id
 WHERE g.status <> 'final'
-  AND g.start_time BETWEEN %(now)s AND %(until)s
+  AND g.start_time BETWEEN %(since)s AND %(until)s
 GROUP BY g.id, g.start_time
 HAVING count(t.id) >= %(min_fills)s
 ORDER BY g.start_time
@@ -101,6 +116,7 @@ def capture_focused_odds(
     client: OddsApiClient,
     *,
     window: timedelta = DEFAULT_WINDOW,
+    in_play_window: timedelta = DEFAULT_IN_PLAY_WINDOW,
     min_fills: int = DEFAULT_MIN_FILLS,
     now: datetime | None = None,
 ) -> FocusedCaptureResult:
@@ -112,14 +128,15 @@ def capture_focused_odds(
     """
     at = now or datetime.now(UTC)
     with db.connection() as conn:
+        since = at - in_play_window
         in_window = conn.execute(
             "SELECT count(*) FROM games WHERE status <> 'final' "
             "AND start_time BETWEEN %s AND %s",
-            (at, at + window),
+            (since, at + window),
         ).fetchone()[0]
         targets = conn.execute(
             _TARGETS_SQL,
-            {"now": at, "until": at + window, "min_fills": min_fills},
+            {"since": since, "until": at + window, "min_fills": min_fills},
         ).fetchall()
 
     if not targets:

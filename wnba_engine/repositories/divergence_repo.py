@@ -21,8 +21,8 @@ from wnba_engine.models.divergence import DivergenceObservation
 _INSERT = """
 INSERT INTO divergence_observations (
     game_id, observed_at, venue, side, book_vendor, book_odds, book_implied,
-    venue_fair, venue_volume, venue_trade_count, edge
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    venue_fair, venue_volume, venue_trade_count, edge, in_play, minutes_from_tip
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT ON CONSTRAINT divergence_observations_moment_key DO NOTHING
 """
 
@@ -78,6 +78,8 @@ def record_divergences(
                 o.venue_volume,
                 o.venue_trade_count,
                 o.edge,
+                o.in_play,
+                o.minutes_from_tip,
             ),
         )
         inserted += cur.rowcount

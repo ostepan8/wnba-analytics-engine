@@ -43,6 +43,12 @@ logger = logging.getLogger(__name__)
 #: capture's window so the two agents look at the same games.
 DEFAULT_WINDOW = timedelta(hours=6)
 
+#: How long after tip a game stays in the log. Matches the capture agent's
+#: own in-play window so the two look at the same games; see
+#: db/migrations/0030_divergence_in_play.sql for why in-play is included at
+#: all, and why its result must be read through `price_survived`.
+DEFAULT_IN_PLAY_WINDOW = timedelta(hours=3)
+
 #: Trailing window over which the venue price is size-weighted. Short
 #: enough to be a current price, long enough that a quiet minute does not
 #: erase the market.
@@ -50,11 +56,12 @@ DEFAULT_LOOKBACK = timedelta(minutes=10)
 
 _LATEST_QUOTES = """
 SELECT DISTINCT ON (o.game_id, o.vendor)
-       o.game_id, o.vendor, o.moneyline_home_odds, o.moneyline_away_odds
+       o.game_id, o.vendor, o.moneyline_home_odds, o.moneyline_away_odds,
+       g.start_time
 FROM sportsbook_game_odds o
 JOIN games g ON g.id = o.game_id
 WHERE g.status <> 'final'
-  AND g.start_time BETWEEN %(now)s AND %(until)s
+  AND g.start_time BETWEEN %(from_time)s AND %(until)s
   AND o.captured_at <= %(now)s
   AND o.captured_at > %(now)s - interval '2 hours'
   AND o.moneyline_home_odds IS NOT NULL
@@ -138,23 +145,29 @@ def log_divergences(
     db: Database,
     *,
     window: timedelta = DEFAULT_WINDOW,
+    in_play_window: timedelta = DEFAULT_IN_PLAY_WINDOW,
     lookback: timedelta = DEFAULT_LOOKBACK,
     min_volume: float = DEFAULT_MIN_VOLUME,
     now: datetime | None = None,
 ) -> DivergenceLogResult:
     """Detect divergences against current prices and append them."""
     at = now or datetime.now(UTC)
-    params = {"now": at, "until": at + window}
+    # `now` bounds the QUOTE (never read a price from the future);
+    # `from_time`/`until` bound the GAME. Two different clocks in one query,
+    # which is why they are named apart rather than both called "since".
+    params = {"now": at, "from_time": at - in_play_window, "until": at + window}
     with db.connection() as conn:
         rows = conn.execute(_LATEST_QUOTES, params).fetchall()
         if not rows:
             return DivergenceLogResult()
 
         quotes: dict[int, list[BookQuote]] = defaultdict(list)
-        for game_id, vendor, home, away in rows:
+        tip_off: dict[int, datetime] = {}
+        for game_id, vendor, home, away, start_time in rows:
             quotes[game_id].append(
                 BookQuote(vendor=vendor, home_odds=int(home), away_odds=int(away))
             )
+            tip_off[game_id] = start_time
 
         vparams = {"games": list(quotes), "now": at, "since": at - lookback}
         prices: list[VenuePrice] = []
@@ -170,6 +183,7 @@ def log_divergences(
                     trade_count=int(trades),
                 )
                 prices.append(price)
+                minutes = (at - tip_off[game_id]).total_seconds() / 60.0
                 for d in detect_divergences(
                     quotes[game_id], price, min_volume=min_volume
                 ):
@@ -177,6 +191,8 @@ def log_divergences(
                         DivergenceObservation(
                             game_id=game_id,
                             observed_at=at,
+                            in_play=minutes >= 0,
+                            minutes_from_tip=minutes,
                             venue=venue,
                             side=d.side,
                             book_vendor=d.book_vendor,
