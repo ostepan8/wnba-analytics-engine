@@ -117,6 +117,40 @@ class KalshiClient:
             params["cursor"] = cursor
         return self._http.get_json("historical/trades", params=params)
 
+    def fetch_open_markets_page(
+        self, series_ticker: str, *, cursor: str | None = None, limit: int = 200
+    ) -> object:
+        """GET /markets?status=open -- the markets a game has not settled yet.
+
+        `fetch_historical_markets_page` is the wrong tier for this: it serves
+        what settled BEFORE the cutoff, so a game tipping tonight is not in
+        it. Needed because the divergence log prices games that have not
+        been played, which is the only kind of game its answer is about.
+        """
+        params: dict[str, object] = {
+            "series_ticker": series_ticker,
+            "status": "open",
+            "limit": limit,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("markets", params=params)
+
+    def fetch_live_trades_page(
+        self, market_ticker: str, *, cursor: str | None = None, limit: int = 1000
+    ) -> object:
+        """GET /markets/trades?ticker=... -- fills on an unsettled market.
+
+        Same record shape as /historical/trades (verified 2026-08-05:
+        trade_id, created_time, yes_price_dollars, no_price_dollars,
+        count_fp, taker_side, is_block_trade), so `parse_trades` handles
+        both tiers without a second parser.
+        """
+        params: dict[str, object] = {"ticker": market_ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._http.get_json("markets/trades", params=params)
+
     def close(self) -> None:
         self._http.close()
 

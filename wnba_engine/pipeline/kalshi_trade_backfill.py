@@ -64,12 +64,21 @@ def backfill_kalshi_trades(
     before: datetime | None = None,
     captured_at: datetime | None = None,
     market_limit: int | None = None,
+    live: bool = False,
 ) -> KalshiTradeBackfillResult:
-    """Store every historical-tier trade for the named series.
+    """Store trades for the named series.
 
     `before` filters to markets closing before an instant -- pass
     `2026-01-01` to fetch only the 2025 season, which is the out-of-sample
     year the existing Kalshi analysis lacks. Omit it for everything.
+
+    `live=True` switches BOTH the market list and the trade fetch to the
+    live tier, which is the only tier that can see a game that has not been
+    played yet. The historical tier serves what settled before Kalshi's
+    cutoff, so it is exactly the wrong place to look for tonight's game --
+    and the divergence log only cares about games that have not happened.
+    Implies `resume=False` in practice: an open market trades continuously,
+    so skipping it because some of its fills are stored would freeze it.
     """
     stamped = captured_at or datetime.now(UTC)
     with db.connection() as conn:
@@ -81,7 +90,7 @@ def backfill_kalshi_trades(
 
     seen = fetched = skipped = inserted = matched = 0
     for series_ticker in series:
-        markets = list(_discover(client, series_ticker, before))
+        markets = list(_discover(client, series_ticker, before, live=live))
         if market_limit is not None:
             markets = markets[:market_limit]
         for ticker, title, event_ticker in markets:
@@ -89,7 +98,7 @@ def backfill_kalshi_trades(
             if ticker in already:
                 skipped += 1
                 continue
-            trades = _fetch_trades(client, ticker, series_ticker, stamped)
+            trades = _fetch_trades(client, ticker, series_ticker, stamped, live=live)
             if not trades:
                 continue
             fetched += 1
@@ -113,12 +122,16 @@ def backfill_kalshi_trades(
 
 
 def _discover(
-    client: KalshiClient, series_ticker: str, before: datetime | None
+    client: KalshiClient, series_ticker: str, before: datetime | None, *, live: bool = False
 ) -> Iterator[tuple[str, str, str]]:
-    """(market ticker, title, event ticker) from the historical tier."""
+    """(market ticker, title, event ticker) from the requested tier."""
     cursor: str | None = None
     for _ in range(MAX_MARKET_PAGES):
-        payload = client.fetch_historical_markets_page(series_ticker, cursor=cursor)
+        payload = (
+            client.fetch_open_markets_page(series_ticker, cursor=cursor)
+            if live
+            else client.fetch_historical_markets_page(series_ticker, cursor=cursor)
+        )
         if not isinstance(payload, dict):
             return
         markets = payload.get("markets") or []
@@ -142,12 +155,23 @@ def _discover(
 
 
 def _fetch_trades(
-    client: KalshiClient, ticker: str, series_ticker: str, captured_at: datetime
+    client: KalshiClient,
+    ticker: str,
+    series_ticker: str,
+    captured_at: datetime,
+    *,
+    live: bool = False,
 ) -> tuple[KalshiTrade, ...]:
     collected: list[KalshiTrade] = []
     cursor: str | None = None
     for _ in range(MAX_TRADE_PAGES):
-        payload = client.fetch_historical_trades_page(ticker, cursor=cursor)
+        # Both tiers return the same record shape, so one parser serves
+        # both -- verified 2026-08-05 against /markets/trades.
+        payload = (
+            client.fetch_live_trades_page(ticker, cursor=cursor)
+            if live
+            else client.fetch_historical_trades_page(ticker, cursor=cursor)
+        )
         batch, cursor = parse_trades(
             payload,
             captured_at=captured_at,

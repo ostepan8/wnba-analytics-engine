@@ -24,12 +24,19 @@
   It still spends nothing when there is no game within 6 hours of tip, so
   the off-season and empty afternoons remain free.
 
-  The capture is followed by log-divergences, which spends NO requests.
-  It only reads what was just captured and compares it to the Polymarket
-  and Kalshi prices already in the database. That pairing is the point of
-  the two-minute cadence: MODELING_FINDINGS.md establishes the divergence
-  effect and cannot establish whether the price is still there when you
-  could act, because the historical captures were an hour apart.
+  Three steps, only the first of which spends the-odds-api quota:
+
+    capture-odds-focused   one metered request, the sportsbook side
+    refresh-venue-prices   Polymarket + Kalshi fills, both free and unmetered
+    log-divergences        pure DB read, compares the two
+
+  The middle step is not optional. The divergence log reads the venue trade
+  tables with a ten-minute lookback, and nothing else keeps them current:
+  on 2026-08-05 the newest fill for an upcoming game was two days old and
+  Kalshi had none, so the detector would have logged a confident silence.
+  It is scoped to open markets closing inside 48 hours, and resolves the
+  game before paying for fills, which is what takes it from 4m53s to ~15s
+  and lets it fit inside this interval.
 
   Read-only price capture. There is no order placement anywhere in this
   codebase and none should be added (ROADMAP.md non-goals).
@@ -48,7 +55,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused &amp;&amp; uv run wnba-engine log-divergences</string>
+        <string>cd PLACEHOLDER_REPO &amp;&amp; uv run wnba-engine capture-odds-focused &amp;&amp; uv run wnba-engine refresh-venue-prices &amp;&amp; uv run wnba-engine log-divergences</string>
     </array>
 
     <!-- 2 minutes. -->
