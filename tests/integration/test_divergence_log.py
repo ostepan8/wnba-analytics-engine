@@ -85,6 +85,54 @@ def test_records_a_divergence_when_the_book_is_below_venue_fair(clean_db) -> Non
     assert float(row[5]) == pytest.approx(0.65 - 0.5238, abs=1e-3)
 
 
+def test_a_game_already_under_way_is_logged_and_tagged(clean_db) -> None:
+    """In-play used to be invisible: the window started at `now`, so a game
+    that had tipped was excluded. That skipped 65-78% of all
+    prediction-market volume, and the regime where divergence is measured
+    four times as often and five times as large.
+    """
+    with clean_db.connection() as conn:
+        gid = _seed_game(conn, start_time=NOW - timedelta(minutes=40))
+        _seed_quote(conn, gid, "fanduel", -110, -110, NOW - timedelta(minutes=1))
+        _seed_pm(conn, gid, 0.65, 5_000.0, NOW - timedelta(minutes=2))
+        conn.commit()
+
+    assert log_divergences(clean_db, now=NOW).rows_inserted == 1
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT in_play, minutes_from_tip FROM divergence_observations"
+        ).fetchone()
+    assert row[0] is True
+    assert float(row[1]) == pytest.approx(40.0, abs=0.1)
+
+
+def test_a_pre_tip_observation_is_tagged_negative_minutes(clean_db) -> None:
+    with clean_db.connection() as conn:
+        gid = _seed_game(conn, start_time=NOW + timedelta(hours=2))
+        _seed_quote(conn, gid, "fanduel", -110, -110, NOW - timedelta(minutes=1))
+        _seed_pm(conn, gid, 0.65, 5_000.0, NOW - timedelta(minutes=2))
+        conn.commit()
+    log_divergences(clean_db, now=NOW)
+    with clean_db.connection() as conn:
+        row = conn.execute(
+            "SELECT in_play, minutes_from_tip FROM divergence_observations"
+        ).fetchone()
+    assert row[0] is False
+    assert float(row[1]) == pytest.approx(-120.0, abs=0.1)
+
+
+def test_a_long_finished_game_falls_outside_the_in_play_window(clean_db) -> None:
+    """`status <> 'final'` is not enough on its own -- a game whose status
+    never updated would otherwise be polled forever.
+    """
+    with clean_db.connection() as conn:
+        gid = _seed_game(conn, start_time=NOW - timedelta(hours=9))
+        _seed_quote(conn, gid, "fanduel", -110, -110, NOW - timedelta(hours=9))
+        _seed_pm(conn, gid, 0.65, 5_000.0, NOW - timedelta(minutes=2))
+        conn.commit()
+    assert log_divergences(clean_db, now=NOW).rows_inserted == 0
+
+
 def test_rerunning_the_same_moment_inserts_nothing(clean_db) -> None:
     """Every 2 minutes for 6 hours is 180 runs a game; without this the
     table would fill with the same observation restated.

@@ -52,6 +52,7 @@ from wnba_engine.pipeline.divergence_log import (
     log_divergences,
     recheck_prices,
 )
+from wnba_engine.pipeline.divergence_report import build_divergence_report
 from wnba_engine.pipeline.espn_ingest import backfill, sync_date
 from wnba_engine.pipeline.espn_transactions_ingest import (
     backfill_season as backfill_transactions_season,
@@ -679,6 +680,27 @@ def log_divergences_cmd(window_hours: int, lookback_minutes: int, min_volume: fl
         )
         if result.divergences_found:
             click.echo(result)
+    finally:
+        db.close()
+
+
+@cli.command("divergence-report")
+def divergence_report_cmd() -> None:
+    """Read the divergence log as a paper-trade ledger.
+
+    Split pre-tip from in-play and never pooled: in-play shows divergence
+    four times as often and five times as large, which is either the real
+    opportunity or exactly what a stale quote looks like. `survival` is
+    what tells them apart.
+
+    Judge on CLV, not ROI. CLV reaches t=3 in ~120 observations; ROI needs
+    ~10,600, and simulating a genuine +1.94% edge at n=915 still shows a
+    loss 28% of the time.
+    """
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        click.echo(build_divergence_report(db))
     finally:
         db.close()
 
