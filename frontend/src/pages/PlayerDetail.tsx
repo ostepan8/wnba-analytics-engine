@@ -2,13 +2,22 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import PropLines from "../components/PropLines";
-import { Async, Panel, PlayerAvatar, Section, SeasonPicker, Stat } from "../components/ui";
+import {
+  Async,
+  Panel,
+  PlayerAvatar,
+  PlayerCell,
+  Section,
+  SeasonPicker,
+  Stat,
+} from "../components/ui";
 import type {
   EfficiencyRow,
   GameLogRow,
   PlayerProfile,
   PlayerSeason,
   ShotChartResponse,
+  ShotDefenseResponse,
 } from "../lib/api";
 import { useQuery } from "../lib/api";
 import {
@@ -45,6 +54,16 @@ export default function PlayerDetail() {
   // silently omit it because they fell under someone else's cutoff.
   const efficiency = useQuery<{ players: EfficiencyRow[] }>(
     playerId ? `/efficiency?season=${season}&min_games=1&limit=500` : null,
+  );
+  // Which team to ask "who shoots well against them" about isn't known from
+  // the URL -- it only exists once the player's own season row has loaded, so
+  // this reads player.data directly rather than through the Async below.
+  const teamId =
+    player.data?.seasons.find((row) => row.season === season)?.team_id ??
+    player.data?.seasons[0]?.team_id ??
+    null;
+  const shotDefense = useQuery<ShotDefenseResponse>(
+    teamId ? `/teams/${teamId}/defense?season=${season}` : null,
   );
 
   return (
@@ -201,6 +220,61 @@ export default function PlayerDetail() {
                                   <td>{pct(zone.makes / zone.attempts)}</td>
                                 </tr>
                               ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Async>
+                </Panel>
+              </Section>
+
+              <Section title="Shot defense" note={`How ${current?.team_abbr ?? "their team"} allows shots, ${season}.`}>
+                <Panel tools={<ShotChartLegend />}>
+                  <Async query={shotDefense} empty={(shotData) => shotData.cells.length === 0}>
+                    {(shotData) => (
+                      <>
+                        <ShotChart
+                          cells={shotData.cells}
+                          binSize={shotData.bin_size}
+                          midpoint={shotData.points_per_attempt ?? 1}
+                          minAttempts={2}
+                        />
+                        <p className="prose" style={{ marginTop: "var(--s-3)" }}>
+                          Where opponents shoot against this player&apos;s team, not this player&apos;s
+                          own defense specifically — shot data records who took a shot, never who
+                          guarded it.
+                        </p>
+                      </>
+                    )}
+                  </Async>
+                </Panel>
+              </Section>
+
+              <Section title="Who's gone off" note="Opposing shooters, ranked by points scored.">
+                <Panel flush>
+                  <Async query={shotDefense} empty={(shotData) => shotData.by_player.length === 0}>
+                    {(shotData) => (
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Player</th>
+                              <th>Att</th>
+                              <th>FG%</th>
+                              <th>PTS</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shotData.by_player.map((row) => (
+                              <tr key={row.player_id}>
+                                <td>
+                                  <PlayerCell playerId={row.player_id} name={row.full_name} />
+                                </td>
+                                <td>{row.attempts}</td>
+                                <td>{pct(row.makes / row.attempts)}</td>
+                                <td>{row.points}</td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
                       </div>

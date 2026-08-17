@@ -476,6 +476,45 @@ export default function TeamDetail() {
                 offensive chart above bin for bin.
               </p>
             </Panel>
+
+            <Panel
+              title="Who's gone off against this defense"
+              hint="opposing shooters, ranked by points scored"
+              flush
+            >
+              <Async query={shotDefense} empty={(d) => d.by_player.length === 0}>
+                {(shotData) => (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Player</th>
+                          <th>Team</th>
+                          <th>G</th>
+                          <th>Att</th>
+                          <th>FG%</th>
+                          <th>PTS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shotData.by_player.map((row) => (
+                          <tr key={row.player_id}>
+                            <td>
+                              <PlayerCell playerId={row.player_id} name={row.full_name} />
+                            </td>
+                            <td>{row.team_abbr ?? "—"}</td>
+                            <td>{row.games}</td>
+                            <td>{row.attempts}</td>
+                            <td>{pct(row.makes / row.attempts)}</td>
+                            <td>{row.points}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Async>
+            </Panel>
           </Section>
         </>
       )}

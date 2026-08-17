@@ -101,6 +101,35 @@ SELECT s.shot_zone_basic AS zone,
  ORDER BY 2 DESC
 """
 
+# Same defensive set as _SHOT_DEFENCE, grouped by the opposing SHOOTER instead
+# of court position -- who has actually gone off against this defence, not just
+# where. s.team_id is the shooter's own team here (never the defending team, by
+# the WHERE clause below), so it doubles as "which opponent" with no extra join.
+_SHOT_DEFENCE_BY_PLAYER = """
+SELECT s.player_id,
+       p.full_name,
+       t.abbreviation AS team_abbr,
+       count(DISTINCT s.game_id)      AS games,
+       count(*)                       AS attempts,
+       count(*) FILTER (WHERE s.made) AS makes,
+       sum(CASE WHEN s.made
+                THEN CASE WHEN s.shot_zone_basic LIKE '%%3%%' THEN 3 ELSE 2 END
+                ELSE 0 END)           AS points
+  FROM shot_locations s
+  JOIN games g ON g.id = s.game_id
+  LEFT JOIN players p ON p.id = s.player_id
+  LEFT JOIN teams t ON t.id = s.team_id
+ WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
+   AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
+   AND s.team_id IS DISTINCT FROM %(team_id)s::bigint
+   AND s.player_id IS NOT NULL
+ GROUP BY s.player_id, p.full_name, t.abbreviation
+HAVING count(*) >= %(min_attempts)s
+ ORDER BY points DESC
+ LIMIT %(limit)s
+"""
+
 # Every player prop posted for one game, one consensus line per player-market.
 _GAME_PLAYER_PROPS = """
 WITH per_market AS (
@@ -172,6 +201,16 @@ def fetch_shot_defence_zones(
     conn: Connection, team_id: int, *, season: int
 ) -> list[dict[str, Any]]:
     return _all(conn, _SHOT_DEFENCE_ZONES, {"team_id": team_id, "season": season})
+
+
+def fetch_shot_defence_by_player(
+    conn: Connection, team_id: int, *, season: int, min_attempts: int = 10, limit: int = 15
+) -> list[dict[str, Any]]:
+    return _all(
+        conn,
+        _SHOT_DEFENCE_BY_PLAYER,
+        {"team_id": team_id, "season": season, "min_attempts": min_attempts, "limit": limit},
+    )
 
 
 def fetch_game_player_props(conn: Connection, game_id: int) -> list[dict[str, Any]]:
