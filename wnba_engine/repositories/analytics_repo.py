@@ -49,6 +49,10 @@ SELECT
 _RECENT_GAMES = """
 SELECT g.id, g.season, g.season_type, g.start_time, g.status,
        g.home_score, g.away_score, g.venue_name,
+       -- The ids, not just the names: a client cannot render a team's logo or
+       -- link to it from an abbreviation, and looking one up per row would turn
+       -- a schedule into a hundred extra requests.
+       g.home_team_id, g.away_team_id,
        home.name AS home_team, home.abbreviation AS home_abbr,
        away.name AS away_team, away.abbreviation AS away_abbr
   FROM games g
@@ -66,6 +70,7 @@ SELECT g.id, g.season, g.season_type, g.start_time, g.status,
 _GAME_BY_ID = """
 SELECT g.id, g.season, g.season_type, g.start_time, g.status,
        g.home_score, g.away_score, g.venue_name, g.attendance,
+       g.home_team_id, g.away_team_id,
        home.name AS home_team, home.abbreviation AS home_abbr,
        away.name AS away_team, away.abbreviation AS away_abbr
   FROM games g

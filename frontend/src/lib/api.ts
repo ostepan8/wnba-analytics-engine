@@ -195,6 +195,8 @@ export interface GameLogRow {
 export interface GameRow {
   id: number;
   season: number;
+  home_team_id: number;
+  away_team_id: number;
   season_type: string | null;
   start_time: string;
   status: string;
@@ -209,8 +211,6 @@ export interface GameRow {
 
 export interface GameDetail extends GameRow {
   attendance: number | null;
-  home_team_id?: number;
-  away_team_id?: number;
 }
 
 export interface BoxScoreRow {
