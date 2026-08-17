@@ -4,30 +4,47 @@ import type { StandingRow, StandingsResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, rate, seasonOptions } from "../lib/format";
 
-/** Status is a badge AND a word — never a colour on its own. */
-function RaceBadge({ row, raceOpen }: { row: StandingRow; raceOpen: boolean }) {
+/**
+ * Mathematical status ONLY — never position.
+ *
+ * "Above the line" and "clinched" are different claims, and so are "below the
+ * line" and "eliminated". Collapsing either pair turns a standings table into
+ * misinformation: a ninth-placed team with fifteen games left is not out, and
+ * saying so is worse than saying nothing.
+ *
+ * Where a team currently sits is carried by the seed number and the drawn cut
+ * line. This column answers a different question: is it settled?
+ */
+function RaceBadge({ row }: { row: StandingRow }) {
   if (row.clinched) {
     return (
       <span className="badge badge--good" title="Cannot be caught for a top-eight finish">
-        ✓ {raceOpen ? "Clinched" : "In"}
+        ✓ Clinched
       </span>
     );
   }
   if (row.eliminated) {
     return (
-      <span className="badge badge--bad" title="Cannot reach a top-eight finish">
+      <span className="badge badge--bad" title="Cannot reach a top-eight finish, whatever happens">
         ✕ Eliminated
       </span>
     );
   }
-  if (row.magic_number != null) {
+  // Undecided. Distinguished by where it sits, but never labelled as settled.
+  if (row.in_playoff_position) {
     return (
-      <span className="badge" title="Wins still needed to be uncatchable">
-        Magic {row.magic_number}
+      <span className="badge" title="Holding a place, but not yet mathematically safe">
+        In position
+        {row.magic_number != null && ` · magic ${row.magic_number}`}
       </span>
     );
   }
-  return <span className="badge">In the hunt</span>;
+  return (
+    <span className="badge" title="Outside the eight, but still mathematically alive">
+      Still alive
+      {row.games_behind_playoff ? ` · ${row.games_behind_playoff} back` : ""}
+    </span>
+  );
 }
 
 function StandingsTable({ data }: { data: StandingsResponse }) {
@@ -109,7 +126,7 @@ function StandingsTable({ data }: { data: StandingsResponse }) {
                   <td>{row.conference_record ?? "—"}</td>
                   <td className="num">{row.games_remaining}</td>
                   <td>
-                    <RaceBadge row={row} raceOpen={data.race_open} />
+                    <RaceBadge row={row} />
                   </td>
                 </tr>
               </Fragment>
@@ -145,10 +162,15 @@ export default function Teams() {
         <p className="prose" style={{ marginTop: "var(--s-3)" }}>
           The WNBA has seeded its postseason league-wide since 2016 — the eight best records
           qualify regardless of conference, so a team can lead its conference and miss. The
-          conference ranking is shown under each team name for reference, but it does not decide
-          a berth. <strong>Clinched and eliminated are arithmetic</strong>, computed from wins and
-          games remaining; tiebreakers are not modelled, so a one-game margin with a tie in play
-          is treated conservatively.
+          conference ranking under each team name is context, not a berth.
+        </p>
+        <p className="prose" style={{ marginTop: "var(--s-2)" }}>
+          <strong>The status column is arithmetic, not position.</strong> “Eliminated” means a
+          team cannot reach a top-eight finish even winning out — never merely that it sits below
+          the line. A team ninth with games in hand reads “still alive”, and one holding eighth
+          without being safe reads “in position”. Both sides of the cut can be undecided at once.
+          Clinching is computed from wins and games remaining and stays conservative: tiebreakers
+          are not modelled, so a team is only called settled when no tiebreak could change it.
         </p>
       </Section>
 
@@ -181,7 +203,7 @@ export default function Teams() {
                         </span>
                       </div>
                       <div style={{ marginTop: "var(--s-2)" }}>
-                        <RaceBadge row={row} raceOpen={data.race_open} />
+                        <RaceBadge row={row} />
                       </div>
                     </div>
                   </div>

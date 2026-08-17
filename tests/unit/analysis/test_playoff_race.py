@@ -140,3 +140,41 @@ class TestGamesBehind:
         for row in ranked[:PLAYOFF_SPOTS]:
             assert row["games_behind_playoff"] == 0
         assert ranked[PLAYOFF_SPOTS]["games_behind_playoff"] > 0
+
+
+class TestPositionIsNotStatus:
+    """The distinction the standings table lives or dies on.
+
+    Sitting below the cut line is not elimination, and sitting above it is not a
+    berth. Conflating either one turns a standings page into misinformation.
+    """
+
+    def test_a_team_below_the_cut_with_games_left_is_not_eliminated(self) -> None:
+        ranked = rank_teams(
+            league(*[(i, 20, 10, 8) for i in range(1, 9)], (99, 14, 16, 12))
+        )
+        chaser = by_id(ranked)[99]
+        assert chaser["in_playoff_position"] is False
+        assert chaser["eliminated"] is False
+
+    def test_a_team_inside_the_cut_can_still_be_unsettled(self) -> None:
+        ranked = rank_teams(league(*[(i, 15, 15, 12) for i in range(1, 13)]))
+        leader = ranked[0]
+        assert leader["in_playoff_position"] is True
+        assert leader["clinched"] is False
+
+    def test_both_sides_of_the_cut_can_be_undecided_at_once(self) -> None:
+        """Mid-season, nothing is settled either way — the table must be able to
+        say that rather than splitting the league in two."""
+        ranked = rank_teams(league(*[(i, 10, 10, 20) for i in range(1, 13)]))
+        assert all(not row["clinched"] and not row["eliminated"] for row in ranked)
+        assert any(row["in_playoff_position"] for row in ranked)
+        assert any(not row["in_playoff_position"] for row in ranked)
+
+    def test_elimination_needs_rivals_beyond_reach_not_merely_ahead(self) -> None:
+        """Eight teams are ahead right now, but every one is still catchable, so
+        the ninth-placed team is emphatically not out."""
+        ranked = rank_teams(
+            league(*[(i, 16, 14, 10) for i in range(1, 9)], (99, 15, 15, 10))
+        )
+        assert by_id(ranked)[99]["eliminated"] is False
