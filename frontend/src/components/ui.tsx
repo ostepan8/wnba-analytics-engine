@@ -4,6 +4,7 @@
 
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import type { Query } from "../lib/api";
 import { playerImage, teamLogo } from "../lib/api";
 
 export function Panel({
@@ -159,6 +160,88 @@ export function TeamCell({
   );
 }
 
+/** The fields a playoff-race badge needs. Both `StandingRow` (the full league
+ *  table) and `StandingRowLite` (what a team profile carries) satisfy this
+ *  structurally — `StandingRowLite` just omits `magic_number` and
+ *  `in_playoff_position`, which are treated as optional here. */
+export interface RaceStatus {
+  clinched?: boolean;
+  eliminated?: boolean;
+  in_playoff_position?: boolean;
+  magic_number?: number | null;
+  games_behind_playoff?: number | null;
+}
+
+/**
+ * Mathematical status ONLY — never position.
+ *
+ * "Above the line" and "clinched" are different claims, and so are "below the
+ * line" and "eliminated". Collapsing either pair turns a standings table into
+ * misinformation: a ninth-placed team with fifteen games left is not out, and
+ * saying so is worse than saying nothing.
+ */
+export function RaceBadge({ status }: { status: RaceStatus }) {
+  if (status.clinched) {
+    return (
+      <span className="badge badge--good" title="Cannot be caught for a top-eight finish">
+        ✓ Clinched
+      </span>
+    );
+  }
+  if (status.eliminated) {
+    return (
+      <span className="badge badge--bad" title="Cannot reach a top-eight finish, whatever happens">
+        ✕ Eliminated
+      </span>
+    );
+  }
+  // StandingRowLite has no in_playoff_position — "0 games behind the last
+  // playoff spot" means the same thing and is what's actually available there.
+  const inPosition = status.in_playoff_position ?? status.games_behind_playoff === 0;
+  if (inPosition) {
+    return (
+      <span className="badge" title="Holding a place, but not yet mathematically safe">
+        In position
+        {status.magic_number != null && ` · magic ${status.magic_number}`}
+      </span>
+    );
+  }
+  return (
+    <span className="badge" title="Outside the eight, but still mathematically alive">
+      Still alive
+      {status.games_behind_playoff ? ` · ${status.games_behind_playoff} back` : ""}
+    </span>
+  );
+}
+
+/** A clickable table header cell wired to `useSort`. `aria-sort` carries the
+ *  state to assistive tech; the glyph is `aria-hidden` since it repeats what
+ *  `aria-sort` already says. */
+export function SortTh<K extends string>({
+  label,
+  column,
+  active,
+  direction,
+  onSort,
+}: {
+  label: string;
+  column: K;
+  active: boolean;
+  direction: "asc" | "desc";
+  onSort: (column: K) => void;
+}) {
+  return (
+    <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-th" onClick={() => onSort(column)}>
+        {label}
+        <span aria-hidden="true" className={active ? "sort-th__arrow" : "sort-th__arrow sort-th__arrow--dim"}>
+          {active && direction === "asc" ? "▲" : "▼"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 export function SeasonPicker({
   season,
   seasons,
@@ -200,6 +283,20 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>;
 }
 
+/** The failed state: what broke, and a way to try again without reloading
+ *  the whole page. A transient network blip is common enough here that
+ *  forcing a full reload to recover from it is its own small annoyance. */
+function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="empty">
+      <p>Could not load this: {message}</p>
+      <button type="button" className="control" style={{ marginTop: "var(--s-3)" }} onClick={onRetry}>
+        Retry
+      </button>
+    </div>
+  );
+}
+
 /**
  * One place that decides what "loading", "failed" and "nothing here" look like.
  *
@@ -213,13 +310,13 @@ export function Async<T>({
   skeleton,
   children,
 }: {
-  query: { data: T | undefined; error: Error | undefined; loading: boolean };
+  query: Query<T>;
   empty?: (data: T) => boolean;
   skeleton?: ReactNode;
   children: (data: T) => ReactNode;
 }) {
   if (query.loading) return <>{skeleton ?? <Skeleton />}</>;
-  if (query.error) return <Empty>Could not load this: {query.error.message}</Empty>;
+  if (query.error) return <Failed message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <Empty>No data.</Empty>;
   if (empty?.(query.data)) return <Empty>Nothing recorded here yet.</Empty>;
   return <>{children(query.data)}</>;

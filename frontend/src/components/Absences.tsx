@@ -16,7 +16,7 @@
 
 import { Link } from "react-router-dom";
 import type { AbsenceBucket, MatchupSide } from "../lib/api";
-import { badgeClass } from "../lib/injury";
+import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
 
 function Line({
@@ -59,7 +59,11 @@ function Line({
             key={player.player_id}
             style={{ display: "flex", gap: "var(--s-2)", fontSize: "var(--t-sm)" }}
           >
-            <span className={badgeClass(player.status)} style={{ flex: "none" }}>
+            <span
+              className={badgeClass(player.status)}
+              style={{ flex: "none" }}
+              title={sourceLabel(player.source) ?? undefined}
+            >
               {player.status}
             </span>
             <Link to={`/players/${player.player_id}`}>{player.full_name}</Link>

@@ -3,7 +3,13 @@ import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import PropLines from "../components/PropLines";
 import { Async, Panel, PlayerAvatar, Section, SeasonPicker, Stat } from "../components/ui";
-import type { GameLogRow, PlayerProfile, PlayerSeason, ShotChartResponse } from "../lib/api";
+import type {
+  EfficiencyRow,
+  GameLogRow,
+  PlayerProfile,
+  PlayerSeason,
+  ShotChartResponse,
+} from "../lib/api";
 import { useQuery } from "../lib/api";
 import {
   CURRENT_SEASON,
@@ -32,6 +38,14 @@ export default function PlayerDetail() {
   const shots = useQuery<ShotChartResponse>(
     playerId ? `/shots?season=${season}&player_id=${playerId}&bin_size=25` : null,
   );
+  // `/efficiency` has no player_id filter, so the league table is fetched and
+  // this one row picked out client-side. min_games=1 on purpose: the league
+  // leaderboard uses 10 to keep its ranking meaningful, but a single player's
+  // own profile should show their number even in a three-game season, not
+  // silently omit it because they fell under someone else's cutoff.
+  const efficiency = useQuery<{ players: EfficiencyRow[] }>(
+    playerId ? `/efficiency?season=${season}&min_games=1&limit=500` : null,
+  );
 
   return (
     <Async query={player}>
@@ -39,6 +53,8 @@ export default function PlayerDetail() {
         const current =
           data.seasons.find((row) => row.season === season) ?? data.seasons[0] ?? null;
         const log = data.game_log.filter((row) => row.season === season).slice(0, 25);
+        const efficiencyRow =
+          efficiency.data?.players.find((row) => String(row.player_id) === playerId) ?? null;
 
         return (
           <>
@@ -72,6 +88,25 @@ export default function PlayerDetail() {
                       <Stat value={avg(current.assists)} label="APG" />
                       <Stat value={rate(current.field_goal_pct)} label="FG%" />
                       <Stat value={rate(current.three_point_pct)} label="3P%" />
+                    </>
+                  )}
+                  {efficiencyRow && (
+                    <>
+                      <Stat
+                        value={pct(efficiencyRow.usage_pct)}
+                        label="USG%"
+                        detail="share of team possessions used"
+                      />
+                      <Stat
+                        value={pct(efficiencyRow.true_shooting)}
+                        label="TS%"
+                        detail="value, not just volume"
+                      />
+                      <Stat
+                        value={signed(efficiencyRow.net_rating, 1)}
+                        label="Net Rtg"
+                        detail="per 100 possessions on court"
+                      />
                     </>
                   )}
                 </div>

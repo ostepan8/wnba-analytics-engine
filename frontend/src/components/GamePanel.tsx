@@ -24,6 +24,7 @@ import type {
   GameRow,
   GameShotsResponse,
   MarketPropRow,
+  Query,
   ShotDefenseResponse,
   SlateTeam,
 } from "../lib/api";
@@ -146,11 +147,7 @@ function PropsTab({ gameId }: { gameId: number }) {
   );
 }
 
-function SportsbookProps({
-  query,
-}: {
-  query: { data: { props: GamePropRow[] } | undefined; error: Error | undefined; loading: boolean };
-}) {
+function SportsbookProps({ query }: { query: Query<{ props: GamePropRow[] }> }) {
   return (
     <Async query={query} empty={(data) => data.props.length === 0}>
       {(data) => (

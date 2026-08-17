@@ -165,7 +165,16 @@ export default function PropLines({ playerId }: { playerId: number }) {
                       return (
                         <tr
                           key={row.prop_type}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={row.prop_type === active}
                           onClick={() => setSelected(row.prop_type)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelected(row.prop_type);
+                            }
+                          }}
                           style={{
                             cursor: "pointer",
                             background:

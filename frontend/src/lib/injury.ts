@@ -26,6 +26,16 @@ export function isOut(status: string | null | undefined): boolean {
   return normalise(status) === "out";
 }
 
+/** The league's own report carries real designations (Probable, Questionable,
+ *  Doubtful, Out); the ESPN fallback only ever says Out or Day-To-Day, which is
+ *  a coarser claim wearing the same badge shape. Naming the source is the only
+ *  way a reader can tell "Day-To-Day" apart from an actual game-status filing. */
+export function sourceLabel(source: string | null | undefined): string | null {
+  if (source === "wnba_official") return "league report";
+  if (source === "espn") return "ESPN";
+  return null;
+}
+
 export function badgeClass(status: string | null | undefined): string {
   const value = normalise(status);
   if (value === "out" || value === "doubtful") return "badge badge--bad";

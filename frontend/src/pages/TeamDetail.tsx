@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import {
   Async,
   Panel,
   PlayerCell,
+  RaceBadge,
   Section,
   SeasonPicker,
+  SortTh,
   Stat,
   TeamLogo,
 } from "../components/ui";
@@ -15,11 +17,16 @@ import type {
   RosterRow,
   ScheduleRow,
   ShotChartResponse,
+  ShotDefenseResponse,
   TeamBettingRecord,
   TeamRow,
 } from "../lib/api";
 import { useQuery, spreadLabel } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from "../lib/format";
+import { useSort } from "../lib/useSort";
+
+type RosterSortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists";
+type ScheduleSortColumn = "start_time" | "spread" | "total";
 
 interface TeamResponse {
   season: number;
@@ -49,6 +56,30 @@ export default function TeamDetail() {
   );
   const defense = useQuery<{ rows: DefenseByPositionRow[] }>(
     teamId ? `/defense/by-position?season=${season}&team_id=${teamId}` : null,
+  );
+  const shotDefense = useQuery<ShotDefenseResponse>(
+    teamId ? `/teams/${teamId}/defense?season=${season}&bin_size=20` : null,
+  );
+
+  // Called here, not inside the page's outer Async render-prop: that render
+  // prop only runs once `team` has loaded, and a hook called conditionally
+  // like that breaks React's hook-order rule between the skeleton and the
+  // loaded render.
+  const rosterAccessor = useCallback((row: RosterRow, key: RosterSortColumn) => row[key], []);
+  const roster = useSort<RosterRow, RosterSortColumn>(
+    team.data?.roster ?? [],
+    rosterAccessor,
+    "minutes",
+  );
+  // No initial column: the schedule starts in the order the API returns it
+  // (chronological) and only reorders once someone actually clicks a header.
+  const scheduleAccessor = useCallback(
+    (row: ScheduleRow, key: ScheduleSortColumn) => row[key],
+    [],
+  );
+  const schedule = useSort<ScheduleRow, ScheduleSortColumn>(
+    team.data?.schedule ?? [],
+    scheduleAccessor,
   );
 
   return (
@@ -88,6 +119,17 @@ export default function TeamDetail() {
                   label="Conference seed"
                   detail={data.team.conference?.replace(" Conference", "") ?? undefined}
                 />
+                {data.team.standing && (
+                  <div>
+                    <span
+                      className="stat__label"
+                      style={{ display: "block", marginBottom: "var(--s-1)" }}
+                    >
+                      Playoff race
+                    </span>
+                    <RaceBadge status={data.team.standing} />
+                  </div>
+                )}
               </div>
             </Panel>
           </Section>
@@ -121,7 +163,10 @@ export default function TeamDetail() {
           </Section>
 
           <div className="grid grid--2">
-            <Section title="Roster" note="Ordered by minutes — the rotation, top to bottom.">
+            <Section
+              title="Roster"
+              note="Ordered by minutes — the rotation, top to bottom. Click a column to re-sort."
+            >
               <Panel flush>
                 {data.roster.length === 0 ? (
                   <p className="empty">No games recorded this season.</p>
@@ -132,15 +177,45 @@ export default function TeamDetail() {
                         <tr>
                           <th>Player</th>
                           <th>Pos</th>
-                          <th>G</th>
-                          <th>MIN</th>
-                          <th>PTS</th>
-                          <th>REB</th>
-                          <th>AST</th>
+                          <SortTh
+                            label="G"
+                            column="games_played"
+                            active={roster.sortKey === "games_played"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="MIN"
+                            column="minutes"
+                            active={roster.sortKey === "minutes"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="PTS"
+                            column="points"
+                            active={roster.sortKey === "points"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="REB"
+                            column="rebounds"
+                            active={roster.sortKey === "rebounds"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="AST"
+                            column="assists"
+                            active={roster.sortKey === "assists"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
                         </tr>
                       </thead>
                       <tbody>
-                        {data.roster.map((player) => (
+                        {roster.sorted.map((player) => (
                           <tr key={player.player_id}>
                             <td>
                               <PlayerCell playerId={player.player_id} name={player.full_name} />
@@ -160,7 +235,10 @@ export default function TeamDetail() {
               </Panel>
             </Section>
 
-            <Section title="Schedule" note="With the closing number each game was played to.">
+            <Section
+              title="Schedule"
+              note="With the closing number each game was played to — click a column to re-sort."
+            >
               <Panel flush>
                 {data.schedule.length === 0 ? (
                   <p className="empty">No games scheduled.</p>
@@ -169,17 +247,35 @@ export default function TeamDetail() {
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Date</th>
+                          <SortTh
+                            label="Date"
+                            column="start_time"
+                            active={schedule.sortKey === "start_time"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>Opponent</th>
                           <th>Result</th>
-                          <th>Spread</th>
+                          <SortTh
+                            label="Spread"
+                            column="spread"
+                            active={schedule.sortKey === "spread"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>ATS</th>
-                          <th>Total</th>
+                          <SortTh
+                            label="Total"
+                            column="total"
+                            active={schedule.sortKey === "total"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>O/U</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.schedule.map((game) => {
+                        {schedule.sorted.map((game) => {
                           const result = resultOf(game);
                           return (
                             <tr key={game.id}>
@@ -327,6 +423,58 @@ export default function TeamDetail() {
                   )}
                 </Async>
               </div>
+            </Panel>
+          </Section>
+
+          <Section
+            title="Shot defense"
+            note="Where opponents shoot against this team, and how well they do."
+          >
+            <Panel title="Where this team allows shots" tools={<ShotChartLegend />}>
+              <div className="grid grid--2">
+                <Async query={shotDefense} empty={(d) => d.cells.length === 0}>
+                  {(shotData) => (
+                    <ShotChart
+                      cells={shotData.cells}
+                      binSize={shotData.bin_size}
+                      midpoint={shotData.points_per_attempt ?? 1}
+                      minAttempts={2}
+                    />
+                  )}
+                </Async>
+                <Async query={shotDefense}>
+                  {(shotData) => (
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Zone</th>
+                            <th>Att</th>
+                            <th>FG% allowed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shotData.zones
+                            .filter((zone) => zone.attempts >= 5)
+                            .map((zone) => (
+                              <tr key={zone.zone}>
+                                <td>{zone.zone}</td>
+                                <td>{num(zone.attempts)}</td>
+                                <td>{pct(zone.makes / zone.attempts)}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Async>
+              </div>
+              <p className="prose" style={{ marginTop: "var(--s-3)" }}>
+                Blue is where opponents score <em>well</em> against this team — the defensive weak
+                spots, not its strengths. shot_locations records who took a shot, so this resolves
+                the opponent per game rather than filtering on team, and won&apos;t match the
+                offensive chart above bin for bin.
+              </p>
             </Panel>
           </Section>
         </>
