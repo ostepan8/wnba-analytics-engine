@@ -49,7 +49,7 @@ from psycopg import Connection
 
 from wnba_engine.db.pool import Database
 from wnba_engine.models.odds_api_events import OddsApiEventRef, ParsedOddsEvent
-from wnba_engine.odds_api.client import OddsApiClient
+from wnba_engine.odds_api.client import MARKETS, OddsApiClient
 from wnba_engine.odds_api.odds_parser import parse_current_odds_events, parse_historical_odds_events
 from wnba_engine.repositories import entity_repo, odds_repo
 
@@ -84,10 +84,16 @@ class OddsApiIngestResult:
     unresolved_events: int = 0
 
 
-def snapshot_current_odds(db: Database, client: OddsApiClient) -> OddsApiIngestResult:
+def snapshot_current_odds(
+    db: Database, client: OddsApiClient, *, markets: str = MARKETS
+) -> OddsApiIngestResult:
     """Snapshot current odds for every WNBA event the-odds-api currently
-    lists. One request (verified live: no pagination on this endpoint)."""
-    payload = client.fetch_current_odds()
+    lists. One request (verified live: no pagination on this endpoint).
+
+    `markets` narrows what that request asks for, and therefore what it costs:
+    the API prices a call at [markets] x [regions]. Callers on a high-frequency
+    cadence should pass only what they read."""
+    payload = client.fetch_current_odds(markets=markets)
     parsed_events = parse_current_odds_events(payload)
     result = OddsApiIngestResult()
     with db.connection() as conn:

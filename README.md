@@ -31,6 +31,24 @@ uv run wnba-engine validate   # data-quality gate
 uv run wnba-engine --help     # every ingest command
 ```
 
+## Running it
+
+The engine deploys to a single always-on host as three services — Postgres,
+a scheduler that runs every ingest job, and a read-only HTTP API that also
+serves an analytics page. See [AGENTS.md](./AGENTS.md#deployment) for the
+commands and `deploy/` for the manifests.
+
+| Path | What |
+|---|---|
+| `deploy/schedule.toml` | every recurring job and its cadence, in one file |
+| `deploy/nephos/` | service manifests + the public route |
+| `deploy/Dockerfile` | one image: CLI, scheduler, and API |
+
+The API is read-only and unauthenticated by design — public WNBA data, no
+write path, no credentials in the process. Endpoints: `/summary`,
+`/games`, `/games/{id}/odds`, `/games/{id}/markets`, `/divergences`,
+`/leaders`, `/health/jobs`, and OpenAPI docs at `/docs`.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

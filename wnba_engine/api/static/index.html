@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WNBA Analytics Engine</title>
+<style>
+/* Palette roles, defined once. Light values on :root, dark redefined under both
+   the OS media query and an explicit toggle so either can win.
+   Categorical slots 1-3 (blue/orange/aqua) validated all-pairs in both modes. */
+:root {
+  color-scheme: light;
+  --plane:        #f9f9f7;
+  --surface:      #fcfcfb;
+  --ink:          #0b0b0b;
+  --ink-2:        #52514e;
+  --ink-muted:    #898781;
+  --grid:         #e1e0d9;
+  --axis:         #c3c2b7;
+
+  --series-1:     #2a78d6;  /* sportsbook */
+  --series-2:     #eb6834;  /* polymarket */
+  --series-3:     #1baf7a;  /* kalshi     */
+
+  --good:         #0ca30c;
+  --warning:      #fab219;
+  --serious:      #ec835a;
+  --critical:     #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane:      #0d0d0d;
+    --surface:    #1a1a19;
+    --ink:        #ffffff;
+    --ink-2:      #c3c2b7;
+    --ink-muted:  #898781;
+    --grid:       #2c2c2a;
+    --axis:       #383835;
+    --series-1:   #3987e5;
+    --series-2:   #d95926;
+    --series-3:   #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:      #0d0d0d;
+  --surface:    #1a1a19;
+  --ink:        #ffffff;
+  --ink-2:      #c3c2b7;
+  --ink-muted:  #898781;
+  --grid:       #2c2c2a;
+  --axis:       #383835;
+  --series-1:   #3987e5;
+  --series-2:   #d95926;
+  --series-3:   #199e70;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 80px; }
+
+header { display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.sub { color: var(--ink-2); font-size: 13.5px; margin: 4px 0 28px; max-width: 62ch; }
+h2 { font-size: 13px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 40px 0 14px; }
+h2:first-of-type { margin-top: 24px; }
+.note { color: var(--ink-muted); font-size: 12.5px; margin: 10px 0 0; max-width: 78ch; }
+
+.card { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 18px 20px; }
+.grid { display: grid; gap: 12px; }
+.g-stats { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+.g-jobs  { grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); }
+
+/* Stat tile: hero number, label under. No plot, so no hover layer. */
+.stat .v { font-size: 27px; font-weight: 640; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.stat .d { font-size: 11.5px; color: var(--ink-muted); margin-top: 5px; font-variant-numeric: tabular-nums; }
+
+/* Status: icon + label, never colour alone. */
+.job { display: flex; gap: 11px; align-items: flex-start; }
+.dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; }
+.job .n { font-size: 13.5px; font-weight: 560; }
+.job .s { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+.job .e { font-size: 11px; color: var(--ink-muted); margin-top: 4px; word-break: break-word; }
+.badge { font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 12px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+.chartbox { position: relative; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tick { font-size: 11px; fill: var(--ink-muted); }
+.dlabel { font-size: 11.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+  background: var(--surface); border: 1px solid var(--axis); border-radius: 7px;
+  padding: 8px 11px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+  white-space: nowrap; z-index: 5; color: var(--ink);
+}
+.tip b { font-weight: 620; }
+.tip .row { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+.row-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+select, button {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 7px; padding: 6px 10px; cursor: pointer;
+}
+button[aria-pressed="true"] { border-color: var(--series-1); color: var(--series-1); }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-muted); font-weight: 600; }
+caption { text-align: left; font-size: 12px; color: var(--ink-2); padding-bottom: 8px; }
+[hidden] { display: none !important; }
+.msg { color: var(--ink-muted); font-size: 13px; padding: 10px 0; }
+footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--grid); color: var(--ink-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>WNBA Analytics Engine</h1>
+    <p class="sub">Sportsbook odds, prediction-market prices, outcomes and box scores, joined into
+      one dataset. Self-hosted; read-only. <strong>No betting, no order placement</strong> — price
+      ingestion only.</p>
+  </div>
+  <button id="theme" aria-pressed="false" title="Toggle light/dark">◐ Theme</button>
+</header>
+
+<!-- Pipeline health leads the page deliberately. The engine's real failure mode is
+     not a crash; it is jobs quietly not running while every chart below keeps
+     rendering week-old numbers as though they were current. -->
+<h2>Pipeline health</h2>
+<div id="jobs" class="grid g-jobs"><p class="msg">Loading…</p></div>
+<p class="note">Every scheduled run is recorded, successes and failures alike. A job that stops
+  firing shows as a stale “last success”, which no exit code would have revealed — the gap this
+  replaced ran for seven days undetected.</p>
+
+<h2>Dataset</h2>
+<div id="summary" class="grid g-stats"><p class="msg">Loading…</p></div>
+
+<h2>Cross-venue divergence log</h2>
+<div id="divergence" class="grid g-stats"><p class="msg">Loading…</p></div>
+<p class="note">A forward experiment, not a result. Prediction markets are known to lead the
+  sportsbook; whether that lead is <em>executable</em> needs prices observed at the moment they
+  diverge. Every rate here carries its denominator on purpose — CLV needs roughly 120 graded
+  observations before it means anything, and ROI closer to 10,600.</p>
+
+<h2>Scoring leaders</h2>
+<div class="card">
+  <div class="row-controls">
+    <label for="season" class="msg" style="padding:0">Season</label>
+    <select id="season"></select>
+    <button id="leaders-view" aria-pressed="false">Table view</button>
+  </div>
+  <div id="leaders-chart" class="chartbox"><p class="msg">Loading…</p></div>
+  <div id="leaders-table" hidden></div>
+</div>
+<p class="note">Per-game averages over games played. ESPN and balldontlie each write a row per
+  game with different coverage, so rows are collapsed to one per player-game before averaging —
+  reading the table raw reports 58 games in a 44-game season.</p>
+
+<h2>Home win probability by venue</h2>
+<div class="card">
+  <div class="row-controls">
+    <label for="game" class="msg" style="padding:0">Game</label>
+    <select id="game"></select>
+    <button id="movement-view" aria-pressed="false">Table view</button>
+  </div>
+  <div class="legend" id="movement-legend"></div>
+  <div id="movement-chart" class="chartbox"><p class="msg">Loading…</p></div>
+  <div id="movement-table" hidden></div>
+</div>
+<p class="note">One axis, one unit: every venue is normalised to the probability the <em>home</em>
+  team wins, with American odds converted to implied probability and away-side quotes flipped.
+  Moneyline only — a venue lists well over a hundred markets per game (player props, quarter
+  totals, spreads, margins), and plotting them together would mean nothing. Sportsbook implied
+  probability includes the vig and so sits slightly high by construction.</p>
+
+<footer>
+  Served from <code>wnba.onephos.com</code> on self-hosted hardware ·
+  <a href="/docs" style="color:var(--series-1)">API docs</a>
+</footer>
+
+</div>
+
+<script>
+"use strict";
+
+const API = "";
+const fmt = new Intl.NumberFormat("en-US");
+const pct = n => (n * 100).toFixed(1) + "%";
+
+/* American odds -> implied probability, vig included. */
+function impliedFromAmerican(odds) {
+  if (odds === null || odds === undefined) return null;
+  return odds > 0 ? 100 / (odds + 100) : -odds / (-odds + 100);
+}
+
+async function getJSON(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error(path + " -> " + res.status);
+  return res.json();
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function ago(iso) {
+  if (!iso) return "never";
+  const mins = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + "h ago";
+  return Math.floor(hours / 24) + "d ago";
+}
+
+/* ---------------------------------------------------------------- jobs --- */
+
+const STATUS = {
+  ok:       { color: "var(--good)",     icon: "✓", label: "Healthy"    },
+  running:  { color: "var(--series-1)", icon: "◍", label: "Running"    },
+  failed:   { color: "var(--critical)", icon: "✕", label: "Failing"    },
+  timeout:  { color: "var(--serious)",  icon: "⧗", label: "Timing out" },
+  pending:  { color: "var(--warning)",  icon: "◌", label: "Not yet run" },
+  disabled: { color: "var(--ink-muted)", icon: "◻", label: "Disabled"  },
+};
+
+/* A disabled job is not a failing one, and a job that has never run is not a
+   healthy one. Both were previously indistinguishable from "failing". */
+function jobState(job) {
+  if (!job.enabled) return STATUS.disabled;
+  if (!job.last_status) return STATUS.pending;
+  return STATUS[job.last_status] || STATUS.failed;
+}
+
+async function renderJobs() {
+  const host = document.getElementById("jobs");
+  const { jobs } = await getJSON("/health/jobs");
+  host.replaceChildren();
+  if (!jobs.length) { host.append(el("p", "msg", "No jobs found.")); return; }
+
+  for (const job of jobs) {
+    const state = jobState(job);
+    const card = el("div", "card job");
+    const dot = el("span", "dot");
+    dot.style.background = state.color;
+    const body = el("div");
+    body.append(el("div", "n", job.job_name));
+
+    /* Icon + text label, so status never rests on colour alone. */
+    const status = el("div", "s");
+    const badge = el("span", "badge", state.icon + " " + state.label);
+    badge.style.color = state.color;
+    status.append(badge);
+    if (job.enabled) {
+      status.append(document.createTextNode(" · last success " + ago(job.last_success_at)));
+    }
+    body.append(status);
+
+    if (job.description) body.append(el("div", "e", job.description));
+    if (job.enabled && job.runs_24h) {
+      body.append(el("div", "e", job.runs_24h + " run(s) in 24h, " + job.failures_24h + " failed"));
+    }
+    if (job.enabled && job.last_error) {
+      body.append(el("div", "e", job.last_error.split("\n")[0].slice(0, 120)));
+    }
+    card.append(dot, body);
+    host.append(card);
+  }
+}
+
+/* ------------------------------------------------------------- summary --- */
+
+function statTile(value, label, detail) {
+  const card = el("div", "card stat");
+  card.append(el("div", "v", value), el("div", "k", label));
+  if (detail) card.append(el("div", "d", detail));
+  return card;
+}
+
+async function renderSummary() {
+  const host = document.getElementById("summary");
+  const s = await getJSON("/summary");
+  const span = new Date(s.earliest_game).getFullYear() + "–" + new Date(s.latest_game).getFullYear();
+  host.replaceChildren(
+    statTile(fmt.format(s.games), "Games", s.games_final + " final · " + span),
+    statTile(fmt.format(s.market_price_snapshots), "Market price snapshots",
+             "latest " + ago(s.latest_market_price)),
+    statTile(fmt.format(s.sportsbook_game_odds), "Sportsbook odds rows",
+             "latest " + ago(s.latest_sportsbook_odds)),
+    statTile(fmt.format(s.players), "Players", fmt.format(s.teams) + " teams"),
+  );
+}
+
+/* ---------------------------------------------------------- divergence --- */
+
+async function renderDivergence() {
+  const host = document.getElementById("divergence");
+  const { venues } = await getJSON("/divergences/summary");
+  host.replaceChildren();
+  if (!venues.length) { host.append(el("p", "msg", "No observations logged yet.")); return; }
+
+  let total = 0;
+  for (const v of venues) {
+    total += v.observations;
+    const survived = v.survival_checked
+      ? pct(v.price_survived / v.survival_checked) + " of " + v.survival_checked + " checked"
+      : "not yet checked";
+    host.append(statTile(
+      fmt.format(v.observations),
+      v.venue + " observations",
+      "price still there: " + survived,
+    ));
+    if (v.clv_graded) {
+      host.append(statTile(
+        (Number(v.mean_clv) >= 0 ? "+" : "") + (Number(v.mean_clv) * 100).toFixed(2) + "%",
+        v.venue + " mean CLV",
+        "over " + v.clv_graded + " graded" + (v.clv_graded < 120 ? " — below the ~120 needed" : ""),
+      ));
+    }
+  }
+  host.append(statTile(fmt.format(total), "Total observations",
+    total < 10600 ? "ROI needs ~10,600" : "ROI sample reached"));
+}
+
+/* ------------------------------------------------------- leaders chart --- */
+
+const LEADER_ROW_H = 30;
+
+function renderLeadersChart(rows) {
+  const host = document.getElementById("leaders-chart");
+  host.replaceChildren();
+  if (!rows.length) { host.append(el("p", "msg", "No qualifying players.")); return; }
+
+  const W = 720, padL = 156, padR = 56, padT = 6;
+  const H = padT + rows.length * LEADER_ROW_H + 8;
+  const max = Math.max(...rows.map(r => Number(r.points)));
+  const scale = v => (v / max) * (W - padL - padR);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Points per game leaders");
+
+  const tip = el("div", "tip");
+  host.append(svg, tip);
+
+  rows.forEach((r, i) => {
+    const y = padT + i * LEADER_ROW_H;
+    const w = Math.max(scale(Number(r.points)), 2);
+
+    const name = document.createElementNS(svg.namespaceURI, "text");
+    name.setAttribute("x", padL - 12);
+    name.setAttribute("y", y + 15);
+    name.setAttribute("text-anchor", "end");
+    name.setAttribute("class", "dlabel");
+    name.textContent = r.full_name;
+    svg.append(name);
+
+    /* Thin bar, 4px rounded end, anchored to a common baseline at padL.
+       Single series -> one hue, no legend; the title names it. */
+    const bar = document.createElementNS(svg.namespaceURI, "rect");
+    bar.setAttribute("x", padL);
+    bar.setAttribute("y", y + 5);
+    bar.setAttribute("width", w);
+    bar.setAttribute("height", 14);
+    bar.setAttribute("rx", 4);
+    bar.setAttribute("fill", "var(--series-1)");
+    svg.append(bar);
+
+    /* Direct label on every bar: the value is the point of the chart and there
+       are few enough rows that this does not become noise. */
+    const val = document.createElementNS(svg.namespaceURI, "text");
+    val.setAttribute("x", padL + w + 8);
+    val.setAttribute("y", y + 16);
+    val.setAttribute("class", "dlabel");
+    val.textContent = Number(r.points).toFixed(1);
+    svg.append(val);
+
+    /* Hit target spans the full row, not just the 14px bar. */
+    const hit = document.createElementNS(svg.namespaceURI, "rect");
+    hit.setAttribute("x", 0);
+    hit.setAttribute("y", y);
+    hit.setAttribute("width", W);
+    hit.setAttribute("height", LEADER_ROW_H);
+    hit.setAttribute("fill", "transparent");
+    hit.addEventListener("pointerenter", ev => {
+      tip.innerHTML =
+        `<b>${r.full_name}</b> · ${r.team_abbr}` +
+        `<div class="row">${r.points} pts · ${r.rebounds} reb · ${r.assists} ast</div>` +
+        `<div class="row">${r.games_played} games · ${r.minutes} min</div>`;
+      const box = host.getBoundingClientRect();
+      tip.style.left = Math.min(ev.clientX - box.left + 14, box.width - 210) + "px";
+      tip.style.top = (ev.clientY - box.top - 8) + "px";
+      tip.style.opacity = "1";
+    });
+    hit.addEventListener("pointerleave", () => { tip.style.opacity = "0"; });
+    svg.append(hit);
+  });
+}
+
+function renderLeadersTable(rows) {
+  const host = document.getElementById("leaders-table");
+  host.replaceChildren(buildTable(
+    "Scoring leaders, per-game averages",
+    ["Player", "Team", "GP", "PTS", "REB", "AST", "MIN"],
+    rows.map(r => [r.full_name, r.team_abbr, r.games_played, r.points, r.rebounds, r.assists, r.minutes]),
+  ));
+}
+
+/* ------------------------------------------------------ movement chart --- */
+
+const SERIES = [
+  { key: "book",       label: "Sportsbook (home ML)", color: "var(--series-1)" },
+  { key: "polymarket", label: "Polymarket",           color: "var(--series-2)" },
+  { key: "kalshi",     label: "Kalshi",               color: "var(--series-3)" },
+];
+
+function renderMovementLegend(present) {
+  const host = document.getElementById("movement-legend");
+  host.replaceChildren();
+  for (const s of SERIES) {
+    if (!present.has(s.key)) continue;
+    const item = el("span");
+    const sw = el("span", "swatch");
+    sw.style.background = s.color;
+    item.append(sw, document.createTextNode(s.label));
+    host.append(item);
+  }
+}
+
+function renderMovementChart(series) {
+  const host = document.getElementById("movement-chart");
+  host.replaceChildren();
+
+  const points = SERIES.flatMap(s => series[s.key] || []);
+  if (points.length < 2) {
+    host.append(el("p", "msg", "No overlapping price history recorded for this game."));
+    renderMovementLegend(new Set());
+    return;
+  }
+  renderMovementLegend(new Set(SERIES.filter(s => (series[s.key] || []).length).map(s => s.key)));
+
+  const W = 760, H = 300, padL = 46, padR = 78, padT = 14, padB = 30;
+  const times = points.map(p => p.t);
+  const t0 = Math.min(...times), t1 = Math.max(...times);
+  const x = t => padL + ((t - t0) / Math.max(t1 - t0, 1)) * (W - padL - padR);
+  const y = v => padT + (1 - v) * (H - padT - padB);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Implied win probability over time by venue");
+  const NS = svg.namespaceURI;
+
+  /* Recessive gridlines and axis labels. */
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    const line = document.createElementNS(NS, "line");
+    line.setAttribute("x1", padL); line.setAttribute("x2", W - padR);
+    line.setAttribute("y1", y(v)); line.setAttribute("y2", y(v));
+    line.setAttribute("stroke", v === 0.5 ? "var(--axis)" : "var(--grid)");
+    line.setAttribute("stroke-width", "1");
+    svg.append(line);
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("x", padL - 8); label.setAttribute("y", y(v) + 4);
+    label.setAttribute("text-anchor", "end"); label.setAttribute("class", "tick");
+    label.textContent = (v * 100) + "%";
+    svg.append(label);
+  }
+  for (const t of [t0, (t0 + t1) / 2, t1]) {
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("x", x(t)); label.setAttribute("y", H - 8);
+    label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "tick");
+    label.textContent = new Date(t).toLocaleString(undefined,
+      { month: "short", day: "numeric", hour: "numeric" });
+    svg.append(label);
+  }
+
+  for (const s of SERIES) {
+    const data = (series[s.key] || []).slice().sort((a, b) => a.t - b.t);
+    if (!data.length) continue;
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", data.map((p, i) => (i ? "L" : "M") + x(p.t) + " " + y(p.v)).join(" "));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", s.color);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    svg.append(path);
+
+    /* Direct label at the series end. With three series this satisfies the
+       "never colour alone" rule and the light-mode contrast relief. */
+    const last = data[data.length - 1];
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("x", x(last.t) + 7);
+    label.setAttribute("y", y(last.v) + 4);
+    label.setAttribute("class", "dlabel");
+    label.textContent = pct(last.v);
+    svg.append(label);
+  }
+
+  /* Crosshair + tooltip: an SVG chart is interactive by default. */
+  const crosshair = document.createElementNS(NS, "line");
+  crosshair.setAttribute("y1", padT); crosshair.setAttribute("y2", H - padB);
+  crosshair.setAttribute("stroke", "var(--axis)");
+  crosshair.setAttribute("stroke-width", "1");
+  crosshair.setAttribute("opacity", "0");
+  svg.append(crosshair);
+
+  const tip = el("div", "tip");
+  host.append(svg, tip);
+
+  const surface = document.createElementNS(NS, "rect");
+  surface.setAttribute("x", padL); surface.setAttribute("y", padT);
+  surface.setAttribute("width", W - padL - padR); surface.setAttribute("height", H - padT - padB);
+  surface.setAttribute("fill", "transparent");
+  surface.addEventListener("pointermove", ev => {
+    const box = svg.getBoundingClientRect();
+    const t = t0 + ((ev.clientX - box.left) / box.width * W - padL) / (W - padL - padR) * (t1 - t0);
+    crosshair.setAttribute("x1", x(t)); crosshair.setAttribute("x2", x(t));
+    crosshair.setAttribute("opacity", "1");
+
+    let html = `<b>${new Date(t).toLocaleString()}</b>`;
+    for (const s of SERIES) {
+      const data = series[s.key] || [];
+      if (!data.length) continue;
+      const near = data.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a);
+      html += `<div class="row"><span class="swatch" style="background:${s.color}"></span>` +
+              `${s.label}: <b>${pct(near.v)}</b></div>`;
+    }
+    tip.innerHTML = html;
+    const hostBox = host.getBoundingClientRect();
+    tip.style.left = Math.min(ev.clientX - hostBox.left + 14, hostBox.width - 240) + "px";
+    tip.style.top = "12px";
+    tip.style.opacity = "1";
+  });
+  surface.addEventListener("pointerleave", () => {
+    tip.style.opacity = "0";
+    crosshair.setAttribute("opacity", "0");
+  });
+  svg.append(surface);
+}
+
+function renderMovementTable(series) {
+  const host = document.getElementById("movement-table");
+  const rows = [];
+  for (const s of SERIES) {
+    for (const p of series[s.key] || []) {
+      rows.push([s.label, new Date(p.t).toLocaleString(), pct(p.v)]);
+    }
+  }
+  rows.sort((a, b) => new Date(a[1]) - new Date(b[1]));
+  host.replaceChildren(buildTable(
+    "Implied win probability by venue",
+    ["Venue", "Observed at", "Implied probability"],
+    rows.slice(0, 400),
+  ));
+}
+
+/* ------------------------------------------------------------- helpers --- */
+
+function buildTable(caption, headers, rows) {
+  const table = el("table");
+  table.append(el("caption", null, caption));
+  const thead = el("thead"), hr = el("tr");
+  headers.forEach(h => hr.append(el("th", null, h)));
+  thead.append(hr);
+  const tbody = el("tbody");
+  for (const row of rows) {
+    const tr = el("tr");
+    row.forEach(cell => tr.append(el("td", null, cell === null ? "—" : String(cell))));
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+function wireToggle(buttonId, chartId, tableId) {
+  const button = document.getElementById(buttonId);
+  button.addEventListener("click", () => {
+    const showTable = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", String(showTable));
+    document.getElementById(chartId).hidden = showTable;
+    document.getElementById(tableId).hidden = !showTable;
+  });
+}
+
+/* ---------------------------------------------------------------- boot --- */
+
+async function loadLeaders(season) {
+  const host = document.getElementById("leaders-chart");
+  host.replaceChildren(el("p", "msg", "Loading…"));
+  const { leaders } = await getJSON(`/leaders?season=${season}&limit=12`);
+  renderLeadersChart(leaders);
+  renderLeadersTable(leaders);
+}
+
+async function loadMovement(gameId) {
+  const host = document.getElementById("movement-chart");
+  host.replaceChildren(el("p", "msg", "Loading…"));
+  const [odds, markets] = await Promise.all([
+    getJSON(`/games/${gameId}/odds?limit=500`),
+    getJSON(`/games/${gameId}/markets?limit=500`),
+  ]);
+
+  const series = { book: [], polymarket: [], kalshi: [] };
+  for (const row of odds.odds) {
+    const implied = impliedFromAmerican(row.moneyline_home_odds);
+    if (implied !== null) series.book.push({ t: new Date(row.captured_at).getTime(), v: implied });
+  }
+  /* Normalise every venue onto ONE axis: probability the HOME team wins.
+     The API resolves each row to a side, so an away-team quote is flipped
+     rather than plotted as if it were the same quantity.
+
+     Both sides of the same market are quoted at the same instant, and once
+     flipped they describe one number twice, differing only by the bid/ask
+     spread. Averaging them gives the midpoint; plotting them as consecutive
+     points would draw a sawtooth that is an artefact of the spread, not a
+     price movement. */
+  const buckets = { kalshi: new Map(), polymarket: new Map() };
+  for (const row of markets.prices) {
+    const key = row.provider === "kalshi" ? "kalshi" : "polymarket";
+    const raw = Number(row.implied_probability);
+    if (!Number.isFinite(raw)) continue;
+    const v = row.side === "home" ? raw : 1 - raw;
+    const t = new Date(row.captured_at).getTime();
+    const bucket = buckets[key].get(t) || [];
+    bucket.push(v);
+    buckets[key].set(t, bucket);
+  }
+  for (const key of Object.keys(buckets)) {
+    for (const [t, values] of buckets[key]) {
+      series[key].push({ t, v: values.reduce((a, b) => a + b, 0) / values.length });
+    }
+  }
+  renderMovementChart(series);
+  renderMovementTable(series);
+}
+
+async function boot() {
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark";
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+    document.getElementById("theme").setAttribute("aria-pressed", String(!dark));
+  });
+  wireToggle("leaders-view", "leaders-chart", "leaders-table");
+  wireToggle("movement-view", "movement-chart", "movement-table");
+
+  /* Health first and independently: if the API is degraded, the reason should
+     appear on screen rather than being hidden behind a failed chart fetch. */
+  renderJobs().catch(err => {
+    document.getElementById("jobs").replaceChildren(el("p", "msg", "Health unavailable: " + err.message));
+  });
+  renderSummary().catch(() => {});
+  renderDivergence().catch(() => {});
+
+  const seasonSelect = document.getElementById("season");
+  const thisYear = new Date().getFullYear();
+  for (let s = thisYear; s >= thisYear - 4; s--) {
+    seasonSelect.append(new Option(String(s), String(s)));
+  }
+  seasonSelect.addEventListener("change", () => loadLeaders(seasonSelect.value));
+  loadLeaders(thisYear).catch(err => {
+    document.getElementById("leaders-chart").replaceChildren(el("p", "msg", err.message));
+  });
+
+  const gameSelect = document.getElementById("game");
+  const { games } = await getJSON("/games?limit=40");
+  for (const g of games) {
+    const when = new Date(g.start_time).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const score = g.status === "final" ? ` (${g.away_score}–${g.home_score})` : "";
+    gameSelect.append(new Option(`${when} · ${g.away_abbr} @ ${g.home_abbr}${score}`, g.id));
+  }
+  gameSelect.addEventListener("change", () => loadMovement(gameSelect.value));
+  if (games.length) await loadMovement(games[0].id);
+}
+
+boot().catch(err => console.error(err));
+</script>
+</body>
+</html>

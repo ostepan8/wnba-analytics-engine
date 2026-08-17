@@ -46,6 +46,17 @@ ODDS_FORMAT = "american"
 REGIONS = "us"
 MARKETS = "h2h,spreads,totals"
 
+# the-odds-api charges [markets] x [regions] credits per request, so this list
+# costs 1 credit where MARKETS costs 3.
+#
+# The forward divergence log reads exactly two columns from the book side --
+# moneyline_home_odds and moneyline_away_odds (wnba_engine/pipeline/
+# divergence_log.py) -- so the pre-tip capture that feeds it was paying triple
+# for spreads and totals it never looks at. The 2-hourly routine snapshot still
+# takes all three markets; those columns matter to the wider dataset, just not
+# to this experiment, and they do not need a two-minute cadence.
+MONEYLINE_ONLY_MARKETS = "h2h"
+
 
 class OddsApiClient:
     def __init__(self, settings: Settings) -> None:
@@ -65,20 +76,26 @@ class OddsApiClient:
             redact_query_param_keys=frozenset({"apiKey"}),
         )
 
-    def _base_params(self) -> dict[str, object]:
+    def _base_params(self, markets: str = MARKETS) -> dict[str, object]:
         return {
             "apiKey": self._api_key,
             "regions": REGIONS,
-            "markets": MARKETS,
+            "markets": markets,
             "oddsFormat": ODDS_FORMAT,
         }
 
-    def fetch_current_odds(self) -> object:
+    def fetch_current_odds(self, *, markets: str = MARKETS) -> object:
         """GET /v4/sports/basketball_wnba/odds/ -- every currently-listed
         WNBA event's odds in a single response (verified live: no
         pagination on this endpoint -- small enough event count that none
-        is needed)."""
-        return self._http.get_json(ODDS_PATH, params=self._base_params())
+        is needed).
+
+        `markets` is a cost lever, not a preference. the-odds-api prices a
+        request at [markets] x [regions], so the default three-market list
+        costs 3 credits per call where a single market costs 1. The
+        high-frequency pre-tip capture passes H2H_ONLY for exactly that
+        reason -- see MONEYLINE_ONLY_MARKETS."""
+        return self._http.get_json(ODDS_PATH, params=self._base_params(markets))
 
     def fetch_historical_odds(self, at: datetime) -> object:
         """GET /v4/historical/sports/basketball_wnba/odds/?date=<ISO8601>

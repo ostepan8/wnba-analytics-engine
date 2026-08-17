@@ -164,12 +164,60 @@ So the capture host still earns its keep -- it holds the order book and the
 quote history that nothing republishes -- but it is no longer the only path
 to prediction-market history, and a gap in it is no longer fatal.
 
-Captures run every 30 minutes on an always-on host and replay here
-(`market_capture/`, `scripts/deploy-capture-host.sh`,
-`scripts/sync-market-captures.sh`). **The pull side is manual and has been
-missed for days at a time** -- on 2026-08-03 the host had 189 unsynced
-files per provider going back to 2026-07-30. When adding a provider, ask
-first whether its data is recoverable later, and check rather than assume.
+Captures run every 30 minutes and replay here (`market_capture/`). Capture
+and ingest now share a host and a filesystem (see **Deployment** below), so
+there is no pull step to miss. There used to be: capture ran on one Mac,
+ingest on another, joined by an hourly rsync, and that rsync stranded 189
+files per provider on 2026-08-03 and another seven days' worth on
+2026-08-10. When adding a provider, ask first whether its data is
+recoverable later, and check rather than assume.
+
+---
+
+## Deployment
+
+Everything runs on one always-on Linux node as nephos services
+(`deploy/nephos/`). Nothing is scheduled on a laptop any more.
+
+| Service | What it is |
+|---|---|
+| `wnba-postgres` | Postgres 16, named volume, loopback on :5434 |
+| `wnba-scheduler` | every recurring job (`deploy/schedule.toml`) |
+| `wnba-api` | read-only HTTP API + analytics page, public via Cloudflare Tunnel |
+
+```bash
+ssh <node>
+cd ~/projects/wnba-analytics-engine
+bash deploy/build.sh                     # images are NOT distributed; build on the node
+nephos up ./deploy/nephos/postgres       # then scheduler, then api
+systemctl --user restart nephos-wnba-api.service   # `nephos up` alone won't restart a
+                                                   # running service onto a new image
+```
+
+**Read `db/migrations/0031_job_runs.sql` before changing how anything is
+scheduled.** The pipeline's real failure mode is not a crash, it is jobs
+silently not running: six launchd agents hardcoded a repo path, the repo
+moved, and two exited 78 while three exited *0* on a
+`[ -d "$PROJECT_DIR" ] || exit 0` guard. The database froze for a week and
+nothing noticed. Data freshness is not a substitute for run records either
+-- the off-season looks exactly like a dead scheduler.
+
+Two rules fell out of that, and both are load-bearing:
+
+- **Every run is recorded**, including failures, and `/health/jobs` reads it.
+- **Free work never queues behind paid work.** `capture-odds-focused`
+  (metered) and `refresh-venue-prices` (free) were steps in one job; when
+  the-odds-api key was deactivated for non-payment, the free steps stopped
+  too, for a week, for no reason.
+
+### the-odds-api costs [markets] x [regions] per request
+
+Not per request. `capture-odds-focused` fires every two minutes near tip-off
+and asked for `h2h,spreads,totals` while the divergence log it feeds reads
+only the moneyline columns -- 3 credits a fire for 1 credit of data, ~21,000
+credits a season instead of ~7,000. It now passes `MONEYLINE_ONLY_MARKETS`.
+The 2-hourly routine snapshot still takes all three; those columns matter to
+the wider dataset and do not need a two-minute cadence.
 
 ### A fixed matcher does not repair rows already stored
 

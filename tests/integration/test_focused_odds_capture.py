@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from wnba_engine.odds_api.client import MONEYLINE_ONLY_MARKETS
 from wnba_engine.pipeline.focused_odds_capture import capture_focused_odds
 
 pytestmark = pytest.mark.integration
@@ -91,7 +92,7 @@ def test_a_game_nobody_trades_is_still_watched_by_default(
     calls: list[int] = []
     monkeypatch.setattr(
         "wnba_engine.pipeline.focused_odds_capture.snapshot_current_odds",
-        lambda db, client: _fake_result(calls),
+        lambda db, client, **kwargs: _fake_result(calls),
     )
     with clean_db.connection() as conn:
         _seed_game(conn, start_time=NOW + timedelta(hours=2))
@@ -137,10 +138,12 @@ def test_a_watched_game_spends_exactly_one_request(clean_db, monkeypatch) -> Non
     region, so a per-event loop would multiply cost for identical data.
     """
     calls: list[int] = []
+    requested_markets: list[str] = []
 
-    def _fake_snapshot(db, client):
+    def _fake_snapshot(db, client, *, markets=None):
         del db, client
         calls.append(1)
+        requested_markets.append(markets)
         from wnba_engine.pipeline.odds_api_ingest import OddsApiIngestResult
 
         return OddsApiIngestResult(events_seen=2, rows_seen=10, rows_inserted=10)
@@ -160,3 +163,11 @@ def test_a_watched_game_spends_exactly_one_request(clean_db, monkeypatch) -> Non
     assert result.requests_spent == 1
     assert len(calls) == 1
     assert result.rows_inserted == 10
+
+    # And that one request asks for the moneyline ALONE. the-odds-api prices a
+    # call at [markets] x [regions], so this is the difference between 1 credit
+    # a fire and 3 -- ~7,000 credits a season versus ~21,000. The divergence log
+    # this feeds reads only the moneyline columns, so the other two markets were
+    # pure cost. Asserted rather than assumed: the regression is invisible in
+    # every output except the bill.
+    assert requested_markets == [MONEYLINE_ONLY_MARKETS]

@@ -1,0 +1,178 @@
+# The ingest schedule, in one file, on one always-on host.
+#
+# This replaces six launchd agents split across two Macs. Cadences are carried
+# over unchanged from those plists -- each was chosen from the phenomenon being
+# measured, and that reasoning is preserved per job below. What changed is
+# where they run and how failure is observed, not how often they fire.
+#
+# All times are UTC. The container has no local timezone and should not.
+#
+# Placeholders (see wnba_engine/scheduler/config.py) are resolved at each fire,
+# never at load, so a scheduler up for a month does not run last month's dates.
+
+# --------------------------------------------------------------------------
+# Market capture -- the one job that cannot miss a window.
+#
+# Kalshi and Polymarket publish no historical endpoint for these quotes, so an
+# observation not recorded at the time is gone permanently. Everything else
+# here can be backfilled; this cannot.
+#
+# It no longer needs its own host. Capture used to run on a Mac Studio and the
+# ingest on a laptop, joined by an hourly rsync -- and that rsync is precisely
+# what broke, twice, stranding four days of captures in August 2026 and then
+# seven more. Capture and ingest now share a filesystem, so there is no hop to
+# fail.
+#
+# Note: this exits non-zero if ANY provider fails, and ESPN's injuries endpoint
+# has been returning 403 since at least 2026-08-16. Kalshi and Polymarket still
+# capture correctly on those runs -- each provider is attempted independently.
+# The job reads as 'failed' until the ESPN feed is fixed, which is the honest
+# reading and not something to paper over with `|| true`.
+[[jobs]]
+name = "market-capture"
+description = "Record raw Kalshi + Polymarket + ESPN injury payloads to disk"
+every = "30m"
+run_at_start = true
+timeout = "10m"
+steps = [
+  ["python", "-m", "wnba_engine.market_capture.capture", "--root", "{env:WNBA_CAPTURE_ROOT}"],
+]
+
+# --------------------------------------------------------------------------
+# Load captures into Postgres, then grade the divergence log.
+#
+# Hourly, not every 30 minutes: the ingest is idempotent and skips files it has
+# already seen, so a late run costs a delay and nothing else. Capture is the
+# side that must not miss; this side only has to catch up.
+#
+# Grading runs here rather than on the two-minute cadence because neither half
+# can be answered sooner anyway -- the recheck needs a LATER book quote to
+# exist, and the closing grade needs the game to be final.
+[[jobs]]
+name = "capture-ingest"
+description = "Ingest captured payloads and grade the forward divergence log"
+every = "1h"
+timeout = "45m"
+steps = [
+  ["wnba-engine", "ingest-market-captures", "--dir", "{env:WNBA_CAPTURE_ROOT}"],
+  ["wnba-engine", "grade-divergences"],
+]
+
+# --------------------------------------------------------------------------
+# Venue prices and divergence detection. FREE -- Kalshi and Polymarket charge
+# nothing and are unmetered.
+#
+# Split out from the paid capture below after these three steps ran as one job
+# and the metered first step failed on a deactivated API key, which stopped the
+# two free steps that followed it. Seven days of Kalshi and Polymarket fills
+# were lost that way -- not because the data was unavailable, but because a
+# billing problem at a different provider sat in front of them in a list.
+#
+# Free work never queues behind paid work. That is the rule this split encodes.
+#
+# refresh-venue-prices is not optional and not merely nice-to-have:
+# log-divergences reads the venue trade tables with a ten-minute lookback and
+# nothing else keeps them current. Without it the detector logs a confident
+# silence. It is scoped to open markets closing inside 48 hours and resolves the
+# game before paying for fills, which is what takes it from ~5m to ~15s.
+#
+# Read-only price capture. There is no order placement anywhere in this
+# codebase and none should be added (ROADMAP.md non-goals).
+[[jobs]]
+name = "venue-prices"
+description = "Refresh Kalshi/Polymarket fills and run cross-venue divergence detection"
+every = "2m"
+timeout = "110s"
+steps = [
+  ["wnba-engine", "refresh-venue-prices"],
+  ["wnba-engine", "log-divergences"],
+]
+
+# --------------------------------------------------------------------------
+# High-frequency sportsbook capture near tip-off. PAID -- the only job on this
+# schedule that spends the-odds-api credits at a high rate.
+#
+# Two minutes is chosen from the phenomenon, not the budget: the cross-venue
+# follow-through is 15-20 minutes wide, so the sampling interval has to be a
+# small fraction of it. Routine captures are ~60 minutes apart and the move
+# lands inside that gap, which is why the economics of the lead could not be
+# tested at all before this job existed.
+#
+# It spends nothing when no game tips within six hours, so the off-season and
+# empty afternoons remain free.
+#
+# COST, which is now the binding constraint. the-odds-api prices a request at
+# [markets] x [regions]. This capture used to request h2h,spreads,totals and so
+# cost 3 credits a fire, while the divergence log it feeds reads only the
+# moneyline columns; it now asks for h2h alone at 1 credit. A 6-hour pre-tip
+# window at this cadence is ~180 fires, so ~180 credits per game day rather
+# than ~540, and roughly 7,000 credits to finish a season instead of 21,000.
+#
+# DISABLED. The plan this cadence was designed against held 5,000,000 credits;
+# the current key holds 500 -- about two game days even after the 3x saving.
+# Re-enable when the budget supports it. The routine 2-hourly snapshot below
+# keeps sportsbook history accruing meanwhile at ~60 credits a day.
+[[jobs]]
+name = "odds-focused"
+description = "Pre-tip sportsbook moneyline capture (1 credit per fire)"
+enabled = false
+every = "2m"
+timeout = "110s"
+steps = [
+  ["wnba-engine", "capture-odds-focused"],
+]
+
+# --------------------------------------------------------------------------
+# Routine snapshots of everything with a rolling window.
+#
+# Every one of these is "lost if missed" rather than merely stale:
+#   - ESPN's /injuries feed is current-state only, with no historical backfill.
+#   - balldontlie's /wnba/v1/odds exposes a rolling recent window, not history.
+#   - the-odds-api's CURRENT odds has the same property (its historical archive
+#     is a separate, manual command and deliberately not run here).
+#   - standings shift on every completed game; the upsert is ~13 rows and cheap.
+[[jobs]]
+name = "market-injury-snapshot"
+description = "Kalshi/Polymarket prices, injuries, standings, and current odds"
+every = "2h"
+timeout = "1h"
+steps = [
+  ["wnba-engine", "snapshot-kalshi"],
+  ["wnba-engine", "snapshot-polymarket"],
+  ["wnba-engine", "snapshot-injuries"],
+  ["wnba-engine", "backfill-standings", "--season", "{season}"],
+  ["wnba-engine", "backfill-odds", "--since", "{days_ago:2}", "--until", "{today}"],
+  ["wnba-engine", "snapshot-odds-api"],
+  ["wnba-engine", "snapshot-odds-api-scores"],
+]
+
+# --------------------------------------------------------------------------
+# Daily box-score sync. Per-day data, so daily is enough.
+[[jobs]]
+name = "espn-sync"
+description = "ESPN scoreboard and box scores for recently completed games"
+daily_at = "13:00"
+timeout = "1h"
+steps = [
+  ["wnba-engine", "sync-recent"],
+]
+
+# --------------------------------------------------------------------------
+# Weekly season-level backfills from balldontlie.
+#
+# All season-level or per-completed-game data, upserted, safe to re-run. Player
+# prop odds stay weekly rather than joining the 2-hourly snapshot: that command
+# queries per-game_id across the whole season and is far too heavy for an
+# intra-day cadence, and props are tied to completed games anyway.
+[[jobs]]
+name = "balldontlie-season"
+description = "Advanced stats, play-by-play, shot zones, and player prop odds"
+weekly_at = "sun 14:00"
+timeout = "3h"
+steps = [
+  ["wnba-engine", "backfill-advanced-stats", "--season", "{season}"],
+  ["wnba-engine", "backfill-team-advanced-stats", "--season", "{season}"],
+  ["wnba-engine", "backfill-plays", "--season", "{season}"],
+  ["wnba-engine", "backfill-shot-zones", "--season", "{season}"],
+  ["wnba-engine", "backfill-player-prop-odds", "--season", "{season}"],
+]

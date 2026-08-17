@@ -1,0 +1,52 @@
+# The ingest scheduler: every recurring job, on one always-on host.
+#
+# What this replaces: six launchd agents across two Macs, joined by an hourly
+# rsync. That arrangement lost four days of data on 2026-08-03 and seven more
+# on 2026-08-10, both times silently. See deploy/schedule.toml for the jobs and
+# db/migrations/0031_job_runs.sql for how failure is now surfaced.
+schemaVersion: 1
+name: wnba-scheduler
+image: localhost/wnba-engine:latest
+
+caps: [podman]
+
+# Modest: this process sleeps almost all the time and shells out to short-lived
+# ingest commands. The ceiling is set by the weekly balldontlie backfill, which
+# holds a season of play-by-play in memory while parsing.
+resources:
+  memory: 2Gi
+  cpu: 2
+
+# Rootless Podman's default networking (pasta) cannot reach a service bound to
+# host loopback, and wnba-postgres publishes on 127.0.0.1:5434 by design. Host
+# networking is the documented answer (`nephos guide deploy`).
+#
+# It publishes no ports of its own -- there is nothing here to connect to.
+network: host
+
+dependsOn:
+  - wnba-postgres
+
+volumes:
+  # Raw captures. These are the durable record of feeds with no historical
+  # endpoint -- a payload not written at the time is unrecoverable -- so they
+  # live in a named volume that outlives any container or redeploy, not in the
+  # image's ephemeral layer.
+  - wnba-captures:/data/captures
+
+env:
+  WNBA_CAPTURE_ROOT: /data/captures
+  WNBA_SCHEDULE_PATH: /app/deploy/schedule.toml
+
+command: ["python", "-m", "wnba_engine.scheduler"]
+
+# Resolved on the node at deploy time into a 0600 env file; none of these
+# values appear in this manifest, the generated unit, or git.
+#
+# The database URL is assembled here rather than stored whole so the password
+# has exactly one home on disk (~/.config/nephos/wnba-db.pass) and the postgres
+# service and its clients cannot drift apart.
+secrets:
+  WNBA_ENGINE_DATABASE_URL: "printf 'postgresql://wnba:%s@127.0.0.1:5434/wnba_engine' \"$(cat $HOME/.config/nephos/wnba-db.pass)\""
+  WNBA_ENGINE_BALLDONTLIE_API_KEY: "cat $HOME/.config/nephos/wnba-balldontlie.key"
+  WNBA_ENGINE_ODDS_API_KEY: "cat $HOME/.config/nephos/wnba-odds-api.key"

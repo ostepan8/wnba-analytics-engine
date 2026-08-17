@@ -1,0 +1,30 @@
+# Public route for the read API, through the shared nephos Cloudflare Tunnel.
+#
+#   nephos publish wnba-api --config deploy/nephos/publish.yaml
+#
+# Idempotent: it upserts this one ingress rule while preserving every other
+# hostname on the tunnel, and ensures the DNS record exists. Running it twice
+# reaches the same state, never a duplicate tunnel or record.
+#
+# accountID and apiToken are COMMANDS, not values -- nephos runs each and takes
+# its stdout. So no credential is stored in this file and it is safe in git.
+# The commands read from ~/.vault, the age-encrypted local store.
+#
+# `api.onephos.com` is already taken by the nephos control API, hence
+# `wnba.onephos.com`.
+#
+# Public means public: this hostname serves an unauthenticated read API. That
+# is a deliberate choice, argued in wnba_engine/api/app.py -- the dataset is
+# public WNBA data, the service cannot write, and it holds no credentials.
+accountID: "$HOME/.local/bin/vault get 'CLOUDFLARE_ACCOUNT_ID@onephos'"
+apiToken: "$HOME/.local/bin/vault get 'CLOUDFLARE_API_TOKEN@onephos'"
+
+zone: onephos.com
+tunnelName: nephos
+
+routes:
+  wnba-api:
+    hostname: wnba.onephos.com
+    # cloudflared runs on the same node with `network: host`, so the API's
+    # loopback bind is reachable to it and to nothing else.
+    origin: http://127.0.0.1:8090

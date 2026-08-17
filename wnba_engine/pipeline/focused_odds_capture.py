@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from wnba_engine.db.pool import Database
-from wnba_engine.odds_api.client import OddsApiClient
+from wnba_engine.odds_api.client import MONEYLINE_ONLY_MARKETS, OddsApiClient
 from wnba_engine.pipeline.odds_api_ingest import OddsApiIngestResult, snapshot_current_odds
 
 logger = logging.getLogger(__name__)
@@ -155,9 +155,16 @@ def capture_focused_odds(
             games_in_window=int(in_window), skipped_reason=reason
         )
 
-    result: OddsApiIngestResult = snapshot_current_odds(db, client)
+    # Moneyline only. This capture exists to feed the divergence log, which
+    # reads the two moneyline columns and nothing else, and the-odds-api prices
+    # a request at [markets] x [regions] -- so asking for spreads and totals
+    # here tripled the cost of the highest-frequency job in the system for data
+    # it never used. The 2-hourly routine snapshot still takes all three.
+    result: OddsApiIngestResult = snapshot_current_odds(
+        db, client, markets=MONEYLINE_ONLY_MARKETS
+    )
     logger.info(
-        "focused capture: %d game(s) watched, 1 request, %d row(s) inserted",
+        "focused capture: %d game(s) watched, 1 request (1 credit), %d row(s) inserted",
         len(targets), result.rows_inserted,
     )
     return FocusedCaptureResult(

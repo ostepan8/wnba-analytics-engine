@@ -75,7 +75,8 @@ def _seed_game(
 
 
 class FakeOddsApiCurrentOddsClient:
-    def fetch_current_odds(self) -> object:
+    def fetch_current_odds(self, *, markets: str | None = None) -> object:
+        del markets
         return load_fixture("odds_api_current_odds.json")
 
 

@@ -17,6 +17,10 @@ dependencies = [
 # Modeling only. Deliberately optional: ingestion, validation and the
 # feature layer must stay installable without a compiler toolchain.
 modeling = ["scikit-learn>=1.5", "numpy>=2.0"]
+# The read-only HTTP API (wnba_engine/api/). Optional for the same reason as
+# modeling: the ingest pipeline is the part that must stay trivially
+# installable, and a contributor running backfills has no use for a web server.
+api = ["fastapi>=0.115", "uvicorn[standard]>=0.32"]
 
 [project.scripts]
 wnba-engine = "wnba_engine.cli.main:cli"
@@ -41,6 +45,13 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# B008 forbids function calls in argument defaults, which is exactly how
+# FastAPI declares dependencies and query-parameter metadata -- `Depends(...)`
+# and `Query(...)` in the signature IS the framework's interface. Scoped to the
+# route modules so the rule keeps applying everywhere it catches real bugs.
+"wnba_engine/api/routes/*.py" = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

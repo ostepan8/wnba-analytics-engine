@@ -1,0 +1,57 @@
+# Postgres for the engine, as a nephos service on an always-on node.
+#
+# Replaces the docker-compose Postgres that lived on a laptop. That
+# arrangement is what froze the database on 2026-08-10: every ingest job
+# hardcoded a repo path, the repo moved, and the jobs failed silently for a
+# week while capture kept writing files nothing was reading.
+#
+# No hostname appears here. The only hard requirement is a Linux container
+# runtime, and `caps: [podman]` says exactly that.
+schemaVersion: 1
+name: wnba-postgres
+image: docker.io/library/postgres:16-alpine
+
+caps: [podman]
+
+# Sized against the working set, not the disk: the database is ~2 GB today and
+# grows a few hundred MB a month from append-only price history. 2Gi of RAM
+# keeps the hot indexes (market_price_snapshots, polymarket_trades) cached.
+resources:
+  memory: 2Gi
+  cpu: 2
+  disk: 40Gi
+
+# 5434 to match DEFAULT_DATABASE_URL in wnba_engine/config.py, so a developer's
+# local .env and this deployment describe the same port.
+#
+# nephos normalizes every published port to 127.0.0.1, so this is NOT reachable
+# from the tailnet. That is deliberate -- the database holds no secrets worth
+# exposing and gains nothing from a public port. The scheduler and API reach it
+# with `network: host`; a human reaches it with an SSH tunnel:
+#
+#   ssh -N -L 5434:127.0.0.1:5434 fedora
+ports: ["5434:5432"]
+
+# A named volume rather than a host bind mount. Rootless Podman maps the
+# container's postgres uid into a user namespace, so a bind-mounted host
+# directory needs both matching ownership and an SELinux relabel on Fedora --
+# two failure modes for no benefit. Durability here comes from the nightly
+# pg_dump to MinIO (deploy/nephos/backup), not from this volume.
+#
+# `nephos down` removes the service, not the volume. The data survives a
+# redeploy.
+volumes:
+  - wnba-pgdata:/var/lib/postgresql/data
+
+env:
+  POSTGRES_USER: wnba
+  POSTGRES_DB: wnba_engine
+  # Postgres only applies this at initdb time. It matters: the engine stores
+  # every timestamp as timestamptz and every ingest compares against UTC.
+  POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+
+# Resolved by running this command on the node at deploy time and written to a
+# 0600 env file. The password never appears in this manifest, in the generated
+# Quadlet unit, or in git.
+secrets:
+  POSTGRES_PASSWORD: "cat $HOME/.config/nephos/wnba-db.pass"

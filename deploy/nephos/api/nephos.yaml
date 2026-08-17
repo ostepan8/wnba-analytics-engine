@@ -1,0 +1,50 @@
+# The read-only HTTP API, served publicly through the existing Cloudflare
+# Tunnel. See wnba_engine/api/app.py for why it is safe to expose unauthenticated.
+schemaVersion: 1
+name: wnba-api
+image: localhost/wnba-engine:latest
+
+caps: [podman]
+
+# A read API in front of one Postgres. The pool is capped at 8 connections and
+# every query is bounded, so the ceiling here is response serialisation, not work.
+resources:
+  memory: 512Mi
+  cpu: 1
+
+# Host networking for two reasons, both structural rather than convenient:
+# wnba-postgres publishes on 127.0.0.1:5434 and rootless Podman's default
+# networking cannot reach host loopback; and cloudflared -- itself on host
+# networking -- has to reach this origin the same way.
+network: host
+
+dependsOn:
+  - wnba-postgres
+
+env:
+  # Bound to loopback deliberately. Public reach comes from the Cloudflare
+  # Tunnel, which terminates TLS and absorbs cached traffic. Binding 0.0.0.0
+  # would additionally expose this to the whole tailnet for no benefit.
+  UVICORN_HOST: "127.0.0.1"
+  UVICORN_PORT: "8090"
+
+command:
+  - uvicorn
+  - wnba_engine.api.app:app
+  - --host
+  - "127.0.0.1"
+  - --port
+  - "8090"
+  # Single worker: the process is I/O-bound on Postgres, and a second worker
+  # would double the connection pool against the same database for no gain.
+  - --workers
+  - "1"
+  # uvicorn's access log duplicates what Cloudflare already records, at one line
+  # per request on a public endpoint.
+  - --no-access-log
+
+# Only the database. The provider API keys stay in the scheduler's environment:
+# this process has no use for them, and the blast radius of a public service
+# should not include credentials it never calls.
+secrets:
+  WNBA_ENGINE_DATABASE_URL: "printf 'postgresql://wnba:%s@127.0.0.1:5434/wnba_engine' \"$(cat $HOME/.config/nephos/wnba-db.pass)\""
