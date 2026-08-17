@@ -19,6 +19,7 @@ import type {
   GamePropRow,
   GameRow,
   GameShotsResponse,
+  MarketPropRow,
   ShotDefenseResponse,
 } from "../lib/api";
 import { moneylineLabel, propLabel, spreadLabel, useQuery } from "../lib/api";
@@ -49,16 +50,80 @@ function NotCovered({ what, why }: { what: string; why: string }) {
   );
 }
 
+/** Live props from Kalshi and Polymarket.
+ *
+ * These are the props that still arrive: the venues are free and unmetered and
+ * captured every half hour, while the sportsbook prop feed is paid and lapsed
+ * on 2026-08-03. Both are normalised to a line and the probability of going
+ * over it, so a Kalshi threshold ("15+") and a Polymarket O/U sit in one table.
+ */
+function MarketProps({ gameId }: { gameId: number }) {
+  const query = useQuery<{ props: MarketPropRow[] }>(
+    `/lines/market-props?game_id=${gameId}&limit=300`,
+  );
+  if (!query.loading && !query.error && !query.data?.props.length) return null;
+  return (
+    <div style={{ marginBottom: "var(--s-5)" }}>
+      <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
+        Prediction markets <span className="muted">· live</span>
+      </h4>
+      <Async query={query} empty={(data) => data.props.length === 0}>
+        {(data) => (
+          <div className="table-wrap" style={{ maxHeight: 360, overflowY: "auto" }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="name">Player</th>
+                  <th>Market</th>
+                  <th>Line</th>
+                  <th>Over</th>
+                  <th>Venue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.props.map((row) => (
+                  <tr key={`${row.provider}-${row.player_id}-${row.prop_type}-${row.line}`}>
+                    <td className="name">
+                      <PlayerCell playerId={row.player_id} name={row.full_name} />
+                    </td>
+                    <td>{propLabel(row.prop_type)}</td>
+                    <td className="num">o{row.line}</td>
+                    <td className="num">{pct(Number(row.over_probability))}</td>
+                    <td className="muted">{row.provider}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Async>
+    </div>
+  );
+}
+
 function PropsTab({ gameId }: { gameId: number }) {
   const query = useQuery<{ props: GamePropRow[] }>(`/games/${gameId}/props`);
-  if (!query.loading && !query.error && !query.data?.props.length) {
-    return (
-      <NotCovered
-        what="player props"
-        why="Prop lines come from a paid feed whose key lapsed on 2026-08-03; earlier games are covered."
-      />
-    );
-  }
+  const hasSportsbook = !!query.data?.props.length;
+  return (
+    <>
+      <MarketProps gameId={gameId} />
+      {!query.loading && !query.error && !hasSportsbook ? (
+        <NotCovered
+          what="sportsbook prop lines"
+          why="That feed is paid and its key lapsed on 2026-08-03. Prediction-market props above are free and still live."
+        />
+      ) : (
+        <SportsbookProps query={query} />
+      )}
+    </>
+  );
+}
+
+function SportsbookProps({
+  query,
+}: {
+  query: { data: { props: GamePropRow[] } | undefined; error: Error | undefined; loading: boolean };
+}) {
   return (
     <Async query={query} empty={(data) => data.props.length === 0}>
       {(data) => (

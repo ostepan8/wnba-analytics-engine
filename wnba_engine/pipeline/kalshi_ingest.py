@@ -180,18 +180,29 @@ def _resolve_player_prop_ids(
     """
     player_id_by_market: dict[str, int] = {}
     game_id_by_market: dict[str, int] = {}
-    resolved_by_event: dict[str, tuple[int, int | None] | None] = {}
+    # Keyed on (event, TITLE), not on the event alone.
+    #
+    # An event groups many markets and the player is named in each market's
+    # title, never in the event. Caching per event therefore resolved the first
+    # market's player and then stamped that player onto every other market under
+    # it: 76,776 of 179,882 prop rows carried the wrong player, with one id
+    # standing in for a dozen different people. It is the right key for GAME
+    # resolution -- every market in an event belongs to one game -- and the
+    # wrong one for player resolution, which is why copying that grouping across
+    # looked reasonable and was not.
+    resolved: dict[tuple[str, str], tuple[int, int | None] | None] = {}
     for snap in snapshots:
         if snap.event_external_id is None:
             continue
-        if snap.event_external_id not in resolved_by_event:
-            resolved_by_event[snap.event_external_id] = _resolve_one_player_prop(
+        key = (snap.event_external_id, snap.title)
+        if key not in resolved:
+            resolved[key] = _resolve_one_player_prop(
                 conn, snap.event_external_id, snap.title
             )
-        resolved = resolved_by_event[snap.event_external_id]
-        if resolved is None:
+        match = resolved[key]
+        if match is None:
             continue
-        player_id, game_id = resolved
+        player_id, game_id = match
         player_id_by_market[snap.market_external_id] = player_id
         if game_id is not None:
             game_id_by_market[snap.market_external_id] = game_id

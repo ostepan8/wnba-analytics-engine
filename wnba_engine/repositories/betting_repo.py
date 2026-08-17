@@ -252,3 +252,90 @@ def fetch_player_prop_log(
 
 def fetch_prop_market_summary(conn: Connection, *, season: int | None) -> list[dict[str, Any]]:
     return _all(conn, _PROP_MARKET_SUMMARY, {"season": season})
+
+
+# --------------------------------------------------- prediction-market props
+#
+# Kalshi and Polymarket both list player props, and unlike the sportsbook feed
+# they are FREE, unmetered, and still arriving -- captured every 30 minutes.
+# They were sitting unused in market_price_snapshots while the site reported
+# "no props" from a paid feed whose key lapsed on 2026-08-03.
+#
+# The two venues express a prop differently and both are parsed to one shape:
+#
+#   Kalshi      title "Rhyne Howard: 15+ points"        -> threshold market.
+#               "15+" means 15 or more, so the equivalent line is 14.5 and the
+#               price is the probability of going OVER it.
+#   Polymarket  outcome "Aliyah Boston: Assists O/U 3.5" -> the line is stated.
+#
+# Only ONE quote per market is returned, and which one matters.
+#
+# For a game that has started, it is the last quote BEFORE tip -- the closing
+# price, the same discipline the sportsbook queries use. Taking the newest quote
+# instead returns the settled price: once a game is final every prop has
+# resolved, so the table reads 0%, 100%, 100%, 0%. That is not the market's
+# opinion of anything, it is the answer written down after the fact, and
+# presenting it as a price is the sort of thing that quietly turns a research
+# tool into a lie. For an upcoming game there is no tip yet, so it is simply the
+# newest quote.
+_MARKET_PROPS_SQL = """
+WITH parsed AS (
+    SELECT DISTINCT ON (s.provider, s.market_external_id)
+           s.provider, s.market_external_id, s.player_id, s.game_id,
+           s.implied_probability, s.volume, s.captured_at, s.status, s.title,
+           CASE WHEN s.provider = 'kalshi'
+                THEN lower(substring(s.title from ':\\s*\\d+\\+\\s*(\\w+)'))
+                ELSE lower(substring(s.outcome from ':\\s*(\\w+)\\s+O/U'))
+           END AS prop_type,
+           CASE WHEN s.provider = 'kalshi'
+                -- "15+" is 15 or more; the comparable line is 14.5.
+                THEN substring(s.title from ':\\s*(\\d+)\\+')::numeric - 0.5
+                ELSE substring(s.outcome from 'O/U\\s*([0-9.]+)')::numeric
+           END AS line
+      FROM market_price_snapshots s
+      LEFT JOIN games gm ON gm.id = s.game_id
+     WHERE s.player_id IS NOT NULL
+       AND s.implied_probability IS NOT NULL
+       AND (%(player_id)s::bigint IS NULL OR s.player_id = %(player_id)s::bigint)
+       AND (%(game_id)s::bigint   IS NULL OR s.game_id   = %(game_id)s::bigint)
+       AND (%(since)s::timestamptz IS NULL OR s.captured_at >= %(since)s::timestamptz)
+       -- Closing price for a game already under way; current price otherwise.
+       AND s.captured_at <= coalesce(gm.start_time, now())
+     ORDER BY s.provider, s.market_external_id, s.captured_at DESC
+)
+SELECT p.provider, p.player_id, pl.full_name, p.game_id, p.prop_type, p.line,
+       p.implied_probability AS over_probability,
+       p.volume, p.captured_at, p.status, p.title,
+       g.start_time, g.status AS game_status,
+       home.abbreviation AS home_abbr, away.abbreviation AS away_abbr
+  FROM parsed p
+  JOIN players pl ON pl.id = p.player_id
+  LEFT JOIN games g    ON g.id = p.game_id
+  LEFT JOIN teams home ON home.id = g.home_team_id
+  LEFT JOIN teams away ON away.id = g.away_team_id
+ WHERE p.prop_type IS NOT NULL
+   AND p.line IS NOT NULL
+ ORDER BY p.captured_at DESC, pl.full_name, p.prop_type, p.line
+ LIMIT %(limit)s
+"""
+
+
+def fetch_market_props(
+    conn: Connection,
+    *,
+    player_id: int | None = None,
+    game_id: int | None = None,
+    since: str | None = None,
+    limit: int = MAX_ROWS,
+) -> list[dict[str, Any]]:
+    """Live player props from the prediction markets, latest quote per market."""
+    return _all(
+        conn,
+        _MARKET_PROPS_SQL,
+        {
+            "player_id": player_id,
+            "game_id": game_id,
+            "since": since,
+            "limit": _cap(limit),
+        },
+    )

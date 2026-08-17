@@ -107,6 +107,32 @@ def player_props(
     return {"player_id": player_id, "summary": summary, "prop_type": chosen, "log": log}
 
 
+@router.get("/lines/market-props")
+def market_props(
+    response: Response,
+    player_id: int | None = Query(None),
+    game_id: int | None = Query(None),
+    limit: int = Query(300, ge=1, le=500),
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Live player props from Kalshi and Polymarket.
+
+    These are the props that still arrive. The sportsbook prop feed is paid and
+    its key lapsed on 2026-08-03; the prediction markets are free, unmetered and
+    captured every thirty minutes, and were sitting unused while the site
+    reported that no props existed.
+
+    Both venues are normalised to one shape -- a line and the probability of
+    going over it. Kalshi quotes thresholds ("15+ points"), which is 15 or more,
+    so the comparable line is 14.5.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_MAX_AGE}"
+    props = betting_repo.fetch_market_props(
+        conn, player_id=player_id, game_id=game_id, limit=limit
+    )
+    return {"props": props, "count": len(props)}
+
+
 @router.get("/lines/props")
 def prop_market(
     response: Response,

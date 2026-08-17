@@ -510,3 +510,23 @@ export interface ShotDefenseResponse {
   attempts: number;
   points_per_attempt: number | null;
 }
+
+/** A live prop from a prediction market, normalised across venues. */
+export interface MarketPropRow {
+  provider: string;
+  player_id: number;
+  full_name: string;
+  game_id: number | null;
+  prop_type: string;
+  line: string;
+  /** Probability of going OVER the line. */
+  over_probability: string;
+  volume: string | null;
+  captured_at: string;
+  status: string | null;
+  title: string;
+  start_time: string | null;
+  game_status: string | null;
+  home_abbr: string | null;
+  away_abbr: string | null;
+}
