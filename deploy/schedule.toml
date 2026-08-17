@@ -158,6 +158,28 @@ steps = [
 ]
 
 # --------------------------------------------------------------------------
+# Nightly database dump.
+#
+# NOT an off-site backup -- these land on the same host as the database and do
+# not survive losing it. Off-site is still an open gap: the intended target
+# (Cloudflare R2) refuses the TLS handshake with the credentials on file.
+#
+# What this does buy is recovery from the likelier failure: a bad migration, an
+# accidental delete, or a parser that wrote wrong rows for a week. Fourteen days
+# of retention at ~140 MB a dump is ~2 GB against 1.8 TB free.
+#
+# 06:00 UTC is roughly 01:00 US Central -- after the last game of the night has
+# gone final and its ingest has settled, before the morning sync.
+[[jobs]]
+name = "db-backup"
+description = "pg_dump the database and prune dumps older than 14 days"
+daily_at = "06:00"
+timeout = "1h"
+steps = [
+  ["wnba-engine", "backup-database", "--dir", "/data/backups", "--keep", "14"],
+]
+
+# --------------------------------------------------------------------------
 # Weekly season-level backfills from balldontlie.
 #
 # All season-level or per-completed-game data, upserted, safe to re-run. Player

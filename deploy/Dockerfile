@@ -18,6 +18,30 @@ ENV UV_LINK_MODE=copy \
 
 WORKDIR /app
 
+# pg_dump, for `wnba-engine backup-database`. Client package only -- the server
+# is a separate container.
+#
+# It must be version 16, matching wnba-postgres. pg_dump refuses outright to
+# dump a server newer than itself ("aborting because of server version
+# mismatch"), and bookworm ships client 15, so this pulls from the PostgreSQL
+# project's own apt repository rather than Debian's.
+#
+# No `|| apt-get install postgresql-client` fallback. An earlier version had
+# one, it silently installed 15, and every backup failed at run time on a
+# mismatch the fallback existed to avoid. A missing package must break the
+# build, which is the one place someone is watching.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y ca-certificates curl gnupg \
+ && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install --no-install-recommends -y postgresql-client-16 \
+ && apt-get purge -y curl gnupg && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/* \
+ && pg_dump --version | grep -q ' 16\.'
+
 # Dependencies first, from the lockfile alone. This layer is keyed on
 # pyproject.toml + uv.lock, so editing engine code -- the common case -- reuses
 # the cached install instead of re-resolving 121 packages.

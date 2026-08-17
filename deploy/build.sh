@@ -32,4 +32,9 @@ podman images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -F "${TAG%%:
 echo "==> smoke test"
 podman run --rm "${TAG}" wnba-engine --help >/dev/null
 podman run --rm "${TAG}" python -c 'import wnba_engine.scheduler.runner' >/dev/null
+# pg_dump's major version must match the server's, or every nightly backup fails
+# at run time with "aborting because of server version mismatch" -- a failure
+# that only shows up hours after the deploy that caused it.
+podman run --rm "${TAG}" pg_dump --version | grep -q ' 16\.' \
+    || { echo "FAIL: pg_dump is not version 16"; exit 1; }
 echo "==> ok"

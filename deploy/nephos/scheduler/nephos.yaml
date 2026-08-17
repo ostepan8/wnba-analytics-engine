@@ -33,6 +33,9 @@ volumes:
   # live in a named volume that outlives any container or redeploy, not in the
   # image's ephemeral layer.
   - wnba-captures:/data/captures
+  # Nightly pg_dump output. A separate volume from the captures so a restore
+  # procedure that wipes one cannot take the other with it.
+  - wnba-backups:/data/backups
 
 env:
   WNBA_CAPTURE_ROOT: /data/captures

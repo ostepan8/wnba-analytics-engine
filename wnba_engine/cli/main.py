@@ -16,6 +16,7 @@ import click
 from wnba_engine.analysis import style as style_space
 from wnba_engine.analysis.divergence import DEFAULT_MIN_VOLUME
 from wnba_engine.analysis.lead_lag import t_statistic as lead_lag_t
+from wnba_engine.backup.database import back_up_database
 from wnba_engine.balldontlie.client import BalldontlieClient
 from wnba_engine.config import load_settings
 from wnba_engine.db.migrate import run_migrations
@@ -1186,6 +1187,34 @@ def validate() -> None:
 
     if not report.passed:
         sys.exit(1)
+
+
+@cli.command("backup-database")
+@click.option(
+    "--dir",
+    "directory",
+    default="/data/backups",
+    show_default=True,
+    help="Where dumps are written. Should be a volume that outlives the container.",
+)
+@click.option(
+    "--keep",
+    default=14,
+    show_default=True,
+    help="How many dumps to retain; older ones are deleted after a successful dump.",
+)
+def backup_database_cmd(directory: str, keep: int) -> None:
+    """Dump the database with pg_dump and prune old dumps.
+
+    NOT an off-site backup -- the dumps sit on the same host as the
+    database. They protect against a bad migration, an accidental delete,
+    or a parser that wrote wrong rows for a week; they do not protect
+    against losing the machine.
+    """
+    result = back_up_database(
+        load_settings().database_url, directory=Path(directory).expanduser(), keep=keep
+    )
+    click.echo(f"backup: {result}")
 
 
 if __name__ == "__main__":
