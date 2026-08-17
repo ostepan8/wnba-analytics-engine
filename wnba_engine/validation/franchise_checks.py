@@ -41,9 +41,15 @@ def check_non_franchise_team_in_regular_season(conn: Connection) -> CheckResult:
 
 
 #: Regular-season games each franchise is scheduled to play, by season.
-#: Published lengths: 36 (2022), 40 (2023-24), 44 (2025). 2026 is omitted
-#: because it is still in progress -- a mid-season count is not a violation.
-SCHEDULED_GAMES: dict[int, int] = {2022: 36, 2023: 40, 2024: 40, 2025: 44}
+#: Published lengths: 36 (2022), 40 (2023-24), 44 (2025-26).
+#:
+#: 2026 is included, which it was not before. Its absence is what let an
+#: incomplete SCHEDULE go unnoticed: the played-count check below skips
+#: in-progress seasons by design, so nothing was watching whether the FUTURE
+#: fixtures had been ingested at all. They had not -- the table held 33-37 games
+#: per team of a 44-game season, which made every remaining game invisible and
+#: reported eleven teams as mathematically eliminated when only two were.
+SCHEDULED_GAMES: dict[int, int] = {2022: 36, 2023: 40, 2024: 40, 2025: 44, 2026: 44}
 
 _GAME_COUNT_SQL = """
 SELECT g.season, t.name, count(*) AS played
@@ -75,7 +81,10 @@ def check_regular_season_game_counts(conn: Connection) -> CheckResult:
     from `season_type='regular-season'` is off by one for eight
     team-seasons, and nothing else surfaces that.
     """
-    seasons = sorted(SCHEDULED_GAMES)
+    # Only seasons with nothing left to play. A mid-season count is not a
+    # violation, and 2026 now appears in SCHEDULED_GAMES for the completeness
+    # check below.
+    seasons = _completed_seasons(conn)
     rows = conn.execute(_GAME_COUNT_SQL, {"seasons": seasons}).fetchall()
     violations = [
         (season, name, played, SCHEDULED_GAMES[season])
@@ -89,5 +98,72 @@ def check_regular_season_game_counts(conn: Connection) -> CheckResult:
         formatter=lambda r: f"{r[0]} {r[1]}: {r[2]} games, scheduled {r[3]}",
         # The key encodes the COUNT, so a team drifting to 38 games would
         # fail again rather than inheriting the acknowledgement for 37.
+        key_fn=lambda r: f"{r[0]}/{r[1]}:{r[2]}",
+    )
+
+
+_COMPLETED_SEASONS_SQL = """
+SELECT season
+  FROM games
+ WHERE season = ANY(%(seasons)s::int[])
+   AND season_type = 'regular-season'
+ GROUP BY season
+HAVING count(*) FILTER (WHERE status <> 'final') = 0
+"""
+
+_SCHEDULE_KNOWN_SQL = """
+SELECT g.season, t.name, count(*) AS known
+FROM games g
+JOIN teams t ON t.id IN (g.home_team_id, g.away_team_id)
+WHERE g.season = ANY(%(seasons)s::int[])
+  AND g.season_type = 'regular-season'
+  AND t.is_franchise
+GROUP BY 1, 2
+"""
+
+
+def _completed_seasons(conn: Connection) -> list[int]:
+    rows = conn.execute(
+        _COMPLETED_SEASONS_SQL, {"seasons": sorted(SCHEDULED_GAMES)}
+    ).fetchall()
+    return sorted(season for (season,) in rows)
+
+
+def check_schedule_is_complete(conn: Connection) -> CheckResult:
+    """Every franchise's WHOLE schedule is in the table, played or not.
+
+    This exists because of a failure that looked like a modelling bug and was a
+    data one. `sync-recent` only reaches seven days ahead, so fixtures beyond
+    that were never ingested: in August 2026 the table held 33-37 regular-season
+    games per team out of 44. Nothing was wrong with any row -- the missing ones
+    simply did not exist.
+
+    The consequence was not a blank cell. Games remaining is derived by counting
+    scheduled games, so every team appeared to have none left, and the playoff
+    page reported eleven teams as mathematically eliminated when the true number
+    was two. A gap in future data became a confident false statement about the
+    present.
+
+    Counts games at ANY status, which is what separates this from
+    check_regular_season_game_counts: that one asks whether the right number of
+    games were PLAYED and can only run on a finished season, while this one asks
+    whether we know about all of them yet -- the question that matters while a
+    season is still going.
+    """
+    seasons = sorted(SCHEDULED_GAMES)
+    rows = conn.execute(_SCHEDULE_KNOWN_SQL, {"seasons": seasons}).fetchall()
+    violations = [
+        (season, name, known, SCHEDULED_GAMES[season])
+        for season, name, known in rows
+        if known < SCHEDULED_GAMES[season]
+    ]
+    return build_check_result(
+        name="schedule_is_complete",
+        description="every franchise's full regular-season schedule has been ingested",
+        rows=violations,
+        formatter=lambda r: (
+            f"{r[0]} {r[1]}: only {r[2]} of {r[3]} games known -- "
+            f"future fixtures are missing, so games-remaining is understated"
+        ),
         key_fn=lambda r: f"{r[0]}/{r[1]}:{r[2]}",
     )

@@ -493,7 +493,12 @@ def test_run_all_checks_returns_a_report_and_passes_on_clean_db(clean_db):
     16 -> 17 when check_regular_season_game_counts landed, after verifying
     our 2025 standings against Wikipedia surfaced the Commissioner's Cup
     final being counted as a regular-season game.
+    18 -> 19 when check_schedule_is_complete landed. `sync-recent` only ever
+    reached seven days ahead, so future fixtures were never ingested: the table
+    held 33-37 games per team of a 44-game season, games-remaining was counted
+    as zero, and the playoff page called eleven teams eliminated when two were.
+    Nothing was watching whether the schedule itself had arrived.
     """
     report = run_all_checks(clean_db)
-    assert len(report.checks) == 18
+    assert len(report.checks) == 19
     assert report.passed is True

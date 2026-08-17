@@ -147,14 +147,21 @@ steps = [
 ]
 
 # --------------------------------------------------------------------------
-# Daily box-score sync. Per-day data, so daily is enough.
+# Daily box-score sync AND forward schedule.
+#
+# --days-ahead 90, not the 7-day default. Seven days is enough to keep results
+# current and is NOT enough to know the season: in August 2026 the table held
+# 33-37 games per team of a 44-game season, because nothing had ever ingested a
+# fixture more than a week out. Games remaining is counted from scheduled games,
+# so the playoff page reported eleven teams eliminated when two were. Ninety
+# days covers the rest of any season from any point in it.
 [[jobs]]
 name = "espn-sync"
-description = "ESPN scoreboard and box scores for recently completed games"
+description = "ESPN box scores for completed games, plus the forward schedule"
 daily_at = "13:00"
 timeout = "1h"
 steps = [
-  ["wnba-engine", "sync-recent"],
+  ["wnba-engine", "sync-recent", "--days-ahead", "90"],
 ]
 
 # --------------------------------------------------------------------------

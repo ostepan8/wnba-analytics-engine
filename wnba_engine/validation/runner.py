@@ -35,6 +35,7 @@ _CHECKS: tuple[Callable[[Connection], CheckResult], ...] = (
     bounds_checks.check_team_shot_zone_bounds,
     franchise_checks.check_non_franchise_team_in_regular_season,
     franchise_checks.check_regular_season_game_counts,
+    franchise_checks.check_schedule_is_complete,
     market_history_checks.check_polymarket_trade_bounds,
     market_history_checks.check_kalshi_candle_bounds,
     market_history_checks.check_kalshi_book_is_not_crossed,
