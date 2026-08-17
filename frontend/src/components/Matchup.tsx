@@ -17,7 +17,7 @@ import { Async, TeamLogo } from "./ui";
 import type { MatchupResponse, MatchupSide } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { pct } from "../lib/format";
-import { badgeClass, injuryDetail, isOut, statusRank } from "../lib/injury";
+import { badgeClass, injuryDetail, isOut, sourceLabel, statusRank } from "../lib/injury";
 
 function Row({ label, home, away }: { label: string; home: string; away: string }) {
   return (
@@ -92,6 +92,7 @@ function Injuries({ side, label }: { side: MatchupSide; label: string }) {
               <Link to={`/players/${row.player_id}`}>{row.full_name}</Link>
               <span className="muted" style={{ fontSize: "var(--t-xs)", alignSelf: "center" }}>
                 {injuryDetail(row)}
+                {sourceLabel(row.source) && ` · ${sourceLabel(row.source)}`}
               </span>
             </li>
           ))}

@@ -156,7 +156,10 @@ export default function Research() {
                         }}
                       />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: "var(--t-sm)", fontWeight: 560 }}>
+                        <div
+                          style={{ fontSize: "var(--t-sm)", fontWeight: 560 }}
+                          title={job.description || undefined}
+                        >
                           {job.job_name}
                         </div>
                         <div style={{ fontSize: "var(--t-xs)", color: "var(--ink-muted)" }}>
@@ -165,6 +168,17 @@ export default function Research() {
                           </span>
                           {job.enabled && ` · ${relativeTime(job.last_success_at)}`}
                         </div>
+                        {job.enabled && job.runs_24h != null && (
+                          <div style={{ fontSize: "var(--t-xs)", color: "var(--ink-muted)" }}>
+                            {job.runs_24h} run{job.runs_24h === 1 ? "" : "s"} in 24h
+                            {!!job.failures_24h && (
+                              <span style={{ color: "var(--critical)" }}>
+                                {" "}
+                                · {job.failures_24h} failed
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
