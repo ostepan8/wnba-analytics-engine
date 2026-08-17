@@ -231,14 +231,24 @@ def snapshot_official_injuries() -> None:
     Questionable, Doubtful, Out. ESPN's feed publishes just Out/Day-To-Day for
     the WNBA and the two disagree, so this is what the site should show.
     """
+    from wnba_engine.llm.client import LlmClient
     from wnba_engine.wnba_official.client import WnbaOfficialClient
 
     settings = load_settings()
     db = Database(settings.database_url)
+    llm = None
+    if settings.llm_base_url:
+        # Fallback only, for names deterministic matching cannot place. With no
+        # endpoint configured this stays None and the ingest behaves as before.
+        llm = LlmClient(
+            settings.llm_base_url, settings.llm_api_key, model=settings.llm_model
+        )
     try:
         with WnbaOfficialClient() as client:
-            click.echo(str(ingest_official_injury_report(db, client)))
+            click.echo(str(ingest_official_injury_report(db, client, llm=llm)))
     finally:
+        if llm is not None:
+            llm.close()
         db.close()
 
 

@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from wnba_engine.db.pool import Database
+from wnba_engine.llm.client import LlmClient
 from wnba_engine.models.injuries import OfficialInjuryEntry
+from wnba_engine.pipeline.name_resolution import resolve_player_name
 from wnba_engine.repositories import entity_repo, injury_repo
 from wnba_engine.wnba_official.client import WnbaOfficialClient, extract_text
 from wnba_engine.wnba_official.injury_report_parser import (
@@ -60,6 +62,7 @@ def ingest_official_injury_report(
     client: WnbaOfficialClient,
     *,
     captured_at: datetime | None = None,
+    llm: LlmClient | None = None,
 ) -> OfficialInjuryIngestResult:
     """Fetch, parse and store the league's current injury report."""
     document = client.fetch_latest()
@@ -80,7 +83,13 @@ def ingest_official_injury_report(
         unresolved = 0
         for entry in entries:
             team_id = team_id_by_name.get(entry.team_name)
-            player_id = entity_repo.find_player_by_name(conn, entry.player_name)
+            player_id = resolve_player_name(
+                conn,
+                entry.player_name,
+                source=SOURCE,
+                context=entry.team_name,
+                llm=llm,
+            )
             if team_id is None or player_id is None:
                 # NULL beats wrong: an unmatched name is reported, not attached
                 # to the nearest-looking player.

@@ -68,6 +68,12 @@ class Settings:
     # not a header (see wnba_engine/odds_api/client.py + http_client.py's
     # redact_query_param_keys for why that matters for logging).
     odds_api_key: str | None
+    # Local inference (nephos). Optional everywhere: with no base url configured
+    # the LLM name-resolution fallback simply does not run, and every caller
+    # behaves exactly as it did before -- an unmatched name is dropped.
+    llm_base_url: str | None
+    llm_api_key: str | None
+    llm_model: str
 
 
 def load_settings() -> Settings:
@@ -127,4 +133,7 @@ def load_settings() -> Settings:
         kalshi_api_key=os.environ.get("WNBA_ENGINE_KALSHI_API_KEY") or None,
         balldontlie_api_key=os.environ.get("WNBA_ENGINE_BALLDONTLIE_API_KEY") or None,
         odds_api_key=os.environ.get("WNBA_ENGINE_ODDS_API_KEY") or None,
+        llm_base_url=os.environ.get("WNBA_ENGINE_LLM_BASE_URL") or None,
+        llm_api_key=os.environ.get("WNBA_ENGINE_LLM_API_KEY") or None,
+        llm_model=os.environ.get("WNBA_ENGINE_LLM_MODEL", "fast"),
     )
