@@ -188,6 +188,129 @@ SELECT
  ORDER BY venue
 """
 
+# League standings.
+_STANDINGS = """
+SELECT t.id AS team_id, t.name, t.abbreviation, s.conference,
+       s.wins, s.losses, s.win_percentage, s.games_behind,
+       s.home_record, s.away_record, s.playoff_seed
+  FROM team_standings s
+  JOIN teams t ON t.id = s.team_id
+ WHERE s.season = %(season)s
+ ORDER BY s.win_percentage DESC NULLS LAST, s.wins DESC
+"""
+
+# Shot chart, binned server-side.
+#
+# 30,666 shots in the 2026 season alone. Sending them raw would be a multi-MB
+# payload for a chart that can only resolve a few hundred distinct positions
+# anyway, so the grid is computed here where the data already is.
+#
+# Coordinates are the standard NBA tenths-of-a-foot system: x in [-250, 250]
+# across the floor, y from the hoop at 0 toward half court. BIN_SIZE tenths per
+# cell. Cells below a minimum attempt count are still returned -- the caller
+# decides what is too sparse to colour, because that threshold is a display
+# choice, not a data one.
+#
+# Cells carry POINTS, not just makes, and the chart is coloured by points per
+# attempt rather than FG%. This is the difference between a correct shot chart
+# and a misleading one: a 35% three is well above average and a 35% layup is
+# poor, so a single FG% ramp paints the entire arc as bad. Points per attempt
+# puts every location on one honest scale.
+_SHOT_CHART = """
+SELECT (floor(s.loc_x / %(bin)s) * %(bin)s)::int AS x,
+       (floor(s.loc_y / %(bin)s) * %(bin)s)::int AS y,
+       count(*)                        AS attempts,
+       count(*) FILTER (WHERE s.made)  AS makes,
+       sum(CASE WHEN s.made
+                THEN CASE WHEN s.shot_zone_basic LIKE '%%3%%' THEN 3 ELSE 2 END
+                ELSE 0 END)            AS points
+  FROM shot_locations s
+  JOIN games g ON g.id = s.game_id
+ WHERE g.season = %(season)s
+   AND (%(player_id)s::bigint IS NULL OR s.player_id = %(player_id)s::bigint)
+   AND (%(team_id)s::bigint   IS NULL OR s.team_id   = %(team_id)s::bigint)
+   -- Beyond half court is a heave at the buzzer, not a shot profile.
+   AND s.loc_y BETWEEN -50 AND 470
+ GROUP BY 1, 2
+ ORDER BY 1, 2
+"""
+
+# Shooting split by zone, which is what a shot chart is actually read for.
+_SHOT_ZONES = """
+SELECT s.shot_zone_basic AS zone,
+       count(*)                        AS attempts,
+       count(*) FILTER (WHERE s.made)  AS makes,
+       round(avg(s.shot_distance)::numeric, 1) AS avg_distance
+  FROM shot_locations s
+  JOIN games g ON g.id = s.game_id
+ WHERE g.season = %(season)s
+   AND (%(player_id)s::bigint IS NULL OR s.player_id = %(player_id)s::bigint)
+   AND (%(team_id)s::bigint   IS NULL OR s.team_id   = %(team_id)s::bigint)
+   AND s.shot_zone_basic IS NOT NULL
+ GROUP BY 1
+ ORDER BY 2 DESC
+"""
+
+# Usage against efficiency -- the standard way to separate volume from value.
+#
+# Same DISTINCT ON guard as the leaders query, and for the same reason:
+# player_advanced_stats is keyed (game_id, player_id, SOURCE).
+_EFFICIENCY = """
+WITH one_row_per_game AS (
+    SELECT DISTINCT ON (a.player_id, a.game_id)
+           a.player_id, a.game_id, a.team_id,
+           a.usage_percentage, a.true_shooting_percentage,
+           a.offensive_rating, a.defensive_rating, a.net_rating,
+           -- `minutes` is TEXT in "MM:SS" form, not a number: this table stores
+           -- the provider's own clock string. Parsed to fractional minutes here
+           -- rather than averaged raw, which fails outright with
+           -- "function avg(text) does not exist".
+           (split_part(a.minutes, ':', 1)::numeric
+            + split_part(a.minutes, ':', 2)::numeric / 60) AS minutes
+      FROM player_advanced_stats a
+      JOIN games g ON g.id = a.game_id
+     WHERE g.season = %(season)s
+       AND a.minutes ~ '^[0-9]+:[0-9]{2}$'
+     ORDER BY a.player_id, a.game_id, a.source
+)
+SELECT p.id AS player_id, p.full_name,
+       (array_agg(t.abbreviation ORDER BY r.game_id DESC))[1] AS team_abbr,
+       count(*) AS games_played,
+       round(avg(r.usage_percentage)::numeric, 3)         AS usage_pct,
+       round(avg(r.true_shooting_percentage)::numeric, 3) AS true_shooting,
+       round(avg(r.net_rating)::numeric, 1)               AS net_rating,
+       round(avg(r.minutes)::numeric, 1)                  AS minutes
+  FROM one_row_per_game r
+  JOIN players p ON p.id = r.player_id
+  JOIN teams   t ON t.id = r.team_id
+ GROUP BY p.id, p.full_name
+HAVING count(*) >= %(min_games)s
+   AND avg(r.usage_percentage) IS NOT NULL
+   AND avg(r.true_shooting_percentage) IS NOT NULL
+ ORDER BY avg(r.usage_percentage) DESC
+ LIMIT %(limit)s
+"""
+
+# Score margin through a game, for a score-flow chart.
+#
+# `sequence` rather than the clock: `clock` is a display string that restarts
+# every period, so ordering by it interleaves the quarters. Only scoring plays
+# are returned -- the other ~85% of rows leave the margin unchanged and would
+# quadruple the payload to draw the same staircase.
+_GAME_FLOW = """
+SELECT DISTINCT ON (p.sequence)
+       p.sequence, p.period, p.clock,
+       p.home_score, p.away_score,
+       (p.home_score - p.away_score) AS margin,
+       p.description
+  FROM game_plays p
+ WHERE p.game_id = %(game_id)s
+   AND p.scoring_play
+   AND p.home_score IS NOT NULL
+   AND p.away_score IS NOT NULL
+ ORDER BY p.sequence, p.source
+"""
+
 # Season leaders, averaged over games actually played.
 #
 # player_game_stats is keyed (game_id, player_id, SOURCE), and both ESPN and
@@ -282,6 +405,40 @@ def fetch_leaders(
     return _all(
         conn, _LEADERS, {"season": season, "min_games": min_games, "limit": _cap(limit)}
     )
+
+
+def fetch_standings(conn: Connection, *, season: int) -> list[dict[str, Any]]:
+    return _all(conn, _STANDINGS, {"season": season})
+
+
+def fetch_shot_chart(
+    conn: Connection, *, season: int, player_id: int | None, team_id: int | None, bin_size: int
+) -> list[dict[str, Any]]:
+    return _all(
+        conn,
+        _SHOT_CHART,
+        {"season": season, "player_id": player_id, "team_id": team_id, "bin": bin_size},
+    )
+
+
+def fetch_shot_zones(
+    conn: Connection, *, season: int, player_id: int | None, team_id: int | None
+) -> list[dict[str, Any]]:
+    return _all(
+        conn, _SHOT_ZONES, {"season": season, "player_id": player_id, "team_id": team_id}
+    )
+
+
+def fetch_efficiency(
+    conn: Connection, *, season: int, min_games: int, limit: int
+) -> list[dict[str, Any]]:
+    return _all(
+        conn, _EFFICIENCY, {"season": season, "min_games": min_games, "limit": _cap(limit)}
+    )
+
+
+def fetch_game_flow(conn: Connection, game_id: int) -> list[dict[str, Any]]:
+    return _all(conn, _GAME_FLOW, {"game_id": game_id})
 
 
 def _cap(limit: int) -> int:

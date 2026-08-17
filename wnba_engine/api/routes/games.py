@@ -66,6 +66,22 @@ def game_odds(
     return {"game_id": game_id, "odds": history, "count": len(history)}
 
 
+@router.get("/{game_id}/flow")
+def game_flow(
+    game_id: int,
+    response: Response,
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Score margin through the game, one point per scoring play.
+
+    Only scoring plays: the other ~85% of play-by-play rows leave the margin
+    unchanged and would quadruple the payload to draw the same staircase.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    plays = analytics_repo.fetch_game_flow(conn, game_id)
+    return {"game_id": game_id, "plays": plays, "count": len(plays)}
+
+
 @router.get("/{game_id}/markets")
 def game_markets(
     game_id: int,

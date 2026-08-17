@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from wnba_engine.api.deps import lifespan
-from wnba_engine.api.routes import games, health, markets, stats
+from wnba_engine.api.routes import games, health, markets, shooting, stats
 
 TITLE = "WNBA Analytics Engine API"
 DESCRIPTION = (
@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    for module in (health, markets, games, stats):
+    for module in (health, markets, games, stats, shooting):
         app.include_router(module.router)
 
     _mount_dashboard(app)
