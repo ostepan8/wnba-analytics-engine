@@ -27,11 +27,27 @@ export default function Home() {
     return [...grouped.entries()];
   }, [games.data]);
 
-  /* Default to the newest day that is already played: an upcoming slate has no
-     box score, no shots and no result, so it opens on nothing to look at. */
+  /* Open on TODAY when today has games, otherwise on the nearest day that does.
+     Nearest by absolute distance, not "most recent": on a Tuesday with no games
+     but a Wednesday slate, the next day is what someone wants, and previously
+     this always fell back to the past. */
   const defaultIndex = useMemo(() => {
-    const index = days.findIndex(([, rows]) => rows.some((game) => game.status === "final"));
-    return index < 0 ? 0 : index;
+    if (!days.length) return 0;
+    const today = new Date().toDateString();
+    const exact = days.findIndex(([key]) => key === today);
+    if (exact >= 0) return exact;
+
+    const now = Date.now();
+    let best = 0;
+    let bestDistance = Infinity;
+    days.forEach(([key], index) => {
+      const distance = Math.abs(new Date(key).getTime() - now);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    return best;
   }, [days]);
 
   const index = Math.min(Math.max(defaultIndex + offset, 0), Math.max(days.length - 1, 0));
@@ -49,7 +65,12 @@ export default function Home() {
     >
       <Panel
         title={current ? longDate(current[1][0].start_time) : "No games"}
-        hint={current ? `${current[1].length} game${current[1].length === 1 ? "" : "s"}` : undefined}
+        hint={
+          current
+            ? `${current[1].length} game${current[1].length === 1 ? "" : "s"}` +
+              (current[0] === new Date().toDateString() ? " · today" : "")
+            : undefined
+        }
         tools={
           <>
             <button

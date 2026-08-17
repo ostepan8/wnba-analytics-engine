@@ -6,11 +6,12 @@
  * only for the game that was opened.
  */
 
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import GameFlow from "../charts/GameFlow";
+import GameShotPlot from "../charts/GameShotPlot";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import GameLines from "./GameLines";
+import LazySection from "./LazySection";
 import { Async, PlayerCell, TeamLogo } from "./ui";
 import type {
   BoxScoreRow,
@@ -25,16 +26,38 @@ import type {
 import { moneylineLabel, propLabel, spreadLabel, useQuery } from "../lib/api";
 import { madeAttempted, num, pct, signed, timeOf } from "../lib/format";
 
-type Tab = "lines" | "props" | "shots" | "defense" | "box" | "flow";
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "lines", label: "Team lines" },
-  { id: "props", label: "Player props" },
-  { id: "shots", label: "Shot charts" },
-  { id: "defense", label: "Shot defense" },
-  { id: "box", label: "Box score" },
-  { id: "flow", label: "Score flow" },
-];
+/** A titled block inside a game. Sections read in order rather than hiding
+    behind tabs; each mounts as it nears the viewport. */
+function Block({
+  title,
+  hint,
+  children,
+  minHeight,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+  minHeight?: number;
+}) {
+  return (
+    <section style={{ borderTop: "1px solid var(--line)", padding: "var(--s-4)" }}>
+      <h4
+        style={{
+          fontSize: "var(--t-xs)",
+          fontWeight: 660,
+          letterSpacing: "0.07em",
+          textTransform: "uppercase",
+          color: "var(--ink-2)",
+          marginBottom: "var(--s-3)",
+        }}
+      >
+        {title}
+        {hint && <span className="muted" style={{ marginLeft: "var(--s-2)", textTransform: "none", letterSpacing: 0 }}>{hint}</span>}
+      </h4>
+      <LazySection minHeight={minHeight ?? 260}>{children}</LazySection>
+    </section>
+  );
+}
 
 /* --------------------------------------------------------------- tabs --- */
 
@@ -198,17 +221,15 @@ function TeamShots({ gameId, teamId, label }: { gameId: number; teamId: number; 
       <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
         {label}
       </h4>
-      <Async query={query} empty={(data) => data.cells.length === 0}>
+      <Async query={query} empty={(data) => (data.shots ?? []).length === 0}>
         {(data) => (
           <>
-            <ShotChart
-              cells={data.cells}
-              binSize={data.bin_size}
-              midpoint={data.points_per_attempt ?? 1}
-              minAttempts={1}
-            />
+            {/* Individual attempts, not a heat grid: sixty-five shots binned
+                onto a season-sized grid is one shot per cell and reads as
+                noise. */}
+            <GameShotPlot shots={data.shots ?? []} />
             <p className="prose" style={{ marginTop: "var(--s-2)" }}>
-              {num(data.attempts)} attempts · {data.points_per_attempt?.toFixed(2) ?? "—"} pts/att
+              {data.points_per_attempt?.toFixed(2) ?? "—"} points per attempt
             </p>
           </>
         )}
@@ -324,27 +345,18 @@ export default function GamePanel({
   line?: ClosingLine;
   season: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>("lines");
   const final = game.status === "final";
   const homeWon = final && (game.home_score ?? 0) > (game.away_score ?? 0);
 
   return (
     <article className="panel">
-      <button
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
+      <header
         style={{
-          width: "100%",
           display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) 150px 110px 28px",
+          gridTemplateColumns: "minmax(0,1fr) 150px 110px",
           gap: "var(--s-4)",
           alignItems: "center",
           padding: "var(--s-3) var(--s-4)",
-          background: "transparent",
-          border: 0,
-          cursor: "pointer",
-          textAlign: "left",
         }}
       >
         <span style={{ display: "grid", gap: "var(--s-2)" }}>
@@ -354,7 +366,9 @@ export default function GamePanel({
           ].map((side) => (
             <span key={side.id} style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
               <TeamLogo teamId={side.id} size="sm" />
-              <span style={{ fontWeight: side.win ? 640 : 460 }}>{side.name}</span>
+              <Link to={`/teams/${side.id}`} style={{ fontWeight: side.win ? 640 : 460 }}>
+                {side.name}
+              </Link>
               <span className="num" style={{ marginLeft: "auto", fontWeight: side.win ? 640 : 460 }}>
                 {final ? side.score : ""}
               </span>
@@ -383,86 +397,48 @@ export default function GamePanel({
         <span style={{ fontSize: "var(--t-xs)", textAlign: "right" }} className="muted">
           {final ? "Final" : timeOf(game.start_time)}
           <br />
-          <Link to={`/games/${game.id}`} onClick={(event) => event.stopPropagation()}>
-            full page →
-          </Link>
+          <Link to={`/games/${game.id}`}>full page →</Link>
         </span>
+      </header>
 
-        <span
-          aria-hidden
-          className="muted"
-          style={{
-            justifySelf: "end",
-            transition: "transform 0.15s",
-            transform: open ? "rotate(90deg)" : "none",
-          }}
-        >
-          ›
-        </span>
-      </button>
+      {/* Everything, in reading order. No tabs: each block mounts as it nears
+          the viewport, so scrolling is the only interaction needed. */}
+      <Block title="Player props" hint="prediction markets, live" minHeight={300}>
+        <PropsTab gameId={game.id} />
+      </Block>
 
-      {open && (
-        <div style={{ borderTop: "1px solid var(--line)" }}>
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--s-1)",
-              padding: "var(--s-2) var(--s-4)",
-              borderBottom: "1px solid var(--line)",
-              overflowX: "auto",
-            }}
-          >
-            {TABS.map((entry) => (
-              <button
-                key={entry.id}
-                className="control"
-                aria-pressed={tab === entry.id}
-                onClick={() => setTab(entry.id)}
-                style={{ height: 28, fontSize: "var(--t-xs)" }}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ padding: "var(--s-4)" }}>
-            {tab === "lines" && (
-              <GameLines gameId={game.id} homeAbbr={game.home_abbr} awayAbbr={game.away_abbr} />
-            )}
-            {tab === "props" && <PropsTab gameId={game.id} />}
-            {tab === "shots" && (
-              <div className="grid grid--2">
-                <TeamShots gameId={game.id} teamId={game.away_team_id} label={game.away_team} />
-                <TeamShots gameId={game.id} teamId={game.home_team_id} label={game.home_team} />
-              </div>
-            )}
-            {tab === "defense" && (
-              <>
-                <div className="grid grid--2">
-                  <DefenseTab teamId={game.away_team_id} label={game.away_team} season={season} />
-                  <DefenseTab teamId={game.home_team_id} label={game.home_team} season={season} />
-                </div>
-                <p className="prose" style={{ marginTop: "var(--s-3)" }}>
-                  Season-long defensive profiles, not this game alone — one game is too few shots
-                  to say anything about where a defence leaks.
-                </p>
-              </>
-            )}
-            {tab === "box" && (
-              <BoxTab gameId={game.id} awayAbbr={game.away_abbr} homeAbbr={game.home_abbr} />
-            )}
-            {tab === "flow" && <FlowTab game={game} />}
-          </div>
-
-          {(tab === "shots" || tab === "defense") && (
-            <div style={{ padding: "0 var(--s-4) var(--s-3)" }}>
-              <ShotChartLegend />
-            </div>
-          )}
+      <Block title="Shot charts" minHeight={420}>
+        <div className="grid grid--2">
+          <TeamShots gameId={game.id} teamId={game.away_team_id} label={game.away_team} />
+          <TeamShots gameId={game.id} teamId={game.home_team_id} label={game.home_team} />
         </div>
-      )}
+      </Block>
+
+      <Block title="Shot defense" hint="season profile" minHeight={420}>
+        <div className="grid grid--2">
+          <DefenseTab teamId={game.away_team_id} label={game.away_team} season={season} />
+          <DefenseTab teamId={game.home_team_id} label={game.home_team} season={season} />
+        </div>
+        <div style={{ marginTop: "var(--s-3)" }}>
+          <ShotChartLegend />
+        </div>
+        <p className="prose" style={{ marginTop: "var(--s-2)" }}>
+          Season-long, not this game alone — one game is far too few shots to say where a defence
+          leaks.
+        </p>
+      </Block>
+
+      <Block title="Team lines" minHeight={320}>
+        <GameLines gameId={game.id} homeAbbr={game.home_abbr} awayAbbr={game.away_abbr} />
+      </Block>
+
+      <Block title="Score flow" minHeight={280}>
+        <FlowTab game={game} />
+      </Block>
+
+      <Block title="Box score" minHeight={340}>
+        <BoxTab gameId={game.id} awayAbbr={game.away_abbr} homeAbbr={game.home_abbr} />
+      </Block>
     </article>
   );
 }
-
-export { pct };

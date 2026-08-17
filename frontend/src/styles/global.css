@@ -367,4 +367,4 @@ select.control { padding-right: var(--s-2); }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--s-4); font-size: var(--t-xs); color: var(--ink-2); }
-.legend > span { display: inline-flex; align-items: center; gap: var(--s-2); }
+.legend > span { display: inline-flex; align-items: center; gap: var(--s-2); white-space: nowrap; }

@@ -486,11 +486,27 @@ export interface GamePropRow {
   realized: number | null;
 }
 
+/** One shot, at the grain a single game is actually readable at. */
+export interface GameShotPoint {
+  loc_x: number;
+  loc_y: number;
+  made: boolean;
+  shot_distance: number | null;
+  shot_zone_basic: string | null;
+  period: number | null;
+  action_type: string | null;
+  team_id: number | null;
+  player_name: string | null;
+  player_id: number | null;
+  shot_value: number;
+}
+
 export interface GameShotsResponse {
   game_id: number;
   team_id: number | null;
   bin_size: number;
   cells: ShotCell[];
+  shots: GameShotPoint[];
   attempts: number;
   points_per_attempt: number | null;
   teams: {

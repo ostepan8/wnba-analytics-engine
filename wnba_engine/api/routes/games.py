@@ -84,6 +84,10 @@ def game_shots(
     cells = game_detail_repo.fetch_game_shots(
         conn, game_id, team_id=team_id, bin_size=bin_size
     )
+    # Individual attempts as well as the grid. One game is too few shots to bin
+    # meaningfully -- most cells would hold exactly one -- so the client plots
+    # the shots themselves and uses the grid only for the summary numbers.
+    shots = game_detail_repo.fetch_game_shot_points(conn, game_id, team_id=team_id)
     attempts = sum(int(cell["attempts"]) for cell in cells)
     points = sum(int(cell["points"]) for cell in cells)
     return {
@@ -91,6 +95,7 @@ def game_shots(
         "team_id": team_id,
         "bin_size": bin_size,
         "cells": cells,
+        "shots": shots,
         "attempts": attempts,
         "points_per_attempt": round(points / attempts, 4) if attempts else None,
         "teams": game_detail_repo.fetch_game_teams(conn, game_id),

@@ -23,7 +23,28 @@ from psycopg import Connection
 
 from wnba_engine.repositories.analytics_repo import _all
 
-# Shots taken by one team in one game.
+# Individual shots in one game, NOT binned.
+#
+# A season is 30,000 shots and has to be aggregated; one team in one game is
+# about sixty-five. Binning those onto the same grid puts a single attempt in
+# most cells, which renders as scattered noise -- the chart says nothing because
+# there is nothing to average. At this scale the right mark is the shot itself:
+# ~130 rows for a whole game is a trivial payload.
+_GAME_SHOT_POINTS = """
+SELECT s.loc_x, s.loc_y, s.made, s.shot_distance, s.shot_zone_basic,
+       s.period, s.action_type, s.team_id,
+       p.full_name AS player_name, p.id AS player_id,
+       CASE WHEN s.shot_zone_basic LIKE '%%3%%' THEN 3 ELSE 2 END AS shot_value
+  FROM shot_locations s
+  LEFT JOIN players p ON p.id = s.player_id
+ WHERE s.game_id = %(game_id)s
+   AND (%(team_id)s::bigint IS NULL OR s.team_id = %(team_id)s::bigint)
+   AND s.loc_y BETWEEN -50 AND 470
+ ORDER BY s.period, s.seconds_remaining DESC NULLS LAST
+"""
+
+# Shots taken by one team in one game, binned. Kept for callers that want the
+# aggregate rather than the individual attempts.
 _GAME_SHOTS = """
 SELECT (floor(s.loc_x / %(bin)s) * %(bin)s)::int AS x,
        (floor(s.loc_y / %(bin)s) * %(bin)s)::int AS y,
@@ -124,6 +145,13 @@ SELECT g.home_team_id, g.away_team_id,
   JOIN teams away ON away.id = g.away_team_id
  WHERE g.id = %(game_id)s
 """
+
+
+def fetch_game_shot_points(
+    conn: Connection, game_id: int, *, team_id: int | None
+) -> list[dict[str, Any]]:
+    """Every shot in the game as its own row -- the right grain for one game."""
+    return _all(conn, _GAME_SHOT_POINTS, {"game_id": game_id, "team_id": team_id})
 
 
 def fetch_game_shots(
