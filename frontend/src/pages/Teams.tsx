@@ -1,51 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
-import { Async, Panel, Section, SeasonPicker, TeamCell, TeamLogo } from "../components/ui";
-import type { StandingRow, StandingsResponse } from "../lib/api";
+import { Async, Panel, RaceBadge, Section, SeasonPicker, TeamCell, TeamLogo } from "../components/ui";
+import type { StandingsResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, rate, seasonOptions } from "../lib/format";
-
-/**
- * Mathematical status ONLY — never position.
- *
- * "Above the line" and "clinched" are different claims, and so are "below the
- * line" and "eliminated". Collapsing either pair turns a standings table into
- * misinformation: a ninth-placed team with fifteen games left is not out, and
- * saying so is worse than saying nothing.
- *
- * Where a team currently sits is carried by the seed number and the drawn cut
- * line. This column answers a different question: is it settled?
- */
-function RaceBadge({ row }: { row: StandingRow }) {
-  if (row.clinched) {
-    return (
-      <span className="badge badge--good" title="Cannot be caught for a top-eight finish">
-        ✓ Clinched
-      </span>
-    );
-  }
-  if (row.eliminated) {
-    return (
-      <span className="badge badge--bad" title="Cannot reach a top-eight finish, whatever happens">
-        ✕ Eliminated
-      </span>
-    );
-  }
-  // Undecided. Distinguished by where it sits, but never labelled as settled.
-  if (row.in_playoff_position) {
-    return (
-      <span className="badge" title="Holding a place, but not yet mathematically safe">
-        In position
-        {row.magic_number != null && ` · magic ${row.magic_number}`}
-      </span>
-    );
-  }
-  return (
-    <span className="badge" title="Outside the eight, but still mathematically alive">
-      Still alive
-      {row.games_behind_playoff ? ` · ${row.games_behind_playoff} back` : ""}
-    </span>
-  );
-}
 
 function StandingsTable({ data }: { data: StandingsResponse }) {
   return (
@@ -126,7 +83,7 @@ function StandingsTable({ data }: { data: StandingsResponse }) {
                   <td>{row.conference_record ?? "—"}</td>
                   <td className="num">{row.games_remaining}</td>
                   <td>
-                    <RaceBadge row={row} />
+                    <RaceBadge status={row} />
                   </td>
                 </tr>
               </Fragment>
@@ -203,7 +160,7 @@ export default function Teams() {
                         </span>
                       </div>
                       <div style={{ marginTop: "var(--s-2)" }}>
-                        <RaceBadge row={row} />
+                        <RaceBadge status={row} />
                       </div>
                     </div>
                   </div>

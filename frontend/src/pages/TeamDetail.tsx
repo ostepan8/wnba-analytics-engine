@@ -5,6 +5,7 @@ import {
   Async,
   Panel,
   PlayerCell,
+  RaceBadge,
   Section,
   SeasonPicker,
   Stat,
@@ -15,6 +16,7 @@ import type {
   RosterRow,
   ScheduleRow,
   ShotChartResponse,
+  ShotDefenseResponse,
   TeamBettingRecord,
   TeamRow,
 } from "../lib/api";
@@ -49,6 +51,9 @@ export default function TeamDetail() {
   );
   const defense = useQuery<{ rows: DefenseByPositionRow[] }>(
     teamId ? `/defense/by-position?season=${season}&team_id=${teamId}` : null,
+  );
+  const shotDefense = useQuery<ShotDefenseResponse>(
+    teamId ? `/teams/${teamId}/defense?season=${season}&bin_size=20` : null,
   );
 
   return (
@@ -88,6 +93,17 @@ export default function TeamDetail() {
                   label="Conference seed"
                   detail={data.team.conference?.replace(" Conference", "") ?? undefined}
                 />
+                {data.team.standing && (
+                  <div>
+                    <span
+                      className="stat__label"
+                      style={{ display: "block", marginBottom: "var(--s-1)" }}
+                    >
+                      Playoff race
+                    </span>
+                    <RaceBadge status={data.team.standing} />
+                  </div>
+                )}
               </div>
             </Panel>
           </Section>
@@ -327,6 +343,58 @@ export default function TeamDetail() {
                   )}
                 </Async>
               </div>
+            </Panel>
+          </Section>
+
+          <Section
+            title="Shot defense"
+            note="Where opponents shoot against this team, and how well they do."
+          >
+            <Panel title="Where this team allows shots" tools={<ShotChartLegend />}>
+              <div className="grid grid--2">
+                <Async query={shotDefense} empty={(d) => d.cells.length === 0}>
+                  {(shotData) => (
+                    <ShotChart
+                      cells={shotData.cells}
+                      binSize={shotData.bin_size}
+                      midpoint={shotData.points_per_attempt ?? 1}
+                      minAttempts={2}
+                    />
+                  )}
+                </Async>
+                <Async query={shotDefense}>
+                  {(shotData) => (
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Zone</th>
+                            <th>Att</th>
+                            <th>FG% allowed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shotData.zones
+                            .filter((zone) => zone.attempts >= 5)
+                            .map((zone) => (
+                              <tr key={zone.zone}>
+                                <td>{zone.zone}</td>
+                                <td>{num(zone.attempts)}</td>
+                                <td>{pct(zone.makes / zone.attempts)}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Async>
+              </div>
+              <p className="prose" style={{ marginTop: "var(--s-3)" }}>
+                Blue is where opponents score <em>well</em> against this team — the defensive weak
+                spots, not its strengths. shot_locations records who took a shot, so this resolves
+                the opponent per game rather than filtering on team, and won&apos;t match the
+                offensive chart above bin for bin.
+              </p>
             </Panel>
           </Section>
         </>

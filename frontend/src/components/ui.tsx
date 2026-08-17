@@ -159,6 +159,60 @@ export function TeamCell({
   );
 }
 
+/** The fields a playoff-race badge needs. Both `StandingRow` (the full league
+ *  table) and `StandingRowLite` (what a team profile carries) satisfy this
+ *  structurally — `StandingRowLite` just omits `magic_number` and
+ *  `in_playoff_position`, which are treated as optional here. */
+export interface RaceStatus {
+  clinched?: boolean;
+  eliminated?: boolean;
+  in_playoff_position?: boolean;
+  magic_number?: number | null;
+  games_behind_playoff?: number | null;
+}
+
+/**
+ * Mathematical status ONLY — never position.
+ *
+ * "Above the line" and "clinched" are different claims, and so are "below the
+ * line" and "eliminated". Collapsing either pair turns a standings table into
+ * misinformation: a ninth-placed team with fifteen games left is not out, and
+ * saying so is worse than saying nothing.
+ */
+export function RaceBadge({ status }: { status: RaceStatus }) {
+  if (status.clinched) {
+    return (
+      <span className="badge badge--good" title="Cannot be caught for a top-eight finish">
+        ✓ Clinched
+      </span>
+    );
+  }
+  if (status.eliminated) {
+    return (
+      <span className="badge badge--bad" title="Cannot reach a top-eight finish, whatever happens">
+        ✕ Eliminated
+      </span>
+    );
+  }
+  // StandingRowLite has no in_playoff_position — "0 games behind the last
+  // playoff spot" means the same thing and is what's actually available there.
+  const inPosition = status.in_playoff_position ?? status.games_behind_playoff === 0;
+  if (inPosition) {
+    return (
+      <span className="badge" title="Holding a place, but not yet mathematically safe">
+        In position
+        {status.magic_number != null && ` · magic ${status.magic_number}`}
+      </span>
+    );
+  }
+  return (
+    <span className="badge" title="Outside the eight, but still mathematically alive">
+      Still alive
+      {status.games_behind_playoff ? ` · ${status.games_behind_playoff} back` : ""}
+    </span>
+  );
+}
+
 export function SeasonPicker({
   season,
   seasons,
