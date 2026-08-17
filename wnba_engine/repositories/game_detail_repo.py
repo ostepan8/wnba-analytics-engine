@@ -75,6 +75,7 @@ SELECT (floor(s.loc_x / %(bin)s) * %(bin)s)::int AS x,
   FROM shot_locations s
   JOIN games g ON g.id = s.game_id
  WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
    -- The defending team played in the game...
    AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
    -- ...and did NOT take the shot.
@@ -92,6 +93,7 @@ SELECT s.shot_zone_basic AS zone,
   FROM shot_locations s
   JOIN games g ON g.id = s.game_id
  WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
    AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
    AND s.team_id IS DISTINCT FROM %(team_id)s::bigint
    AND s.shot_zone_basic IS NOT NULL

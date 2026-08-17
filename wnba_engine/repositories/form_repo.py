@@ -55,6 +55,7 @@ SELECT DISTINCT ON (s.player_id, g.id)
    -- Point in time: only games finished BEFORE the one being looked at.
    AND (%(before)s::timestamptz IS NULL OR g.start_time < %(before)s::timestamptz)
    AND (%(season)s::int IS NULL OR g.season = %(season)s::int)
+   AND g.season_type IN ('regular-season', 'post-season')
  ORDER BY s.player_id, g.id, g.start_time DESC,
           CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
 """
@@ -89,6 +90,7 @@ WITH one_row_per_game AS (
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
        AND g.status = 'final'
        AND s.did_not_play IS NOT TRUE
      ORDER BY s.player_id, s.game_id,
@@ -166,6 +168,7 @@ WITH played AS (
         ON (g.home_team_id = t.id OR g.away_team_id = t.id)
      WHERE t.id = ANY(%(team_ids)s)
        AND g.season = %(season)s
+       AND g.season_type IN ('regular-season', 'post-season')
        AND g.status = 'final'
        AND g.home_score IS NOT NULL
        AND (%(before)s::timestamptz IS NULL OR g.start_time < %(before)s::timestamptz)
@@ -231,3 +234,76 @@ def fetch_current_injuries(
 ) -> list[dict[str, Any]]:
     """Latest reported status per player, most recent capture wins."""
     return _all(conn, _CURRENT_INJURIES, {"team_ids": team_ids})
+
+
+# Everyone currently on a team's injury report, paired with what she has
+# actually been producing this season.
+#
+# The report alone says who; this says what is missing. "Three out" is the same
+# headline for three bench players as for a 34-minute leading scorer, and only
+# one of those moves a total.
+#
+# Season averages are deduped the same way the roster is: player_game_stats
+# holds one row per (game, player, SOURCE), so a plain avg() would weight any
+# game covered by two providers twice.
+_INJURY_IMPACT = """
+WITH one_row_per_game AS (
+    SELECT DISTINCT ON (s.player_id, s.game_id)
+           s.player_id, s.game_id, s.team_id,
+           s.points, s.rebounds, s.assists, s.minutes
+      FROM player_game_stats s
+      JOIN games g ON g.id = s.game_id
+     WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
+       AND s.team_id = ANY(%(team_ids)s)
+       AND s.did_not_play IS NOT TRUE
+     ORDER BY s.player_id, s.game_id,
+              CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+),
+season_avg AS (
+    SELECT player_id, team_id,
+           count(*)      AS games_played,
+           avg(points)   AS points,
+           avg(rebounds) AS rebounds,
+           avg(assists)  AS assists,
+           avg(minutes)  AS minutes
+      FROM one_row_per_game
+     GROUP BY player_id, team_id
+),
+current_status AS (
+    SELECT DISTINCT ON (i.player_id)
+           i.player_id, i.team_id, i.status, i.source,
+           i.injury_type, i.short_comment
+      FROM injury_reports i
+     WHERE i.team_id = ANY(%(team_ids)s)
+       AND i.captured_at >= now() - interval '3 days'
+     -- Same source preference as _CURRENT_INJURIES: the league's own filing
+     -- beats ESPN's coarser Out/Day-To-Day even when ESPN polled more recently.
+     ORDER BY i.player_id, (i.source = 'wnba_official') DESC, i.captured_at DESC
+)
+SELECT c.player_id, p.full_name, p.position, c.team_id,
+       c.status, c.source, c.injury_type, c.short_comment,
+       coalesce(a.games_played, 0)         AS games_played,
+       round(a.minutes::numeric, 1)        AS minutes,
+       round(a.points::numeric, 1)         AS points,
+       round(a.rebounds::numeric, 1)       AS rebounds,
+       round(a.assists::numeric, 1)        AS assists
+  FROM current_status c
+  JOIN players p ON p.id = c.player_id
+  LEFT JOIN season_avg a
+         ON a.player_id = c.player_id AND a.team_id = c.team_id
+ ORDER BY c.team_id, a.minutes DESC NULLS LAST
+"""
+
+
+def fetch_injury_impact(
+    conn: Connection, team_ids: list[int], *, season: int
+) -> dict[int, list[dict[str, Any]]]:
+    """Listed players and their season production, keyed by team id."""
+    if not team_ids:
+        return {}
+    rows = _all(conn, _INJURY_IMPACT, {"team_ids": team_ids, "season": season})
+    by_team: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_team.setdefault(int(row["team_id"]), []).append(row)
+    return by_team

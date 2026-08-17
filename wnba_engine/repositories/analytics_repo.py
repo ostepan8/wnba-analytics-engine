@@ -18,6 +18,20 @@ from psycopg import Connection
 # Hard ceiling applied to every caller-supplied limit. The API validates its own
 # query parameters, but this is the layer that actually touches the database and
 # it does not trust a caller to have done that.
+# Exhibitions are excluded from every season figure on this page.
+#
+# games.season_type distinguishes regular-season and post-season play from
+# `preseason` (WNBA teams host national sides in April/May -- Indiana beat
+# Nigeria 105-57 in 2026) and `other` (the All-Star game). Those are real rows
+# with real box scores, and counting them silently corrupts everything derived
+# from a season: records, points for and against, player averages, defence by
+# position, and every ATS/over-under record graded against a line that was
+# never a real market. The modelling layer (style_repo, feature_repo) always
+# filtered; this display layer did not, which is how a 48-point win over a
+# national team ended up inside a team's scoring average.
+#
+# Post-season is kept: playoff games are real games.
+
 MAX_ROWS = 500
 
 # Kalshi's full-game winner series. The same series the ingest and trade-backfill
@@ -216,6 +230,7 @@ WITH schedule AS (
       LEFT JOIN games g
         ON (g.home_team_id = t.id OR g.away_team_id = t.id)
        AND g.season = %(season)s
+       AND g.season_type IN ('regular-season', 'post-season')
      WHERE t.is_franchise
      GROUP BY t.id
 ), recent AS (
@@ -232,6 +247,7 @@ WITH schedule AS (
             JOIN games g
               ON (g.home_team_id = t.id OR g.away_team_id = t.id)
              AND g.season = %(season)s
+             AND g.season_type IN ('regular-season', 'post-season')
              AND g.status = 'final'
              AND g.home_score IS NOT NULL
            WHERE t.is_franchise
@@ -282,6 +298,7 @@ SELECT (floor(s.loc_x / %(bin)s) * %(bin)s)::int AS x,
   FROM shot_locations s
   JOIN games g ON g.id = s.game_id
  WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
    AND (%(player_id)s::bigint IS NULL OR s.player_id = %(player_id)s::bigint)
    AND (%(team_id)s::bigint   IS NULL OR s.team_id   = %(team_id)s::bigint)
    -- Beyond half court is a heave at the buzzer, not a shot profile.
@@ -299,6 +316,7 @@ SELECT s.shot_zone_basic AS zone,
   FROM shot_locations s
   JOIN games g ON g.id = s.game_id
  WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
    AND (%(player_id)s::bigint IS NULL OR s.player_id = %(player_id)s::bigint)
    AND (%(team_id)s::bigint   IS NULL OR s.team_id   = %(team_id)s::bigint)
    AND s.shot_zone_basic IS NOT NULL
@@ -325,6 +343,7 @@ WITH one_row_per_game AS (
       FROM player_advanced_stats a
       JOIN games g ON g.id = a.game_id
      WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
        AND a.minutes ~ '^[0-9]+:[0-9]{2}$'
      ORDER BY a.player_id, a.game_id, a.source
 )
@@ -385,6 +404,7 @@ WITH one_row_per_game AS (
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
        AND s.did_not_play IS NOT TRUE
      ORDER BY s.player_id, s.game_id,
               CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
@@ -567,6 +587,7 @@ WITH one_row_per_game AS (
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
        AND s.team_id = %(team_id)s
        AND s.did_not_play IS NOT TRUE
      ORDER BY s.player_id, s.game_id,
@@ -601,6 +622,7 @@ WITH per_vendor AS (
       JOIN games g ON g.id = o.game_id
      WHERE o.captured_at <= g.start_time
        AND g.season = %(season)s
+       AND g.season_type IN ('regular-season', 'post-season')
        AND (g.home_team_id = %(team_id)s OR g.away_team_id = %(team_id)s)
      ORDER BY o.game_id, o.vendor, o.captured_at DESC
 ), consensus AS (
@@ -637,6 +659,7 @@ SELECT g.id, g.start_time, g.status, g.home_score, g.away_score,
                      THEN g.away_team_id ELSE g.home_team_id END
   LEFT JOIN consensus c ON c.game_id = g.id
  WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
    AND (g.home_team_id = %(team_id)s OR g.away_team_id = %(team_id)s)
  ORDER BY g.start_time DESC
 """
@@ -652,6 +675,7 @@ WITH one_row_per_game AS (
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
        AND s.did_not_play IS NOT TRUE
      ORDER BY s.player_id, s.game_id,
               CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
@@ -736,6 +760,7 @@ SELECT DISTINCT ON (g.id)
                      THEN g.away_team_id ELSE g.home_team_id END
  WHERE s.player_id = %(player_id)s
    AND (%(season)s::int IS NULL OR g.season = %(season)s::int)
+   AND g.season_type IN ('regular-season', 'post-season')
    AND s.did_not_play IS NOT TRUE
  ORDER BY g.id DESC,
           CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END

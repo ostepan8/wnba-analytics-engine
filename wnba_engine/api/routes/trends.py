@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
+from wnba_engine.analysis.availability import share_of, summarise_absences
 from wnba_engine.analysis.prop_trends import (
     attach_trends,
     group_history,
@@ -112,6 +113,8 @@ def game_matchup(
 
     form = form_repo.fetch_team_form(conn, [home_id, away_id], season=season, before=tip)
     injuries = form_repo.fetch_current_injuries(conn, [home_id, away_id])
+    impact = form_repo.fetch_injury_impact(conn, [home_id, away_id], season=season)
+    defense = _defense_ranked(conn, season=season)
 
     def side(team_id: int) -> dict[str, object]:
         team_form = dict(form.get(team_id) or {})
@@ -121,12 +124,24 @@ def game_matchup(
         rest_days = None
         if last_game is not None:
             rest_days = max((game["start_time"] - last_game).days, 0)
+
+        # What is missing, not just who. Three out is the same headline for
+        # three bench players as for a 34-minute leading scorer.
+        absences = summarise_absences([dict(row) for row in impact.get(team_id, [])])
+        points_for = team_form.get("points_for")
+        for name in ("out", "at_risk"):
+            absences[name]["share_of_points"] = share_of(
+                absences[name]["points"], points_for
+            )
+
         return {
             "team_id": team_id,
             "form": team_form,
             "rest_days": rest_days,
             "betting": betting_repo.fetch_team_betting_record(conn, team_id, season=season),
             "injuries": [row for row in injuries if row.get("team_id") == team_id],
+            "absences": absences,
+            "defense": [row for row in defense if row["team_id"] == team_id],
         }
 
     return {
@@ -191,20 +206,27 @@ def defense_by_position(
     """
     response.headers["Cache-Control"] = f"public, max-age={SEASON_MAX_AGE}"
     resolved = _season(season)
-    rows = form_repo.fetch_defense_by_position(conn, season=resolved, team_id=team_id)
+    rows = _defense_ranked(conn, season=resolved)
+    if team_id is not None:
+        rows = [row for row in rows if row["team_id"] == team_id]
+    return {"season": resolved, "rows": rows}
 
-    # A raw "18.2 points allowed to guards" says nothing without knowing whether
-    # that is good, so each row carries its league rank within its position.
+
+def _defense_ranked(conn: Connection, *, season: int) -> list[dict[str, object]]:
+    """League-wide defence by position, each row carrying its rank.
+
+    Ranked across the WHOLE league even when one team is being displayed: a raw
+    "18.2 points allowed to guards" says nothing without knowing whether that is
+    stingy or generous, and a rank computed within one team's own rows would
+    just be that team sorted against itself.
+    """
+    rows = form_repo.fetch_defense_by_position(conn, season=season)
     by_position: dict[str, list[dict[str, object]]] = {}
     for row in rows:
         by_position.setdefault(str(row["position"]), []).append(dict(row))
     for group in by_position.values():
-        group.sort(key=lambda row: float(row["points_allowed"] or 0))
+        group.sort(key=lambda row: float(row["points_allowed"] or 0))  # type: ignore[arg-type]
         for rank, row in enumerate(group, start=1):
             row["points_allowed_rank"] = rank
             row["teams_ranked"] = len(group)
-
-    return {
-        "season": resolved,
-        "rows": [row for group in by_position.values() for row in group],
-    }
+    return [row for group in by_position.values() for row in group]

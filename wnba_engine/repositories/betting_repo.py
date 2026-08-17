@@ -110,6 +110,7 @@ WITH per_vendor AS (
       FROM consensus c
       JOIN games g ON g.id = c.game_id
      WHERE g.season = %(season)s
+       AND g.season_type IN ('regular-season', 'post-season')
        AND g.status = 'final'
        AND g.home_score IS NOT NULL
 )
