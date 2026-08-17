@@ -1,7 +1,9 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Async, Panel, Section, Stat } from "../components/ui";
-import type { DivergenceVenue, JobHealth, PropMarketRow } from "../lib/api";
+import type { DivergenceObservation, DivergenceVenue, JobHealth, PropMarketRow } from "../lib/api";
 import { propLabel, useQuery } from "../lib/api";
-import { num, pct, relativeTime, signed } from "../lib/format";
+import { num, pct, relativeTime, shortDate, signed, timeOf } from "../lib/format";
 
 const STATUS: Record<string, { color: string; icon: string; label: string }> = {
   ok: { color: "var(--good)", icon: "✓", label: "Healthy" },
@@ -19,9 +21,16 @@ function stateOf(job: JobHealth) {
 }
 
 export default function Research() {
+  const [logOpen, setLogOpen] = useState(false);
   const divergence = useQuery<{ venues: DivergenceVenue[] }>("/divergences/summary");
   const health = useQuery<{ jobs: JobHealth[]; any_failing: boolean }>("/health/jobs");
   const props = useQuery<{ markets: PropMarketRow[] }>("/lines/props");
+  // Only fetched once opened -- the aggregates above are the page's real
+  // content; the itemized log is an audit trail for someone who wants to
+  // check one row, not something to load unasked.
+  const log = useQuery<{ divergences: DivergenceObservation[]; count: number }>(
+    logOpen ? "/divergences?limit=30" : null,
+  );
 
   return (
     <>
@@ -76,6 +85,79 @@ export default function Research() {
           </div>
         )}
       </Async>
+
+      <Panel
+        title="Individual observations"
+        hint="the most recent 30, across venues"
+        tools={
+          <button
+            type="button"
+            className="control"
+            aria-expanded={logOpen}
+            onClick={() => setLogOpen((value) => !value)}
+          >
+            {logOpen ? "Hide log" : "Show log"}
+          </button>
+        }
+        flush={logOpen}
+      >
+        {logOpen ? (
+          <Async query={log} empty={(data) => data.divergences.length === 0}>
+            {(data) => (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Captured</th>
+                      <th>Game</th>
+                      <th>Venue</th>
+                      <th>Side</th>
+                      <th>Edge</th>
+                      <th>Price survived</th>
+                      <th>CLV</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.divergences.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          {shortDate(row.observed_at)} {timeOf(row.observed_at)}
+                        </td>
+                        <td>
+                          <Link to={`/games/${row.game_id}`}>
+                            {row.away_abbr} @ {row.home_abbr}
+                          </Link>
+                        </td>
+                        <td>{row.venue}</td>
+                        <td>{row.side}</td>
+                        <td>{pct(row.edge)}</td>
+                        <td>
+                          {row.price_survived === null ? (
+                            <span className="muted">not checked</span>
+                          ) : (
+                            <span
+                              className={row.price_survived ? "badge badge--good" : "badge badge--bad"}
+                            >
+                              {row.price_survived ? "still there" : "moved"}
+                            </span>
+                          )}
+                        </td>
+                        <td>{row.clv != null ? signed(Number(row.clv) * 100, 1) + "%" : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Async>
+        ) : (
+          <p className="prose">
+            The aggregates above are the log's real content — every rate reported with its
+            denominator, for the reasons in the panel above. This is the itemized version behind
+            them, for auditing one observation at a time rather than reading a trend into it.
+          </p>
+        )}
+      </Panel>
 
       <Section
         title="The unders bias"

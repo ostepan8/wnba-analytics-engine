@@ -369,6 +369,33 @@ export interface DivergenceVenue {
   settled: number;
 }
 
+/** One row of the raw forward log, as opposed to `DivergenceVenue`'s
+ *  per-venue aggregate. Individual observations, not a rate -- see the
+ *  count-gated caveats on the summary before reading anything into one. */
+export interface DivergenceObservation {
+  id: number;
+  game_id: number;
+  observed_at: string;
+  venue: string;
+  side: string;
+  in_play: boolean;
+  book_vendor: string | null;
+  book_odds: number | null;
+  book_implied: string | null;
+  venue_fair: string | null;
+  venue_volume: string | null;
+  edge: string | null;
+  minutes_from_tip: number | null;
+  price_survived: boolean | null;
+  recheck_odds: number | null;
+  clv: string | null;
+  won: boolean | null;
+  graded_at: string | null;
+  home_abbr: string;
+  away_abbr: string;
+  start_time: string;
+}
+
 export interface JobHealth {
   job_name: string;
   last_run_at: string | null;
