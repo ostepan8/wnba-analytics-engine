@@ -116,7 +116,22 @@ export interface StandingsResponse {
   race_open: boolean;
 }
 
+/** One row of the computed standings — the seed here is league-wide, unlike
+ *  the provider's conference-relative playoff_seed. */
+export interface StandingRowLite {
+  seed: number | null;
+  conference_seed: number | null;
+  /** Behind the LEAGUE leader. The provider's own games_behind is measured
+   *  inside a conference and reads as nonsense in a league-wide table. */
+  games_behind_leader: number | null;
+  /** Behind the last playoff spot; 0 when already inside it. */
+  games_behind_playoff: number | null;
+  clinched?: boolean;
+  eliminated?: boolean;
+}
+
 export interface TeamRow {
+  standing?: StandingRowLite | null;
   id: number;
   name: string;
   abbreviation: string;

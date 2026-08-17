@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
+from wnba_engine.analysis.playoff_race import rank_teams
 from wnba_engine.api.deps import get_connection
 from wnba_engine.repositories import analytics_repo, game_detail_repo
 
@@ -45,9 +46,24 @@ def get_team(
     team = analytics_repo.fetch_team(conn, team_id, season=resolved)
     if team is None:
         raise HTTPException(status_code=404, detail=f"no team with id {team_id}")
+
+    # The provider's playoff_seed is a CONFERENCE ranking and its games_behind is
+    # conference-relative, so a 23-12 Eastern team arrived here as "#1 seed, 0
+    # GB" while three Western teams sat above it -- the same misinformation the
+    # league page was fixed for and this page never was. The seed shown is the
+    # league-wide one from rank_teams; the conference figures are kept, labelled
+    # as what they are.
+    standing = next(
+        (
+            row
+            for row in rank_teams(analytics_repo.fetch_standings(conn, season=resolved))
+            if int(row["team_id"]) == team_id
+        ),
+        None,
+    )
     return {
         "season": resolved,
-        "team": team,
+        "team": {**team, "standing": standing},
         "roster": analytics_repo.fetch_team_roster(conn, team_id, season=resolved),
         "schedule": analytics_repo.fetch_team_schedule(conn, team_id, season=resolved),
     }

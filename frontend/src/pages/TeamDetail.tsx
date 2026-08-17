@@ -67,9 +67,26 @@ export default function TeamDetail() {
                 <Stat value={data.team.home_record ?? "—"} label="Home" />
                 <Stat value={data.team.away_record ?? "—"} label="Away" />
                 <Stat
-                  value={data.team.playoff_seed ? `#${data.team.playoff_seed}` : "—"}
-                  label="Seed"
-                  detail={data.team.games_behind ? `${data.team.games_behind} GB` : undefined}
+                  value={data.team.standing?.seed ? `#${data.team.standing.seed}` : "—"}
+                  label="League seed"
+                  detail={
+                    data.team.standing?.games_behind_leader
+                      ? `${data.team.standing.games_behind_leader} GB of the league`
+                      : data.team.standing?.seed === 1
+                        ? "league leader"
+                        : undefined
+                  }
+                />
+                <Stat
+                  value={
+                    data.team.standing?.conference_seed
+                      ? `#${data.team.standing.conference_seed}`
+                      : data.team.playoff_seed
+                        ? `#${data.team.playoff_seed}`
+                        : "—"
+                  }
+                  label="Conference seed"
+                  detail={data.team.conference?.replace(" Conference", "") ?? undefined}
                 />
               </div>
             </Panel>
