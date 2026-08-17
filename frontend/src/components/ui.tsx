@@ -4,6 +4,7 @@
 
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import type { Query } from "../lib/api";
 import { playerImage, teamLogo } from "../lib/api";
 
 export function Panel({
@@ -282,6 +283,20 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>;
 }
 
+/** The failed state: what broke, and a way to try again without reloading
+ *  the whole page. A transient network blip is common enough here that
+ *  forcing a full reload to recover from it is its own small annoyance. */
+function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="empty">
+      <p>Could not load this: {message}</p>
+      <button type="button" className="control" style={{ marginTop: "var(--s-3)" }} onClick={onRetry}>
+        Retry
+      </button>
+    </div>
+  );
+}
+
 /**
  * One place that decides what "loading", "failed" and "nothing here" look like.
  *
@@ -295,13 +310,13 @@ export function Async<T>({
   skeleton,
   children,
 }: {
-  query: { data: T | undefined; error: Error | undefined; loading: boolean };
+  query: Query<T>;
   empty?: (data: T) => boolean;
   skeleton?: ReactNode;
   children: (data: T) => ReactNode;
 }) {
   if (query.loading) return <>{skeleton ?? <Skeleton />}</>;
-  if (query.error) return <Empty>Could not load this: {query.error.message}</Empty>;
+  if (query.error) return <Failed message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <Empty>No data.</Empty>;
   if (empty?.(query.data)) return <Empty>Nothing recorded here yet.</Empty>;
   return <>{children(query.data)}</>;

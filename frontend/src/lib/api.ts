@@ -5,7 +5,7 @@
    page; without the prefix the endpoint of the same name shadowed it and
    navigating to a player rendered raw JSON. */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Object storage, served straight to the browser and cached by the CDN. */
 export const ASSETS = "https://s3.onephos.com/wnba-assets";
@@ -34,6 +34,9 @@ export type Query<T> = {
   data: T | undefined;
   error: Error | undefined;
   loading: boolean;
+  /** Re-runs the same request. A network blip shouldn't force a reload of
+   *  the whole page to recover -- see `Async`'s error state. */
+  refetch: () => void;
 };
 
 /**
@@ -45,11 +48,14 @@ export type Query<T> = {
  * the user is looking at.
  */
 export function useQuery<T>(path: string | null): Query<T> {
-  const [state, setState] = useState<Query<T>>({
+  const [state, setState] = useState<{ data: T | undefined; error: Error | undefined; loading: boolean }>({
     data: undefined,
     error: undefined,
     loading: path !== null,
   });
+  // Bumped by refetch() to re-run the effect below without path itself
+  // changing.
+  const [attempt, setAttempt] = useState(0);
   // Survives StrictMode's double-invoke without firing two real requests.
   const latest = useRef<string | null>(null);
 
@@ -72,9 +78,11 @@ export function useQuery<T>(path: string | null): Query<T> {
       });
 
     return () => controller.abort();
-  }, [path]);
+  }, [path, attempt]);
 
-  return state;
+  const refetch = useCallback(() => setAttempt((value) => value + 1), []);
+
+  return { ...state, refetch };
 }
 
 /* --- response shapes ---------------------------------------------------- */
