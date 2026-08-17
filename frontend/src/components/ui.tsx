@@ -213,6 +213,34 @@ export function RaceBadge({ status }: { status: RaceStatus }) {
   );
 }
 
+/** A clickable table header cell wired to `useSort`. `aria-sort` carries the
+ *  state to assistive tech; the glyph is `aria-hidden` since it repeats what
+ *  `aria-sort` already says. */
+export function SortTh<K extends string>({
+  label,
+  column,
+  active,
+  direction,
+  onSort,
+}: {
+  label: string;
+  column: K;
+  active: boolean;
+  direction: "asc" | "desc";
+  onSort: (column: K) => void;
+}) {
+  return (
+    <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-th" onClick={() => onSort(column)}>
+        {label}
+        <span aria-hidden="true" className={active ? "sort-th__arrow" : "sort-th__arrow sort-th__arrow--dim"}>
+          {active && direction === "asc" ? "▲" : "▼"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 export function SeasonPicker({
   season,
   seasons,

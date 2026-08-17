@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import {
@@ -8,6 +8,7 @@ import {
   RaceBadge,
   Section,
   SeasonPicker,
+  SortTh,
   Stat,
   TeamLogo,
 } from "../components/ui";
@@ -22,6 +23,9 @@ import type {
 } from "../lib/api";
 import { useQuery, spreadLabel } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from "../lib/format";
+import { useSort } from "../lib/useSort";
+
+type RosterSortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists";
 
 interface TeamResponse {
   season: number;
@@ -54,6 +58,17 @@ export default function TeamDetail() {
   );
   const shotDefense = useQuery<ShotDefenseResponse>(
     teamId ? `/teams/${teamId}/defense?season=${season}&bin_size=20` : null,
+  );
+
+  // Called here, not inside the page's outer Async render-prop: that render
+  // prop only runs once `team` has loaded, and a hook called conditionally
+  // like that breaks React's hook-order rule between the skeleton and the
+  // loaded render.
+  const rosterAccessor = useCallback((row: RosterRow, key: RosterSortColumn) => row[key], []);
+  const roster = useSort<RosterRow, RosterSortColumn>(
+    team.data?.roster ?? [],
+    rosterAccessor,
+    "minutes",
   );
 
   return (
@@ -137,7 +152,10 @@ export default function TeamDetail() {
           </Section>
 
           <div className="grid grid--2">
-            <Section title="Roster" note="Ordered by minutes — the rotation, top to bottom.">
+            <Section
+              title="Roster"
+              note="Ordered by minutes — the rotation, top to bottom. Click a column to re-sort."
+            >
               <Panel flush>
                 {data.roster.length === 0 ? (
                   <p className="empty">No games recorded this season.</p>
@@ -148,15 +166,45 @@ export default function TeamDetail() {
                         <tr>
                           <th>Player</th>
                           <th>Pos</th>
-                          <th>G</th>
-                          <th>MIN</th>
-                          <th>PTS</th>
-                          <th>REB</th>
-                          <th>AST</th>
+                          <SortTh
+                            label="G"
+                            column="games_played"
+                            active={roster.sortKey === "games_played"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="MIN"
+                            column="minutes"
+                            active={roster.sortKey === "minutes"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="PTS"
+                            column="points"
+                            active={roster.sortKey === "points"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="REB"
+                            column="rebounds"
+                            active={roster.sortKey === "rebounds"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="AST"
+                            column="assists"
+                            active={roster.sortKey === "assists"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
                         </tr>
                       </thead>
                       <tbody>
-                        {data.roster.map((player) => (
+                        {roster.sorted.map((player) => (
                           <tr key={player.player_id}>
                             <td>
                               <PlayerCell playerId={player.player_id} name={player.full_name} />
