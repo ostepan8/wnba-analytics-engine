@@ -75,9 +75,10 @@ def team_shot_defense(
     response: Response,
     season: int | None = Query(None, ge=1997, le=2100),
     bin_size: int = Query(20, ge=5, le=50),
+    player_limit: int = Query(15, ge=1, le=50, description="Opposing shooters to rank."),
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
-    """Where opponents shoot against this team, and how well they do.
+    """Where opponents shoot against this team, how well they do, and who.
 
     shot_locations records who TOOK a shot and never who allowed it, so this
     resolves the opponent per game rather than filtering on team_id. Filtering
@@ -96,6 +97,10 @@ def team_shot_defense(
         "bin_size": bin_size,
         "cells": cells,
         "zones": game_detail_repo.fetch_shot_defence_zones(conn, team_id, season=resolved),
+        # Who has actually gone off against this defence, not just where.
+        "by_player": game_detail_repo.fetch_shot_defence_by_player(
+            conn, team_id, season=resolved, limit=player_limit
+        ),
         "attempts": attempts,
         "points_per_attempt": round(points / attempts, 4) if attempts else None,
     }

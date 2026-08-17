@@ -725,6 +725,7 @@ WITH one_row_per_game AS (
 )
 SELECT r.season,
        (array_agg(t.abbreviation ORDER BY r.game_id DESC))[1] AS team_abbr,
+       (array_agg(t.id ORDER BY r.game_id DESC))[1]           AS team_id,
        count(*)                            AS games_played,
        round(avg(r.points)::numeric, 1)    AS points,
        round(avg(r.rebounds)::numeric, 1)  AS rebounds,

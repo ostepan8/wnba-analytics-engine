@@ -213,6 +213,7 @@ export interface PlayerProfile {
 export interface PlayerSeason {
   season: number;
   team_abbr: string | null;
+  team_id: number | null;
   games_played: number;
   points: string | null;
   rebounds: string | null;
@@ -567,12 +568,26 @@ export interface GameShotsResponse {
   } | null;
 }
 
+/** One opposing player's shooting against a team, all season. team_abbr is
+ *  THEIR team, not the one being defended. */
+export interface ShotDefensePlayerRow {
+  player_id: number;
+  full_name: string;
+  team_abbr: string | null;
+  games: number;
+  attempts: number;
+  makes: number;
+  points: number;
+}
+
 export interface ShotDefenseResponse {
   team_id: number;
   season: number;
   bin_size: number;
   cells: ShotCell[];
   zones: ShotZone[];
+  /** Top opposing shooters against this team, ranked by points scored. */
+  by_player: ShotDefensePlayerRow[];
   attempts: number;
   points_per_attempt: number | null;
 }
