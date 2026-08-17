@@ -1,6 +1,6 @@
 import { Async, Panel, Section, Stat } from "../components/ui";
-import type { DivergenceVenue, JobHealth } from "../lib/api";
-import { useQuery } from "../lib/api";
+import type { DivergenceVenue, JobHealth, PropMarketRow } from "../lib/api";
+import { propLabel, useQuery } from "../lib/api";
 import { num, pct, relativeTime, signed } from "../lib/format";
 
 const STATUS: Record<string, { color: string; icon: string; label: string }> = {
@@ -21,6 +21,7 @@ function stateOf(job: JobHealth) {
 export default function Research() {
   const divergence = useQuery<{ venues: DivergenceVenue[] }>("/divergences/summary");
   const health = useQuery<{ jobs: JobHealth[]; any_failing: boolean }>("/health/jobs");
+  const props = useQuery<{ markets: PropMarketRow[] }>("/lines/props");
 
   return (
     <>
@@ -75,6 +76,56 @@ export default function Research() {
           </div>
         )}
       </Async>
+
+      <Section
+        title="The unders bias"
+        note="Real, well-documented, and not a strategy."
+      >
+        <Panel>
+          <p className="prose" style={{ marginBottom: "var(--s-4)" }}>
+            Overs lose in every prop market, across tens of thousands of graded closing lines.
+            That is a genuine bias in how these numbers are set. It is also not money: graded at
+            prices that could actually be taken, blanket under-betting returns −2.05% to −10.68%.
+            The vig is larger than the edge, which is the single most common way a real pattern
+            turns into a losing system.
+          </p>
+          <Async query={props} empty={(data) => data.markets.length === 0}>
+            {(data) => (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Market</th>
+                      <th>Graded</th>
+                      <th>Avg line</th>
+                      <th>Over</th>
+                      <th>Under</th>
+                      <th>Push</th>
+                      <th>Over rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.markets.map((row) => {
+                      const decided = row.overs + row.unders;
+                      return (
+                        <tr key={row.prop_type}>
+                          <td>{propLabel(row.prop_type)}</td>
+                          <td>{num(row.games)}</td>
+                          <td>{row.avg_line ?? "—"}</td>
+                          <td>{num(row.overs)}</td>
+                          <td>{num(row.unders)}</td>
+                          <td>{num(row.pushes)}</td>
+                          <td>{decided ? pct(row.overs / decided) : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Async>
+        </Panel>
+      </Section>
 
       <Section
         title="Pipeline"

@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Async, Panel, Section, SeasonPicker, TeamLogo } from "../components/ui";
-import type { GameRow } from "../lib/api";
-import { useQuery } from "../lib/api";
+import type { ClosingLine, GameRow } from "../lib/api";
+import { moneylineLabel, spreadLabel, useQuery } from "../lib/api";
 import { CURRENT_SEASON, longDate, seasonOptions, timeOf } from "../lib/format";
 
-function GameRowLine({ game }: { game: GameRow }) {
+function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
   const final = game.status === "final";
   const homeWon = final && (game.home_score ?? 0) > (game.away_score ?? 0);
 
@@ -36,8 +36,31 @@ function GameRowLine({ game }: { game: GameRow }) {
           </span>
         ))}
       </span>
-      <span className="muted" style={{ fontSize: "var(--t-xs)", alignSelf: "center", textAlign: "right" }}>
+      <span
+        className="muted"
+        style={{ fontSize: "var(--t-xs)", alignSelf: "center", textAlign: "right", minWidth: 130 }}
+      >
         {final ? "Final" : timeOf(game.start_time)}
+        {line && (
+          <>
+            <br />
+            <span className="num">
+              {spreadLabel(line.spread_home)} · O/U {line.total ?? "—"}
+            </span>
+            <br />
+            <span className="num">
+              {moneylineLabel(line.moneyline_away)} / {moneylineLabel(line.moneyline_home)}
+            </span>
+            {line.home_covered !== null && (
+              <>
+                <br />
+                <span className={line.home_covered ? "badge badge--good" : "badge badge--bad"}>
+                  {game.home_abbr} {line.home_covered ? "covered" : "did not cover"}
+                </span>
+              </>
+            )}
+          </>
+        )}
       </span>
     </Link>
   );
@@ -47,6 +70,13 @@ export default function Games() {
   const [season, setSeason] = useState(CURRENT_SEASON);
   const seasons = useMemo(() => seasonOptions(), []);
   const games = useQuery<{ games: GameRow[] }>(`/games?season=${season}&limit=120`);
+
+  /* Lines are fetched in one batch for every game on screen rather than per
+     row: 120 rows would otherwise be 120 requests for data one query returns. */
+  const ids = (games.data?.games ?? []).map((game) => game.id).join(",");
+  const lines = useQuery<{ lines: Record<string, ClosingLine> }>(
+    ids ? `/lines/closing?game_ids=${ids}` : null,
+  );
 
   const byDate = useMemo(() => {
     const grouped = new Map<string, GameRow[]>();
@@ -85,7 +115,11 @@ export default function Games() {
                     {longDate(rows[0].start_time)}
                   </h4>
                   {rows.map((game) => (
-                    <GameRowLine key={game.id} game={game} />
+                    <GameRowLine
+                      key={game.id}
+                      game={game}
+                      line={lines.data?.lines?.[String(game.id)]}
+                    />
                   ))}
                 </div>
               ))}

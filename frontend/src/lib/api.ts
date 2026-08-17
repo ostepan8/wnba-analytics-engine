@@ -339,3 +339,94 @@ export interface DatasetSummary {
   latest_market_price: string | null;
   latest_sportsbook_odds: string | null;
 }
+
+/* --- line data ----------------------------------------------------------- */
+
+export interface ClosingLine {
+  game_id: number;
+  spread_home: string | null;
+  total: string | null;
+  moneyline_home: string | null;
+  moneyline_away: string | null;
+  books: number;
+  closed_at: string;
+  home_score: number | null;
+  away_score: number | null;
+  status: string;
+  /** null on a push, and for anything not yet final. */
+  home_covered: boolean | null;
+  went_over: boolean | null;
+}
+
+export interface LineMovementRow {
+  vendor: string;
+  captured_at: string;
+  spread_home_value: string | null;
+  spread_home_odds: number | null;
+  total_value: string | null;
+  total_over_odds: number | null;
+  total_under_odds: number | null;
+  moneyline_home_odds: number | null;
+  moneyline_away_odds: number | null;
+}
+
+export interface TeamBettingRecord {
+  spread_games: number;
+  covers: number;
+  non_covers: number;
+  overs: number;
+  unders: number;
+  avg_total: string | null;
+  avg_spread: string | null;
+}
+
+export interface PropSummaryRow {
+  prop_type: string;
+  games: number;
+  avg_line: string | null;
+  avg_realized: string | null;
+  overs: number;
+  unders: number;
+  pushes: number;
+}
+
+export interface PropLogRow {
+  game_id: number;
+  start_time: string;
+  books: number;
+  line: string;
+  realized: number;
+  result: "over" | "under" | "push";
+  opponent_abbr: string;
+  opponent_id: number;
+}
+
+export interface PropMarketRow {
+  prop_type: string;
+  games: number;
+  overs: number;
+  unders: number;
+  pushes: number;
+  avg_line: string | null;
+}
+
+/** Prop keys are snake_case in the database; this is how they read on screen. */
+export const PROP_LABELS: Record<string, string> = {
+  points: "Points",
+  rebounds: "Rebounds",
+  assists: "Assists",
+  threes: "Threes made",
+  points_rebounds_assists: "Pts + Reb + Ast",
+  points_rebounds: "Pts + Reb",
+  points_assists: "Pts + Ast",
+  rebounds_assists: "Reb + Ast",
+};
+
+export const propLabel = (key: string) => PROP_LABELS[key] ?? key;
+
+/** A home spread of -6.5 is written "-6.5"; +6.5 needs its sign shown. */
+export const spreadLabel = (value: string | null) =>
+  value == null ? "—" : `${Number(value) > 0 ? "+" : ""}${Number(value).toFixed(1)}`;
+
+export const moneylineLabel = (value: string | number | null) =>
+  value == null ? "—" : `${Number(value) > 0 ? "+" : ""}${Math.round(Number(value))}`;

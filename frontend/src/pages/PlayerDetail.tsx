@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
+import PropLines from "../components/PropLines";
 import { Async, Panel, PlayerAvatar, Section, SeasonPicker, Stat } from "../components/ui";
 import type { GameLogRow, PlayerProfile, PlayerSeason, ShotChartResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
@@ -173,6 +174,13 @@ export default function PlayerDetail() {
                 </Panel>
               </Section>
             </div>
+
+            <Section
+              title="Betting lines"
+              note="Where the market set the number, and what happened."
+            >
+              <PropLines playerId={data.player.player_id} />
+            </Section>
 
             <Section title="Game log" note={`Most recent ${season} appearances.`}>
               <Panel flush>

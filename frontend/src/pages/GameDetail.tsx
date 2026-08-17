@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import GameFlow from "../charts/GameFlow";
+import GameLines from "../components/GameLines";
 import { TimeSeries, type Series } from "../charts/primitives";
 import { Async, Panel, PlayerCell, Section, Stat } from "../components/ui";
 import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
@@ -165,6 +166,16 @@ export default function GameDetail() {
                   formatTime={(time) => new Date(time).toLocaleString()}
                 />
               </Panel>
+            </Section>
+
+            <Section title="Sportsbook lines" note="Consensus across books; two measures, two charts.">
+              <div className="grid" style={{ gap: "var(--s-4)" }}>
+                <GameLines
+                  gameId={data.id}
+                  homeAbbr={data.home_abbr}
+                  awayAbbr={data.away_abbr}
+                />
+              </div>
             </Section>
 
             <Section title="Box score">

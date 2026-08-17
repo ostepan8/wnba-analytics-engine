@@ -10,7 +10,13 @@ import {
   Stat,
   TeamLogo,
 } from "../components/ui";
-import type { RosterRow, ScheduleRow, ShotChartResponse, TeamRow } from "../lib/api";
+import type {
+  RosterRow,
+  ScheduleRow,
+  ShotChartResponse,
+  TeamBettingRecord,
+  TeamRow,
+} from "../lib/api";
 import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from "../lib/format";
 
@@ -37,6 +43,9 @@ export default function TeamDetail() {
   const shots = useQuery<ShotChartResponse>(
     teamId ? `/shots?season=${season}&team_id=${teamId}` : null,
   );
+  const betting = useQuery<{ record: TeamBettingRecord | null }>(
+    teamId ? `/teams/${teamId}/betting?season=${season}` : null,
+  );
 
   return (
     <Async query={team}>
@@ -59,6 +68,34 @@ export default function TeamDetail() {
                   detail={data.team.games_behind ? `${data.team.games_behind} GB` : undefined}
                 />
               </div>
+            </Panel>
+          </Section>
+
+          <Section title="Against the number" note="Closing consensus; pushes excluded.">
+            <Panel>
+              <Async query={betting} empty={(d) => !d.record || d.record.spread_games === 0}>
+                {(d) => {
+                  const r = d.record!;
+                  const ats = r.covers + r.non_covers;
+                  const ou = r.overs + r.unders;
+                  return (
+                    <div className="grid grid--4">
+                      <Stat
+                        value={`${r.covers}-${r.non_covers}`}
+                        label="Against the spread"
+                        detail={ats ? `${pct(r.covers / ats)} cover rate` : undefined}
+                      />
+                      <Stat
+                        value={`${r.overs}-${r.unders}`}
+                        label="Over / under"
+                        detail={ou ? `${pct(r.overs / ou)} went over` : undefined}
+                      />
+                      <Stat value={r.avg_spread ?? "—"} label="Avg spread" />
+                      <Stat value={r.avg_total ?? "—"} label="Avg total" />
+                    </div>
+                  );
+                }}
+              </Async>
             </Panel>
           </Section>
 

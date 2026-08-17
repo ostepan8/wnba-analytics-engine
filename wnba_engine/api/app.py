@@ -30,7 +30,15 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
 from wnba_engine.api.deps import lifespan
-from wnba_engine.api.routes import directory, games, health, markets, shooting, stats
+from wnba_engine.api.routes import (
+    directory,
+    games,
+    health,
+    lines,
+    markets,
+    shooting,
+    stats,
+)
 
 TITLE = "WNBA Analytics Engine API"
 DESCRIPTION = (
@@ -67,7 +75,7 @@ def create_app() -> FastAPI:
     # player returned raw JSON instead of the app. Two namespaces sharing one
     # URL space cannot both win; giving the API its own prefix settles it
     # permanently rather than per-collision.
-    for module in (health, markets, directory, games, stats, shooting):
+    for module in (health, markets, directory, games, stats, shooting, lines):
         app.include_router(module.router, prefix=API_PREFIX)
 
     _mount_dashboard(app)
