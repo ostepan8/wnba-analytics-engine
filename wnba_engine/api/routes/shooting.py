@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Query, Response
 from psycopg import Connection
 
+from wnba_engine.analysis.playoff_race import PLAYOFF_SPOTS, rank_teams
 from wnba_engine.api.deps import get_connection
 from wnba_engine.repositories import analytics_repo
 
@@ -36,9 +37,27 @@ def standings(
     season: int | None = Query(None, ge=1997, le=2100),
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
+    """Standings with a real playoff seed, clinch status and magic number.
+
+    The seed is computed league-wide (see wnba_engine/analysis/playoff_race.py),
+    NOT taken from the provider -- its `playoff_seed` is a conference ranking and
+    is passed through separately as `conference_seed`.
+    """
     response.headers["Cache-Control"] = f"public, max-age={SEASON_MAX_AGE}"
     resolved = _season(season)
-    return {"season": resolved, "standings": analytics_repo.fetch_standings(conn, season=resolved)}
+    rows = analytics_repo.fetch_standings(conn, season=resolved)
+    ranked = rank_teams(rows)
+    return {
+        "season": resolved,
+        "playoff_spots": PLAYOFF_SPOTS,
+        "standings": ranked,
+        # Whether the race is live at all. The off-season and a decided season
+        # look identical from the rows alone, and a "clinched" badge on every
+        # team reads as a bug rather than as a finished season.
+        "race_open": any(
+            not row["clinched"] and not row["eliminated"] for row in ranked
+        ),
+    }
 
 
 @router.get("/shots")

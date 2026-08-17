@@ -225,6 +225,10 @@ button {
 }
 .table th:first-child,
 .table td:first-child { text-align: left; }
+/* Any other column holding a name rather than a number. Without this the
+   header sits right-aligned over left-aligned content. */
+.table th.name,
+.table td.name { text-align: left; }
 .table thead th {
   position: sticky;
   top: 0;

@@ -90,12 +90,45 @@ export interface StandingRow {
   games_behind: string | null;
   home_record: string | null;
   away_record: string | null;
-  playoff_seed: number | null;
+  conference_record: string | null;
+  /** The provider's CONFERENCE ranking. Not a playoff seed — see `seed`. */
+  conference_seed: number | null;
+  games_remaining: number;
+  last10_wins: number;
+  last10_losses: number;
+  /** League-wide seed, computed server-side. This is the playoff seed. */
+  seed: number;
+  in_playoff_position: boolean;
+  clinched: boolean;
+  eliminated: boolean;
+  /** Wins still needed to be uncatchable; null once settled either way. */
+  magic_number: number | null;
+  /** League-wide, computed here — the provider's games_behind is per-conference. */
+  games_behind_leader: number | null;
+  /** Behind the last playoff place; 0 for anyone holding one. */
+  games_behind_playoff: number | null;
 }
 
-export interface TeamRow extends StandingRow {
+export interface StandingsResponse {
+  season: number;
+  playoff_spots: number;
+  standings: StandingRow[];
+  race_open: boolean;
+}
+
+export interface TeamRow {
   id: number;
+  name: string;
+  abbreviation: string;
   is_franchise: boolean;
+  conference: string | null;
+  wins: number | null;
+  losses: number | null;
+  win_percentage: string | null;
+  games_behind: string | null;
+  home_record: string | null;
+  away_record: string | null;
+  playoff_seed: number | null;
 }
 
 export interface RosterRow {

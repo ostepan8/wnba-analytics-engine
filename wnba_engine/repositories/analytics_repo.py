@@ -193,13 +193,63 @@ SELECT
  ORDER BY venue
 """
 
-# League standings.
+# League standings, with what is needed to work out the playoff race.
+#
+# `playoff_seed` is returned as CONFERENCE_SEED, not seed. It is the provider's
+# conference ranking -- 1-8 West, 1-7 East in 2026 -- and the WNBA has seeded
+# its postseason league-wide since 2016. Renaming it here stops it being
+# mistaken for a playoff seed by the next person to read the response; the real
+# seed is computed in wnba_engine/analysis/playoff_race.py.
+#
+# games_remaining counts scheduled games that have not gone final, which is what
+# makes clinching computable at all.
+#
+# The last-ten form string is built here rather than shipped as ten rows: it is
+# read as one token ("7-3"), and returning the games behind it would multiply
+# the payload for something no client renders individually.
 _STANDINGS = """
+WITH schedule AS (
+    SELECT t.id AS team_id,
+           count(*) FILTER (WHERE g.status <> 'final')                   AS games_remaining,
+           count(*) FILTER (WHERE g.status = 'final')                    AS games_played
+      FROM teams t
+      LEFT JOIN games g
+        ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+       AND g.season = %(season)s
+     WHERE t.is_franchise
+     GROUP BY t.id
+), recent AS (
+    SELECT team_id,
+           count(*) FILTER (WHERE won)     AS last10_wins,
+           count(*) FILTER (WHERE NOT won) AS last10_losses
+      FROM (
+          SELECT t.id AS team_id, g.start_time,
+                 CASE WHEN g.home_team_id = t.id
+                      THEN g.home_score > g.away_score
+                      ELSE g.away_score > g.home_score END AS won,
+                 row_number() OVER (PARTITION BY t.id ORDER BY g.start_time DESC) AS rn
+            FROM teams t
+            JOIN games g
+              ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+             AND g.season = %(season)s
+             AND g.status = 'final'
+             AND g.home_score IS NOT NULL
+           WHERE t.is_franchise
+      ) ranked
+     WHERE rn <= 10
+     GROUP BY team_id
+)
 SELECT t.id AS team_id, t.name, t.abbreviation, s.conference,
        s.wins, s.losses, s.win_percentage, s.games_behind,
-       s.home_record, s.away_record, s.playoff_seed
+       s.home_record, s.away_record, s.conference_record,
+       s.playoff_seed AS conference_seed,
+       coalesce(sc.games_remaining, 0) AS games_remaining,
+       coalesce(r.last10_wins, 0)      AS last10_wins,
+       coalesce(r.last10_losses, 0)    AS last10_losses
   FROM team_standings s
   JOIN teams t ON t.id = s.team_id
+  LEFT JOIN schedule sc ON sc.team_id = t.id
+  LEFT JOIN recent r    ON r.team_id = t.id
  WHERE s.season = %(season)s
  ORDER BY s.win_percentage DESC NULLS LAST, s.wins DESC
 """
