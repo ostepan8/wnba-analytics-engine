@@ -86,6 +86,7 @@ export default function Home() {
               onClick={() => setOffset((value) => value + 1)}
               disabled={index >= days.length - 1}
               title="Earlier day"
+              aria-label="Show the earlier day's games"
             >
               ‹ Earlier
             </button>
@@ -94,6 +95,7 @@ export default function Home() {
               onClick={() => setOffset((value) => value - 1)}
               disabled={index <= 0}
               title="Later day"
+              aria-label="Show the later day's games"
             >
               Later ›
             </button>

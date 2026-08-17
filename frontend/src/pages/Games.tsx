@@ -61,6 +61,11 @@ function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
           winner={homeWon}
           show={final}
         />
+        {game.season_type && game.season_type !== "regular-season" && (
+          <span className="badge badge--warn" style={{ justifySelf: "start" }}>
+            {game.season_type.replace("-", " ")}
+          </span>
+        )}
       </span>
 
       {/* The closing number. Absent is stated rather than left blank: a silent
@@ -106,6 +111,7 @@ function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
 
 export default function Games() {
   const [season, setSeason] = useState(CURRENT_SEASON);
+  const [teamFilter, setTeamFilter] = useState<string>("all");
   const seasons = useMemo(() => seasonOptions(), []);
   const games = useQuery<{ games: GameRow[] }>(`/games?season=${season}&limit=120`);
 
@@ -116,14 +122,34 @@ export default function Games() {
     ids ? `/lines/closing?game_ids=${ids}` : null,
   );
 
+  /* Built from the games already on screen rather than a separate /teams
+     call — every team playing this season necessarily appears in its own
+     schedule, so a second round trip would only duplicate what is fetched
+     already. */
+  const teamOptions = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const game of games.data?.games ?? []) {
+      seen.set(game.home_team_id, game.home_abbr);
+      seen.set(game.away_team_id, game.away_abbr);
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [games.data]);
+
+  const filtered = useMemo(() => {
+    const rows = games.data?.games ?? [];
+    if (teamFilter === "all") return rows;
+    const id = Number(teamFilter);
+    return rows.filter((game) => game.home_team_id === id || game.away_team_id === id);
+  }, [games.data, teamFilter]);
+
   const byDate = useMemo(() => {
     const grouped = new Map<string, GameRow[]>();
-    for (const game of games.data?.games ?? []) {
+    for (const game of filtered) {
       const key = new Date(game.start_time).toDateString();
       grouped.set(key, [...(grouped.get(key) ?? []), game]);
     }
     return [...grouped.entries()];
-  }, [games.data]);
+  }, [filtered]);
 
   /* Where the odds feed actually stops. Derived rather than hardcoded, so the
      note stops appearing on its own once the feed is restored — a fixed date in
@@ -147,11 +173,31 @@ export default function Games() {
             ? `Lines through ${shortDate(coverage.newest)} — ${coverage.missing} later games have none`
             : undefined
         }
-        tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}
+        tools={
+          <>
+            <select
+              className="control"
+              aria-label="Filter by team"
+              value={teamFilter}
+              onChange={(event) => setTeamFilter(event.target.value)}
+            >
+              <option value="all">All teams</option>
+              {teamOptions.map(([id, abbr]) => (
+                <option key={id} value={id}>
+                  {abbr}
+                </option>
+              ))}
+            </select>
+            <SeasonPicker season={season} seasons={seasons} onChange={setSeason} />
+          </>
+        }
         flush
       >
         <Async query={games} empty={(data) => data.games.length === 0}>
-          {() => (
+          {() =>
+            byDate.length === 0 ? (
+              <p className="empty">No games for the selected team this season.</p>
+            ) : (
             <div>
               {byDate.map(([date, rows]) => (
                 <div key={date}>
@@ -181,7 +227,8 @@ export default function Games() {
                 </div>
               ))}
             </div>
-          )}
+            )
+          }
         </Async>
       </Panel>
     </Section>
