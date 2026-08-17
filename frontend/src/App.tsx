@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import GameDetail from "./pages/GameDetail";
 import Games from "./pages/Games";
 import League from "./pages/League";
@@ -43,12 +44,20 @@ function useTheme() {
     the top the way a real navigation does. */
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => window.scrollTo(0, 0), [pathname]);
+  useEffect(() => {
+    // Block body, deliberately. As a concise arrow this returns whatever
+    // scrollTo returns, and React treats an effect's return value as its
+    // cleanup function -- then calls it on unmount. A non-function there throws
+    // "destroy is not a function" during teardown, which unmounts the entire
+    // tree and leaves a blank page.
+    window.scrollTo(0, 0);
+  }, [pathname]);
   return null;
 }
 
 export default function App() {
   const [theme, setTheme] = useTheme();
+  const { pathname } = useLocation();
   const next: Theme = theme === "dark" ? "light" : "dark";
 
   return (
@@ -79,7 +88,8 @@ export default function App() {
       </nav>
 
       <main className="container page">
-        <Routes>
+        <ErrorBoundary resetKey={pathname}>
+          <Routes>
           <Route path="/" element={<League />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId" element={<TeamDetail />} />
@@ -89,8 +99,9 @@ export default function App() {
           <Route path="/games/:gameId" element={<GameDetail />} />
           <Route path="/research" element={<Research />} />
           <Route path="/model" element={<Model />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       <footer className="footer">
