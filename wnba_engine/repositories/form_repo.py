@@ -146,3 +146,80 @@ def fetch_defense_by_position(
         _DEFENSE_BY_POSITION,
         {"season": season, "team_id": team_id, "min_games": min_games},
     )
+
+
+# Everything about a team going into a game: record, form, scoring, rest.
+#
+# `before` makes this point-in-time, the same as the player windows. Previewing
+# a completed game with a record that already includes it is the same leak in a
+# different table.
+_TEAM_FORM = """
+WITH played AS (
+    SELECT g.id, g.start_time,
+           t.id AS team_id,
+           (g.home_team_id = t.id) AS is_home,
+           CASE WHEN g.home_team_id = t.id THEN g.home_score ELSE g.away_score END AS scored,
+           CASE WHEN g.home_team_id = t.id THEN g.away_score ELSE g.home_score END AS allowed,
+           row_number() OVER (PARTITION BY t.id ORDER BY g.start_time DESC) AS recency
+      FROM teams t
+      JOIN games g
+        ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+     WHERE t.id = ANY(%(team_ids)s)
+       AND g.season = %(season)s
+       AND g.status = 'final'
+       AND g.home_score IS NOT NULL
+       AND (%(before)s::timestamptz IS NULL OR g.start_time < %(before)s::timestamptz)
+)
+SELECT team_id,
+       count(*)                                              AS games,
+       count(*) FILTER (WHERE scored > allowed)               AS wins,
+       count(*) FILTER (WHERE scored < allowed)               AS losses,
+       round(avg(scored)::numeric, 1)                         AS points_for,
+       round(avg(allowed)::numeric, 1)                        AS points_against,
+       round(avg(scored) FILTER (WHERE recency <= 5)::numeric, 1)   AS points_for_l5,
+       round(avg(allowed) FILTER (WHERE recency <= 5)::numeric, 1)  AS points_against_l5,
+       count(*) FILTER (WHERE recency <= 5 AND scored > allowed)     AS wins_l5,
+       count(*) FILTER (WHERE recency <= 10 AND scored > allowed)    AS wins_l10,
+       count(*) FILTER (WHERE recency <= 10)                         AS games_l10,
+       max(start_time) FILTER (WHERE recency = 1)                    AS last_game_at
+  FROM played
+ GROUP BY team_id
+"""
+
+# The most recent status for every player a team currently has on its report.
+#
+# DISTINCT ON the latest capture per player: injury_reports is an append-only
+# snapshot every two hours, so a raw select returns the same knee a hundred
+# times. Cleared players are dropped -- a report listing everyone who was ever
+# hurt is not an injury report.
+_CURRENT_INJURIES = """
+SELECT DISTINCT ON (i.player_id)
+       i.player_id, p.full_name, p.position, i.team_id, t.abbreviation,
+       i.status, i.injury_type, i.side, i.return_date,
+       i.short_comment, i.reported_at, i.captured_at
+  FROM injury_reports i
+  JOIN players p ON p.id = i.player_id
+  LEFT JOIN teams t ON t.id = i.team_id
+ WHERE (%(team_ids)s::bigint[] IS NULL OR i.team_id = ANY(%(team_ids)s))
+   AND i.captured_at >= now() - interval '3 days'
+ ORDER BY i.player_id, i.captured_at DESC
+"""
+
+
+def fetch_team_form(
+    conn: Connection, team_ids: list[int], *, season: int, before: str | None = None
+) -> dict[int, dict[str, Any]]:
+    """Record, scoring and recent form for several teams, keyed by team id."""
+    if not team_ids:
+        return {}
+    rows = _all(
+        conn, _TEAM_FORM, {"team_ids": team_ids, "season": season, "before": before}
+    )
+    return {int(row["team_id"]): row for row in rows}
+
+
+def fetch_current_injuries(
+    conn: Connection, team_ids: list[int] | None = None
+) -> list[dict[str, Any]]:
+    """Latest reported status per player, most recent capture wins."""
+    return _all(conn, _CURRENT_INJURIES, {"team_ids": team_ids})

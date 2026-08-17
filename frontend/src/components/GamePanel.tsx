@@ -12,6 +12,7 @@ import GameShotPlot from "../charts/GameShotPlot";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import GameLines from "./GameLines";
 import HeadToHead from "./HeadToHead";
+import Matchup from "./Matchup";
 import PropTrends from "./PropTrends";
 import LazySection from "./LazySection";
 import { Async, PlayerCell, TeamLogo } from "./ui";
@@ -405,6 +406,16 @@ export default function GamePanel({
 
       {/* Everything, in reading order. No tabs: each block mounts as it nears
           the viewport, so scrolling is the only interaction needed. */}
+      <Block title="Matchup" hint="form, scoring, rest and injuries" minHeight={480}>
+        <Matchup
+          gameId={game.id}
+          homeAbbr={game.home_abbr}
+          awayAbbr={game.away_abbr}
+          homeTeamId={game.home_team_id}
+          awayTeamId={game.away_team_id}
+        />
+      </Block>
+
       <Block title="Prop trends" hint="live lines vs how often they have been cleared" minHeight={420}>
         <PropTrends gameId={game.id} />
       </Block>

@@ -118,6 +118,61 @@ def game_prop_trends(
     return {"game_id": game_id, "props": enriched, "count": len(enriched)}
 
 
+@router.get("/games/{game_id}/matchup")
+def game_matchup(
+    game_id: int,
+    response: Response,
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Both sides of a game in one call: record, form, scoring, rest, betting
+    record and the current injury report.
+
+    Everything is cut at this game's tip-off, so previewing a completed game
+    shows what was known beforehand rather than a record that already contains
+    its result.
+
+    One request rather than eight. A scoreboard renders several games at once
+    and a call per team per statistic would be dozens of round trips for a
+    single screen.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_MAX_AGE}"
+
+    game = analytics_repo.fetch_game(conn, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail=f"no game with id {game_id}")
+
+    season = int(game["season"])
+    home_id = int(game["home_team_id"])
+    away_id = int(game["away_team_id"])
+    tip = str(game["start_time"])
+
+    form = form_repo.fetch_team_form(conn, [home_id, away_id], season=season, before=tip)
+    injuries = form_repo.fetch_current_injuries(conn, [home_id, away_id])
+
+    def side(team_id: int) -> dict[str, object]:
+        team_form = dict(form.get(team_id) or {})
+        last_game = team_form.get("last_game_at")
+        # Days of rest, which is a real driver of scoring and is otherwise
+        # invisible on a scoreboard.
+        rest_days = None
+        if last_game is not None:
+            rest_days = max((game["start_time"] - last_game).days, 0)
+        return {
+            "team_id": team_id,
+            "form": team_form,
+            "rest_days": rest_days,
+            "betting": betting_repo.fetch_team_betting_record(conn, team_id, season=season),
+            "injuries": [row for row in injuries if row.get("team_id") == team_id],
+        }
+
+    return {
+        "game_id": game_id,
+        "season": season,
+        "home": side(home_id),
+        "away": side(away_id),
+    }
+
+
 @router.get("/teams/{team_a}/head-to-head/{team_b}")
 def head_to_head(
     team_a: int,

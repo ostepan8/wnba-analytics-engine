@@ -606,3 +606,49 @@ export interface DefenseByPositionRow {
   points_allowed_rank: number;
   teams_ranked: number;
 }
+
+export interface TeamFormRow {
+  team_id: number;
+  games: number | null;
+  wins: number | null;
+  losses: number | null;
+  points_for: string | null;
+  points_against: string | null;
+  points_for_l5: string | null;
+  points_against_l5: string | null;
+  wins_l5: number | null;
+  wins_l10: number | null;
+  games_l10: number | null;
+  last_game_at: string | null;
+}
+
+export interface InjuryRow {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  team_id: number | null;
+  abbreviation: string | null;
+  status: string | null;
+  injury_type: string | null;
+  side: string | null;
+  return_date: string | null;
+  short_comment: string | null;
+  reported_at: string | null;
+  captured_at: string;
+}
+
+export interface MatchupSide {
+  team_id: number;
+  form: TeamFormRow | null;
+  /** Days since this team's previous game, as of tip-off. */
+  rest_days: number | null;
+  betting: TeamBettingRecord | null;
+  injuries: InjuryRow[];
+}
+
+export interface MatchupResponse {
+  game_id: number;
+  season: number;
+  home: MatchupSide;
+  away: MatchupSide;
+}
