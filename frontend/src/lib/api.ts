@@ -605,6 +605,8 @@ export interface DefenseByPositionRow {
   assists_allowed: string;
   points_allowed_rank: number;
   teams_ranked: number;
+  /** League mean for this position — where the middle actually is. */
+  points_allowed_league_avg?: number | null;
 }
 
 export interface TeamFormRow {
@@ -639,6 +641,38 @@ export interface InjuryRow {
   source?: string;
 }
 
+/** One listed player, with the per-game production her absence removes. */
+export interface AbsentPlayer {
+  player_id: number;
+  full_name: string;
+  position: string | null;
+  status: string;
+  source: string;
+  games_played: number;
+  minutes: string | null;
+  points: string | null;
+  rebounds: string | null;
+  assists: string | null;
+}
+
+export interface AbsenceBucket {
+  players: AbsentPlayer[];
+  count: number;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  /** Fraction of the team's per-game scoring; null when unknowable. */
+  share_of_points?: number | null;
+}
+
+/** Listed players grouped by what their designation actually claims. */
+export interface Absences {
+  out: AbsenceBucket;
+  at_risk: AbsenceBucket;
+  likely: AbsenceBucket;
+}
+
 export interface MatchupSide {
   team_id: number;
   form: TeamFormRow | null;
@@ -646,6 +680,8 @@ export interface MatchupSide {
   rest_days: number | null;
   betting: TeamBettingRecord | null;
   injuries: InjuryRow[];
+  absences?: Absences;
+  defense?: DefenseByPositionRow[];
 }
 
 export interface MatchupResponse {

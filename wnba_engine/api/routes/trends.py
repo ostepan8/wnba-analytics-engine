@@ -226,7 +226,13 @@ def _defense_ranked(conn: Connection, *, season: int) -> list[dict[str, object]]
         by_position.setdefault(str(row["position"]), []).append(dict(row))
     for group in by_position.values():
         group.sort(key=lambda row: float(row["points_allowed"] or 0))  # type: ignore[arg-type]
+        # The league mean for the position, so a chart can show where the middle
+        # is. A rank alone says which end of the league a team sits at, not how
+        # far from ordinary it actually is.
+        values = [float(row["points_allowed"] or 0) for row in group]
+        average = round(sum(values) / len(values), 1) if values else None
         for rank, row in enumerate(group, start=1):
             row["points_allowed_rank"] = rank
             row["teams_ranked"] = len(group)
+            row["points_allowed_league_avg"] = average
     return [row for group in by_position.values() for row in group]

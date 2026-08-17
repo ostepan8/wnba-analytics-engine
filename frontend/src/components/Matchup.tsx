@@ -11,6 +11,8 @@
  */
 
 import { Link } from "react-router-dom";
+import Absences from "./Absences";
+import DefenseBars from "../charts/DefenseBars";
 import { Async, TeamLogo } from "./ui";
 import type { MatchupResponse, MatchupSide } from "../lib/api";
 import { useQuery } from "../lib/api";
@@ -177,14 +179,37 @@ export default function Matchup({
           </div>
 
           <div className="grid grid--2" style={{ marginTop: "var(--s-4)" }}>
-            <Injuries side={data.away} label={`${awayAbbr} injury report`} />
-            <Injuries side={data.home} label={`${homeAbbr} injury report`} />
+            {data.away.absences ? (
+              <Absences side={data.away} label={`${awayAbbr} availability`} />
+            ) : (
+              <Injuries side={data.away} label={`${awayAbbr} injury report`} />
+            )}
+            {data.home.absences ? (
+              <Absences side={data.home} label={`${homeAbbr} availability`} />
+            ) : (
+              <Injuries side={data.home} label={`${homeAbbr} injury report`} />
+            )}
           </div>
+
+          {(data.away.defense?.length || data.home.defense?.length) && (
+            <div style={{ marginTop: "var(--s-5)" }}>
+              <h5 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
+                What each defence gives up
+              </h5>
+              <DefenseBars
+                away={{ abbr: awayAbbr, rows: data.away.defense ?? [] }}
+                home={{ abbr: homeAbbr, rows: data.home.defense ?? [] }}
+              />
+            </div>
+          )}
 
           <p className="prose" style={{ marginTop: "var(--s-3)" }}>
             Records, scoring and rest are as of tip-off, so a finished game is shown with what was
             known before it rather than a record containing its own result. ATS and over/under are
-            against the closing consensus with pushes excluded.
+            against the closing consensus with pushes excluded. Minutes and points beside a listed
+            player are her season averages — what her absence removes, not a projection of what the
+            team will now score. Defence is per opposing player-game across the season; rank 1 is
+            the stingiest in the league.
           </p>
         </>
       )}
