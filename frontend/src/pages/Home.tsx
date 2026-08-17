@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import GamePanel from "../components/GamePanel";
 import SlateBar from "../components/SlateBar";
 import SlateTrends from "../components/SlateTrends";
@@ -59,6 +59,25 @@ export default function Home() {
 
   const index = Math.min(Math.max(defaultIndex + offset, 0), Math.max(days.length - 1, 0));
   const current = days[index];
+  const canGoEarlier = index < days.length - 1;
+  const canGoLater = index > 0;
+
+  // Left/right steps a day at a time, matching the Earlier/Later buttons.
+  // Ignored while a form control has focus so it never fights a select or
+  // text field's own use of the arrow keys.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (event.key === "ArrowLeft" && canGoEarlier) {
+        setOffset((value) => value + 1);
+      } else if (event.key === "ArrowRight" && canGoLater) {
+        setOffset((value) => value - 1);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canGoEarlier, canGoLater]);
 
   const ids = (current?.[1] ?? []).map((game) => game.id).join(",");
   const lines = useQuery<{ lines: Record<string, ClosingLine> }>(
@@ -84,18 +103,18 @@ export default function Home() {
             <button
               className="control"
               onClick={() => setOffset((value) => value + 1)}
-              disabled={index >= days.length - 1}
-              title="Earlier day"
-              aria-label="Show the earlier day's games"
+              disabled={!canGoEarlier}
+              title="Earlier day (left arrow)"
+              aria-label="Show the earlier day's games (left arrow key)"
             >
               ‹ Earlier
             </button>
             <button
               className="control"
               onClick={() => setOffset((value) => value - 1)}
-              disabled={index <= 0}
-              title="Later day"
-              aria-label="Show the later day's games"
+              disabled={!canGoLater}
+              title="Later day (right arrow)"
+              aria-label="Show the later day's games (right arrow key)"
             >
               Later ›
             </button>
