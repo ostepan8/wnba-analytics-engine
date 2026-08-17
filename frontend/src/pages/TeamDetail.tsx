@@ -11,6 +11,7 @@ import {
   TeamLogo,
 } from "../components/ui";
 import type {
+  DefenseByPositionRow,
   RosterRow,
   ScheduleRow,
   ShotChartResponse,
@@ -45,6 +46,9 @@ export default function TeamDetail() {
   );
   const betting = useQuery<{ record: TeamBettingRecord | null }>(
     teamId ? `/teams/${teamId}/betting?season=${season}` : null,
+  );
+  const defense = useQuery<{ rows: DefenseByPositionRow[] }>(
+    teamId ? `/defense/by-position?season=${season}&team_id=${teamId}` : null,
   );
 
   return (
@@ -208,6 +212,63 @@ export default function TeamDetail() {
               </Panel>
             </Section>
           </div>
+
+          <Section
+            title="Defense by position"
+            note="What opponents average against this team, per player-game."
+          >
+            <Panel>
+              <Async query={defense} empty={(d) => d.rows.length === 0}>
+                {(d) => (
+                  <>
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th className="name">Position</th>
+                            <th>Opp games</th>
+                            <th>PTS allowed</th>
+                            <th title="1 = stingiest in the league">Rank</th>
+                            <th>REB allowed</th>
+                            <th>AST allowed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {d.rows.map((row) => (
+                            <tr key={row.position}>
+                              <td className="name">{row.position}</td>
+                              <td className="num">{row.games}</td>
+                              <td className="num">{row.points_allowed}</td>
+                              <td>
+                                <span
+                                  className={
+                                    row.points_allowed_rank <= 5
+                                      ? "badge badge--good"
+                                      : row.points_allowed_rank > row.teams_ranked - 5
+                                        ? "badge badge--bad"
+                                        : "badge"
+                                  }
+                                >
+                                  {row.points_allowed_rank} of {row.teams_ranked}
+                                </span>
+                              </td>
+                              <td className="num">{row.rebounds_allowed}</td>
+                              <td className="num">{row.assists_allowed}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="prose" style={{ marginTop: "var(--s-3)" }}>
+                      Averaged per opposing player-game rather than summed, so a team that has
+                      simply played more games does not look like a worse defence. Rank 1 is the
+                      stingiest in the league at that position.
+                    </p>
+                  </>
+                )}
+              </Async>
+            </Panel>
+          </Section>
 
           <Section title="Shot profile">
             <Panel title="Where this team shoots" tools={<ShotChartLegend />}>

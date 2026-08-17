@@ -11,6 +11,8 @@ import GameFlow from "../charts/GameFlow";
 import GameShotPlot from "../charts/GameShotPlot";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import GameLines from "./GameLines";
+import HeadToHead from "./HeadToHead";
+import PropTrends from "./PropTrends";
 import LazySection from "./LazySection";
 import { Async, PlayerCell, TeamLogo } from "./ui";
 import type {
@@ -403,7 +405,21 @@ export default function GamePanel({
 
       {/* Everything, in reading order. No tabs: each block mounts as it nears
           the viewport, so scrolling is the only interaction needed. */}
-      <Block title="Player props" hint="prediction markets, live" minHeight={300}>
+      <Block title="Prop trends" hint="live lines vs how often they have been cleared" minHeight={420}>
+        <PropTrends gameId={game.id} />
+      </Block>
+
+      <Block title="Head to head" hint="previous meetings" minHeight={240}>
+        <HeadToHead
+          homeTeamId={game.home_team_id}
+          awayTeamId={game.away_team_id}
+          homeAbbr={game.home_abbr}
+          awayAbbr={game.away_abbr}
+          before={game.start_time}
+        />
+      </Block>
+
+      <Block title="Prop lines" minHeight={300}>
         <PropsTab gameId={game.id} />
       </Block>
 

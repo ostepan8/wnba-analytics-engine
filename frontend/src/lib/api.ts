@@ -546,3 +546,63 @@ export interface MarketPropRow {
   home_abbr: string | null;
   away_abbr: string | null;
 }
+
+/* --- form, trends and matchup ------------------------------------------- */
+
+export interface TrendWindow {
+  label: string;
+  games: number;
+  overs: number;
+  unders: number;
+  pushes: number;
+  average: number | null;
+  /** null when too few games have been decided to express as a percentage. */
+  rate: number | null;
+}
+
+export interface TrendGame {
+  game_id: number;
+  start_time: string;
+  value: number;
+  opponent_team_id: number | null;
+  is_home: boolean | null;
+  cleared: "over" | "under" | "push" | null;
+}
+
+export interface PropTrendRow extends MarketPropRow {
+  windows: TrendWindow[];
+  recent: TrendGame[];
+}
+
+export interface HeadToHeadGame {
+  id: number;
+  start_time: string;
+  season: number;
+  home_team_id: number;
+  away_team_id: number;
+  home_score: number | null;
+  away_score: number | null;
+  home_abbr: string;
+  away_abbr: string;
+}
+
+export interface HeadToHeadResponse {
+  team_a: number;
+  team_b: number;
+  meetings: HeadToHeadGame[];
+  played: number;
+  wins_a: number;
+  wins_b: number;
+}
+
+export interface DefenseByPositionRow {
+  team_id: number;
+  abbreviation: string;
+  position: string;
+  games: number;
+  points_allowed: string;
+  rebounds_allowed: string;
+  assists_allowed: string;
+  points_allowed_rank: number;
+  teams_ranked: number;
+}
