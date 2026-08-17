@@ -186,3 +186,190 @@ could plausibly use them): `/teams/{id}/defense`, `/players/{id}/props`,
 `/divergences` (raw list — see Research note above), `/health` (bare
 liveness check, distinct from `/health/jobs` which the Research page already
 uses — probably not useful to surface in the UI at all).
+
+**Correction from the second agent**: `/summary` (dataset overview) is
+already wired, into League.tsx's "Dataset" section — it just wasn't listed
+above. Confirmed by grepping every fetched path in `frontend/src` rather
+than trusting this file's own list, per the task's own instruction not to
+take the handoff notes on faith. It is the one entry in "confirmed already
+wired" that this file omitted; everything else in that list checked out.
+
+---
+
+## Loop 6: Usage, true shooting and net rating on a player's own page
+
+Pages/files touched: `frontend/src/pages/PlayerDetail.tsx`
+
+What changed (stats added): `/efficiency` (usage_pct, true_shooting,
+net_rating) was fetched league-wide for League's usage-vs-TS scatter but a
+player's own profile never showed their own number, exactly as the loop-5
+handoff flagged. The backend has no `player_id` filter on that route
+(checked `wnba_engine/api/routes/shooting.py` directly rather than trusting
+the log's guess) so the same response is fetched again here, scoped to the
+selected season, and the one matching row is picked out client-side.
+`min_games=1` deliberately, not the leaderboard's 10 — this is a single
+player's own profile, so their number should show even in a short season
+rather than silently disappearing under someone else's cutoff.
+
+What changed (UX): Three new `Stat`s in the header, alongside PPG/RPG/APG/
+FG%/3P%, shown only when the player has a row for the selected season (a
+DNP season or one with too few appearances shows the existing five stats
+without a gap).
+
+Backend endpoint(s) newly wired: none new — `/efficiency` was already
+fetched from League; this is a second, differently-scoped call to the same
+route from a different page.
+
+Verification: lint ✅, build ✅
+Commit: 5b5d269 feat: surface usage, true shooting and net rating on a player's own page
+
+## Loop 7: Sortable schedule table on a team's page
+
+Pages/files touched: `frontend/src/pages/TeamDetail.tsx`
+
+What changed (UX): The roster table got click-to-sort in loop 4; the
+schedule table (date, opponent, result, spread, ATS, total, O/U) was left
+in date order only, exactly as the loop-5 handoff flagged. Added `SortTh`
+on Date, Spread and Total using the same `useSort` hook already imported
+for the roster — no new primitive needed. Deliberately no initial sort key,
+so the default view stays chronological and only reorders once someone
+actually clicks a header, unlike the roster table which opens sorted by
+minutes.
+
+Backend endpoint(s) newly wired: none — UI capability only, same caveat as
+loop 4: client-side sort is only safe here because the schedule is fetched
+whole, not paginated.
+
+Verification: lint ✅, build ✅
+Commit: 1aa1f44 feat: sortable schedule table on a team's page
+
+## Loop 8: Keyboard day navigation on Home
+
+Pages/files touched: `frontend/src/pages/Home.tsx`
+
+What changed (UX): The loop-5 handoff noted Home's Earlier/Later day-nav
+was mouse/tab-only with no keyboard shortcut. Added a `keydown` listener
+for ArrowLeft/ArrowRight that steps the same `offset` state the buttons
+already drive, disabled at the same boundaries (`canGoEarlier`/
+`canGoLater`, now shared between the buttons and the listener instead of
+each recomputing `index >= days.length - 1` separately). Ignored while a
+form control (`input`/`textarea`/`select`) has focus, so it never hijacks a
+season picker or search box's own use of the same keys on another page —
+this page has no such control today, but the guard costs nothing and keeps
+the pattern safe to copy elsewhere. The buttons' `aria-label`s now mention
+the shortcut so it's discoverable, not just functional.
+
+Backend endpoint(s) newly wired: none.
+
+Verification: lint ✅, build ✅
+Commit: 1f09ce8 feat: left/right arrow keys step through Home's day nav
+
+## Loop 9: Expandable raw divergence log on Research
+
+Pages/files touched: `frontend/src/lib/api.ts` (new `DivergenceObservation`
+interface), `frontend/src/pages/Research.tsx`
+
+What changed (stats added): `/divergences` — the itemized, per-observation
+list, distinct from `/divergences/summary` which the page already used —
+was confirmed still unused anywhere in the frontend (re-grepped every
+fetched path rather than trusting the "genuinely unused" list at face
+value; it held up). Added it behind a "Show log" toggle so it's fetched
+only once opened, not on every page load: the aggregates above are what the
+page's own prose says is the real content, and the surrounding text is
+explicit that a survival rate needs its denominator to mean anything, which
+argues against making the raw per-row list prominent. The table itself
+(captured time, matchup linked to `/games/:id`, venue, side, edge, whether
+the price survived, CLV) stays collapsed by default with a one-line note
+in its place explaining what it is and isn't.
+
+Backend endpoint(s) newly wired: `/divergences` (previously fetched
+nowhere in the frontend).
+
+Verification: lint ✅, build ✅
+Commit: 215a1e6 feat: expandable raw divergence log on Research
+
+## Loop 10: Retry on every failed request
+
+Pages/files touched: `frontend/src/lib/api.ts`, `frontend/src/components/ui.tsx`,
+`frontend/src/components/GamePanel.tsx`
+
+What changed (UX): Not a single page — the shared `Async`/`useQuery` layer
+every page and component renders through. A failed request (network blip,
+backend hiccup) previously rendered "Could not load this: ..." with no way
+to recover short of a full page reload. `useQuery` now tracks an internal
+`attempt` counter and returns `refetch()`, which bumps it to re-run the
+same fetch without changing `path`. `Async`'s error branch renders a Retry
+button wired to it. Fixing this surfaced a real duplication: `GamePanel.tsx`
+had its own hand-written copy of the query-shape type for `SportsbookProps`
+(`{ data, error, loading }`, no `refetch`), which the compiler caught the
+moment `refetch` became required — replaced with the exported `Query<T>`
+type from `lib/api.ts` instead of hand-rolling it again.
+
+What changed (stats added): none — pure reliability/UX fix, applies
+uniformly to every `Async` usage across all 11 pages without touching any
+of them individually.
+
+Backend endpoint(s) newly wired: none.
+
+Verification: lint ✅, build ✅
+Commit: 031b443 feat: retry button on every failed request, not just a page reload
+
+---
+
+## Summary — all 10 loops
+
+1. Wire matchup context, prop trends and head-to-head into GameDetail —
+   reused three already-built components on the standalone game page.
+2. Playoff race status and shot-defense chart on the team page — extracted
+   `RaceBadge` as a shared primitive, mirrored offense's shot chart on
+   defense.
+3. Injury source and job run counts — surfaced fields that were already in
+   API responses but never rendered.
+4. Sortable table columns on Players and the roster table — new
+   `useSort`/`SortTh` primitives, client-side only by design.
+5. Games team filter, plus keyboard/label accessibility fixes on Home and
+   PropLines.
+6. Usage, true shooting and net rating on a player's own page — filtered
+   the league-wide `/efficiency` response down to one player.
+7. Sortable schedule table on the team page — same `useSort`/`SortTh`
+   primitives applied to the one client-side-loaded table loop 4 missed.
+8. Keyboard day navigation on Home — arrow keys mirror the existing
+   Earlier/Later buttons.
+9. Expandable raw divergence log on Research — the last unused analytics
+   endpoint, wired in deliberately understated so it doesn't compete with
+   the page's own caution against over-reading raw observations.
+10. Retry on every failed request — a shared-primitive fix (`useQuery` +
+    `Async`) that improves error recovery on all 11 pages at once, not a
+    single-page change.
+
+**Current state**: `npm run lint` (tsc -b --noEmit) and `npm run build`
+(tsc + vite build) both pass with zero errors as of the loop 10 commit.
+11 commits ahead of `main` (5 from loops 1-5, the loop 1-5 log commit, 5
+from loops 6-10; this log commit will make it 12).
+
+**What's still NOT covered, honestly:**
+
+- **NotFound.tsx and Model.tsx** were never touched across all 10 loops.
+  Both were flagged in the loop-5 handoff as deliberately out of scope —
+  NotFound is a minimal 404 by design, Model is the dense, narrative-driven
+  paid-tier page — and that judgment held up on a second look; neither
+  showed an obvious gap worth forcing a change into.
+- **GameDetail.tsx** was the loop 1 target and hasn't been revisited since
+  — it's dense (matchup, trends, head-to-head, box score, flow, lines) but
+  wasn't re-audited for anything new in loops 6-10.
+- **`/health`** (the bare liveness check, distinct from `/health/jobs`)
+  remains the one backend endpoint confirmed genuinely unused anywhere in
+  the frontend, and deliberately so — it's a liveness probe, not user-
+  facing data, and Research's job-health grid already covers the
+  freshness/reliability story a reader actually wants.
+- **Players.tsx** still can't sort by rebounds, assists, steals or blocks —
+  `PlayerRow` (the `/players` list response) only carries `points` and
+  `minutes` per row. Adding those columns would need a backend change
+  (out of scope here: frontend-only, per the task's own constraints), or a
+  swap to a different, richer endpoint if one exists that wasn't found in
+  this pass.
+- No frontend test suite exists in this repo (`frontend/package.json` has
+  no test runner configured) and none was added — verification for all 10
+  loops was lint + build only, matching the gate this task was scoped to.
+- This worktree has not been merged into `main` and nothing was pushed;
+  it's left as-is for review.
