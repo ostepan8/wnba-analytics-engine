@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import GamePanel from "../components/GamePanel";
+import SlateBar from "../components/SlateBar";
+import SlateTrends from "../components/SlateTrends";
 import { Async, Panel, Section } from "../components/ui";
-import type { ClosingLine, GameRow } from "../lib/api";
+import type { ClosingLine, GameRow, SlateResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, longDate } from "../lib/format";
 
@@ -11,6 +13,11 @@ import { CURRENT_SEASON, longDate } from "../lib/format";
  * It opens on the most recent day that HAS games rather than on today's date.
  * Today is frequently empty — an off day, or the off-season — and an empty
  * scoreboard is indistinguishable from a broken one.
+ *
+ * One /slate call carries the context for the whole day: every team's record,
+ * form, rest and injury report, plus the props whose live price and recent
+ * frequency disagree most. Per-game that would be a dozen round trips repeating
+ * the same player-history query to render one screen.
  */
 export default function Home() {
   const [offset, setOffset] = useState(0);
@@ -57,6 +64,7 @@ export default function Home() {
   const lines = useQuery<{ lines: Record<string, ClosingLine> }>(
     ids ? `/lines/closing?game_ids=${ids}` : null,
   );
+  const slate = useQuery<SlateResponse>(ids ? `/slate?game_ids=${ids}` : null);
 
   return (
     <Section
@@ -95,16 +103,37 @@ export default function Home() {
       >
         <Async query={games} empty={() => days.length === 0}>
           {() => (
-            <div style={{ display: "grid", gap: "var(--s-3)", padding: "var(--s-3)" }}>
-              {(current?.[1] ?? []).map((game) => (
-                <GamePanel
-                  key={game.id}
-                  game={game}
-                  line={lines.data?.lines?.[String(game.id)]}
-                  season={CURRENT_SEASON}
-                />
-              ))}
-            </div>
+            <>
+              {slate.data && <SlateBar slate={slate.data} />}
+              <div style={{ display: "grid", gap: "var(--s-3)", padding: "var(--s-3)" }}>
+                {(current?.[1] ?? []).map((game) => (
+                  <GamePanel
+                    key={game.id}
+                    game={game}
+                    line={lines.data?.lines?.[String(game.id)]}
+                    season={CURRENT_SEASON}
+                    context={slate.data?.teams}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </Async>
+      </Panel>
+
+      {/* Below the games rather than above them: the scoreboard is what the
+          page is for, and this is a way into it, not a replacement. */}
+      <Panel
+        title="Where the market and the record disagree"
+        hint="across every game on this slate"
+      >
+        <Async query={slate}>
+          {(data) => (
+            <SlateTrends
+              trends={data.trends}
+              balance={data.balance}
+              ruledOut={data.totals.props_ruled_out}
+            />
           )}
         </Async>
       </Panel>

@@ -21,7 +21,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
-from wnba_engine.analysis.prop_trends import group_history, trends_for_line
+from wnba_engine.analysis.prop_trends import (
+    attach_trends,
+    group_history,
+    opponents_in_game,
+)
 from wnba_engine.api.deps import get_connection
 from wnba_engine.repositories import analytics_repo, betting_repo, form_repo
 
@@ -29,15 +33,6 @@ router = APIRouter(tags=["trends"])
 
 LIVE_MAX_AGE = 120
 SEASON_MAX_AGE = 900
-
-# Prop market -> the box-score column it settles against.
-STAT_BY_PROP = {
-    "points": "points",
-    "rebounds": "rebounds",
-    "assists": "assists",
-    "threes": "three_pointers_made",
-    "points_rebounds_assists": "points_rebounds_assists",
-}
 
 
 def _season(season: int | None) -> int:
@@ -77,43 +72,12 @@ def game_prop_trends(
         season=int(game["season"]) if game.get("season") else None,
     )
     by_player = group_history(history)
-
-    # Which side of THIS game each player is on, taken from the team she most
-    # recently played for. The history row carries her own team_id, so this is a
-    # direct read rather than an inference from the opponent.
-    home_id = game.get("home_team_id")
-    away_id = game.get("away_team_id")
-    opponent_of: dict[int, int | None] = {}
-    for player_id, rows in by_player.items():
-        own_team = rows[0].get("team_id") if rows else None
-        if own_team == home_id:
-            opponent_of[player_id] = away_id
-        elif own_team == away_id:
-            opponent_of[player_id] = home_id
-        else:
-            # She has not appeared for either side this season (a trade, or no
-            # games yet). No opponent window rather than a wrong one.
-            opponent_of[player_id] = None
-
-    enriched = []
-    for prop in props:
-        stat_key = STAT_BY_PROP.get(str(prop["prop_type"]))
-        if stat_key is None:
-            continue
-        player_id = int(prop["player_id"])
-        rows = by_player.get(player_id, [])
-
-        enriched.append(
-            {
-                **prop,
-                **trends_for_line(
-                    rows,
-                    stat_key=stat_key,
-                    line=float(prop["line"]),
-                    opponent_team_id=opponent_of.get(player_id),
-                ),
-            }
-        )
+    opponent_of = opponents_in_game(
+        by_player,
+        home_team_id=game.get("home_team_id"),
+        away_team_id=game.get("away_team_id"),
+    )
+    enriched = attach_trends(props, history=by_player, opponent_of=opponent_of)
 
     return {"game_id": game_id, "props": enriched, "count": len(enriched)}
 

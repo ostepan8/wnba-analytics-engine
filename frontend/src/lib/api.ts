@@ -652,3 +652,63 @@ export interface MatchupResponse {
   home: MatchupSide;
   away: MatchupSide;
 }
+
+/* --- slate: a whole day of games in one call ----------------------------- */
+
+export interface SlateTeam {
+  team_id: number;
+  form: TeamFormRow | null;
+  /** Days since this team's previous game, as of tip-off. */
+  rest_days: number | null;
+  betting: TeamBettingRecord | null;
+  /** Only players listed out or doubtful. */
+  out: InjuryRow[];
+  /** Everyone on the report, including probable and questionable. */
+  listed: number;
+}
+
+/** One prop where the live price and the recent frequency disagree.
+ *
+ * `gap` is the difference between two descriptions, not an edge — see
+ * wnba_engine/analysis/slate.py. */
+export interface SlateTrend {
+  game_id: number;
+  player_id: number;
+  full_name: string;
+  prop_type: string;
+  line: number;
+  over_probability: number | null;
+  provider: string;
+  l10: TrendWindow;
+  season: TrendWindow | null;
+  streak: { direction: "over" | "under"; length: number } | null;
+  gap: number;
+}
+
+export interface SlateResponse {
+  season: number;
+  games: {
+    game_id: number;
+    start_time: string;
+    home_team_id: number;
+    away_team_id: number;
+  }[];
+  teams: Record<string, SlateTeam>;
+  trends: SlateTrend[];
+  /** How the whole board leans, over every rankable prop rather than the top few. */
+  balance: {
+    rankable: number;
+    above: number;
+    below: number;
+    median_gap: number | null;
+  };
+  totals: {
+    games: number;
+    props_priced: number;
+    /** Priced props belonging to players ruled out, excluded from `trends`. */
+    props_ruled_out: number;
+    players_out: number;
+    lines_recorded: number;
+    average_total: number | null;
+  };
+}

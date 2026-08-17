@@ -25,6 +25,7 @@ import type {
   GameShotsResponse,
   MarketPropRow,
   ShotDefenseResponse,
+  SlateTeam,
 } from "../lib/api";
 import { moneylineLabel, propLabel, spreadLabel, useQuery } from "../lib/api";
 import { madeAttempted, num, pct, signed, timeOf } from "../lib/format";
@@ -339,14 +340,39 @@ function FlowTab({ game }: { game: GameRow }) {
 
 /* --------------------------------------------------------------- panel --- */
 
+/** Record, form and rest in one line, for the collapsed header.
+ *
+ * The card is the only thing most readers see, so the facts that decide whether
+ * a game is worth opening belong on it rather than three sections down. */
+function TeamLine({ team }: { team?: SlateTeam }) {
+  const form = team?.form;
+  if (!form || form.games == null) return null;
+
+  const parts = [`${form.wins}-${form.losses}`];
+  if (form.games_l10) parts.push(`L10 ${form.wins_l10}-${form.games_l10 - form.wins_l10!}`);
+  if (form.points_for) parts.push(`${form.points_for} PF`);
+  if (form.points_against) parts.push(`${form.points_against} PA`);
+  if (team?.rest_days != null) parts.push(`${team.rest_days}d rest`);
+  if (team && team.out.length > 0) parts.push(`${team.out.length} out`);
+
+  return (
+    <span className="muted" style={{ fontSize: "var(--t-xs)" }}>
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
 export default function GamePanel({
   game,
   line,
   season,
+  context,
 }: {
   game: GameRow;
   line?: ClosingLine;
   season: number;
+  /** Both sides' form, rest and injuries, already fetched for the whole slate. */
+  context?: Record<string, SlateTeam>;
 }) {
   const final = game.status === "final";
   const homeWon = final && (game.home_score ?? 0) > (game.away_score ?? 0);
@@ -369,9 +395,12 @@ export default function GamePanel({
           ].map((side) => (
             <span key={side.id} style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
               <TeamLogo teamId={side.id} size="sm" />
-              <Link to={`/teams/${side.id}`} style={{ fontWeight: side.win ? 640 : 460 }}>
-                {side.name}
-              </Link>
+              <span style={{ display: "grid", minWidth: 0 }}>
+                <Link to={`/teams/${side.id}`} style={{ fontWeight: side.win ? 640 : 460 }}>
+                  {side.name}
+                </Link>
+                <TeamLine team={context?.[String(side.id)]} />
+              </span>
               <span className="num" style={{ marginLeft: "auto", fontWeight: side.win ? 640 : 460 }}>
                 {final ? side.score : ""}
               </span>

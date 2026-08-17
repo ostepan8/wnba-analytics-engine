@@ -37,6 +37,17 @@ MIN_GAMES_FOR_RATE = 4
 # The windows a reader actually asks for.
 WINDOWS = (5, 10, 20)
 
+# Which box-score column each prop market settles against. A market this does
+# not name is skipped rather than guessed at -- grading a prop against the wrong
+# column produces a confident number that is simply about something else.
+STAT_BY_PROP = {
+    "points": "points",
+    "rebounds": "rebounds",
+    "assists": "assists",
+    "threes": "three_pointers_made",
+    "points_rebounds_assists": "points_rebounds_assists",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class Window:
@@ -154,6 +165,62 @@ def trends_for_line(
             if row.get(stat_key) is not None
         ],
     }
+
+
+def opponents_in_game(
+    history: dict[int, list[dict[str, Any]]],
+    *,
+    home_team_id: int | None,
+    away_team_id: int | None,
+) -> dict[int, int | None]:
+    """Which side of a game each player is on, and so who she faces.
+
+    Taken from the team she most recently played for, which the history row
+    already carries -- a direct read rather than an inference. A player who has
+    appeared for neither side this season (a trade, or no games yet) gets no
+    opponent window rather than a wrong one.
+    """
+    opponent_of: dict[int, int | None] = {}
+    for player_id, rows in history.items():
+        own_team = rows[0].get("team_id") if rows else None
+        if own_team == home_team_id:
+            opponent_of[player_id] = away_team_id
+        elif own_team == away_team_id:
+            opponent_of[player_id] = home_team_id
+        else:
+            opponent_of[player_id] = None
+    return opponent_of
+
+
+def attach_trends(
+    props: list[dict[str, Any]],
+    *,
+    history: dict[int, list[dict[str, Any]]],
+    opponent_of: dict[int, int | None],
+) -> list[dict[str, Any]]:
+    """Pair each prop with the player's record against its line.
+
+    Pure: the caller supplies the history, already cut to games before the one
+    being previewed. Props whose market has no box-score column are dropped.
+    """
+    enriched: list[dict[str, Any]] = []
+    for prop in props:
+        stat_key = STAT_BY_PROP.get(str(prop["prop_type"]))
+        if stat_key is None:
+            continue
+        player_id = int(prop["player_id"])
+        enriched.append(
+            {
+                **prop,
+                **trends_for_line(
+                    history.get(player_id, []),
+                    stat_key=stat_key,
+                    line=float(prop["line"]),
+                    opponent_team_id=opponent_of.get(player_id),
+                ),
+            }
+        )
+    return enriched
 
 
 def group_history(rows: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:

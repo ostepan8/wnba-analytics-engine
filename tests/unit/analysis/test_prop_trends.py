@@ -11,7 +11,9 @@ from datetime import UTC, datetime, timedelta
 
 from wnba_engine.analysis.prop_trends import (
     MIN_GAMES_FOR_RATE,
+    attach_trends,
     group_history,
+    opponents_in_game,
     summarise,
     trends_for_line,
 )
@@ -133,3 +135,45 @@ class TestGrouping:
         grouped = group_history(rows)
         assert set(grouped) == {1, 2}
         assert [row["points"] for row in grouped[1]] == [3, 1]
+
+
+class TestSideResolution:
+    """Which team a player is on decides her opponent window, and getting it
+    wrong produces a confidently-labelled 'vs opp' about the wrong defence."""
+
+    def test_a_player_faces_the_other_side_of_the_game(self) -> None:
+        history = {
+            1: [{"team_id": 10}],
+            2: [{"team_id": 13}],
+        }
+        assert opponents_in_game(history, home_team_id=13, away_team_id=10) == {
+            1: 13,
+            2: 10,
+        }
+
+    def test_a_player_on_neither_side_gets_no_opponent(self) -> None:
+        history = {5: [{"team_id": 99}]}
+        assert opponents_in_game(history, home_team_id=13, away_team_id=10) == {5: None}
+
+    def test_no_games_yet_gets_no_opponent(self) -> None:
+        assert opponents_in_game({5: []}, home_team_id=13, away_team_id=10) == {5: None}
+
+
+class TestAttachingTrends:
+    def test_each_prop_keeps_its_own_fields_and_gains_windows(self) -> None:
+        props = [{"player_id": 7, "prop_type": "points", "line": 15.0, "provider": "kalshi"}]
+        history = {7: [game(20, days_ago=1), game(10, days_ago=2)]}
+        attached = attach_trends(props, history=history, opponent_of={7: 1})
+        assert attached[0]["provider"] == "kalshi"
+        assert window(attached[0], "Season")["overs"] == 1
+
+    def test_a_market_with_no_box_score_column_is_dropped_not_guessed(self) -> None:
+        """Grading a prop against the wrong column yields a confident number
+        that is simply about something else."""
+        props = [{"player_id": 7, "prop_type": "double_double", "line": 0.5}]
+        assert attach_trends(props, history={}, opponent_of={}) == []
+
+    def test_a_player_with_no_history_still_returns_a_row(self) -> None:
+        props = [{"player_id": 999, "prop_type": "rebounds", "line": 6.5}]
+        attached = attach_trends(props, history={}, opponent_of={})
+        assert window(attached[0], "Season")["games"] == 0

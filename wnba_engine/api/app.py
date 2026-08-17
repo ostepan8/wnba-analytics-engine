@@ -37,6 +37,7 @@ from wnba_engine.api.routes import (
     lines,
     markets,
     shooting,
+    slate,
     stats,
     trends,
 )
@@ -76,7 +77,7 @@ def create_app() -> FastAPI:
     # player returned raw JSON instead of the app. Two namespaces sharing one
     # URL space cannot both win; giving the API its own prefix settles it
     # permanently rather than per-collision.
-    for module in (health, markets, directory, games, stats, shooting, lines, trends):
+    for module in (health, markets, directory, games, stats, shooting, lines, trends, slate):
         app.include_router(module.router, prefix=API_PREFIX)
 
     _mount_dashboard(app)
