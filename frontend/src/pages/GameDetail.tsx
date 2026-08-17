@@ -2,6 +2,10 @@ import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import GameFlow from "../charts/GameFlow";
 import GameLines from "../components/GameLines";
+import HeadToHead from "../components/HeadToHead";
+import LazySection from "../components/LazySection";
+import Matchup from "../components/Matchup";
+import PropTrends from "../components/PropTrends";
 import { TimeSeries, type Series } from "../charts/primitives";
 import { Async, Panel, PlayerCell, Section, Stat } from "../components/ui";
 import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
@@ -117,7 +121,7 @@ export default function GameDetail() {
           <>
             <Section title={`${data.away_team} at ${data.home_team}`} note={longDate(data.start_time)}>
               <Panel>
-                <div style={{ display: "flex", gap: "var(--s-6)", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "var(--s-6)", flexWrap: "wrap", alignItems: "center" }}>
                   <Stat
                     value={final ? `${data.away_score}–${data.home_score}` : "—"}
                     label={`${data.away_abbr} – ${data.home_abbr}`}
@@ -127,7 +131,30 @@ export default function GameDetail() {
                   {data.attendance != null && (
                     <Stat value={data.attendance.toLocaleString()} label="Attendance" />
                   )}
+                  {/* Preseason and All-Star games are largely unpriced by books
+                      (AGENTS.md) — flagging it here explains a missing line
+                      before a reader goes looking for one. */}
+                  {data.season_type && data.season_type !== "regular-season" && (
+                    <span className="badge badge--warn">{data.season_type.replace("-", " ")}</span>
+                  )}
                 </div>
+              </Panel>
+            </Section>
+
+            {/* Context before result: record, form, rest and who is out is what
+                makes the score above readable, so it goes first rather than
+                being buried under charts a reader has to scroll past to reach it. */}
+            <Section title="Matchup" note="Form, scoring, rest and injuries, cut at tip-off.">
+              <Panel>
+                <LazySection minHeight={480}>
+                  <Matchup
+                    gameId={data.id}
+                    homeAbbr={data.home_abbr}
+                    awayAbbr={data.away_abbr}
+                    homeTeamId={data.home_team_id}
+                    awayTeamId={data.away_team_id}
+                  />
+                </LazySection>
               </Panel>
             </Section>
 
@@ -165,6 +192,31 @@ export default function GameDetail() {
                   formatValue={(value) => pct(value, 0)}
                   formatTime={(time) => new Date(time).toLocaleString()}
                 />
+              </Panel>
+            </Section>
+
+            <Section
+              title="Prop trends"
+              note="Live lines against how often each has actually cleared."
+            >
+              <Panel>
+                <LazySection minHeight={420}>
+                  <PropTrends gameId={data.id} />
+                </LazySection>
+              </Panel>
+            </Section>
+
+            <Section title="Head to head" note="Previous meetings between these two teams.">
+              <Panel>
+                <LazySection minHeight={240}>
+                  <HeadToHead
+                    homeTeamId={data.home_team_id}
+                    awayTeamId={data.away_team_id}
+                    homeAbbr={data.home_abbr}
+                    awayAbbr={data.away_abbr}
+                    before={data.start_time}
+                  />
+                </LazySection>
               </Panel>
             </Section>
 
