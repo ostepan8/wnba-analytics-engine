@@ -529,14 +529,58 @@ SELECT p.id AS player_id, p.full_name, p.position, p.jersey_number,
  ORDER BY avg(r.minutes) DESC NULLS LAST
 """
 
+# Schedule with the closing number each game was played to.
+#
+# The line is reported from THIS team's perspective, not the home team's: a
+# schedule that shows a home spread on every row makes the reader flip the sign
+# on half of them, and getting that wrong silently inverts the result.
+#
+# Consensus is built per book first (each book's last quote before tip), for the
+# reason spelled out in wnba_engine/repositories/betting_repo.py -- averaging
+# raw rows weights whichever book repriced most often.
 _TEAM_SCHEDULE = """
+WITH per_vendor AS (
+    SELECT DISTINCT ON (o.game_id, o.vendor)
+           o.game_id, o.spread_home_value, o.total_value
+      FROM sportsbook_game_odds o
+      JOIN games g ON g.id = o.game_id
+     WHERE o.captured_at <= g.start_time
+       AND g.season = %(season)s
+       AND (g.home_team_id = %(team_id)s OR g.away_team_id = %(team_id)s)
+     ORDER BY o.game_id, o.vendor, o.captured_at DESC
+), consensus AS (
+    SELECT game_id,
+           avg(spread_home_value) AS spread_home,
+           avg(total_value)       AS total,
+           count(*)               AS books
+      FROM per_vendor
+     GROUP BY game_id
+)
 SELECT g.id, g.start_time, g.status, g.home_score, g.away_score,
        (g.home_team_id = %(team_id)s) AS is_home,
-       opp.id AS opponent_id, opp.name AS opponent, opp.abbreviation AS opponent_abbr
+       opp.id AS opponent_id, opp.name AS opponent, opp.abbreviation AS opponent_abbr,
+       c.books,
+       round((CASE WHEN g.home_team_id = %(team_id)s
+                   THEN c.spread_home ELSE -c.spread_home END)::numeric, 1) AS spread,
+       round(c.total::numeric, 1) AS total,
+       CASE
+         WHEN g.status <> 'final' OR c.spread_home IS NULL THEN NULL
+         WHEN g.home_team_id = %(team_id)s
+              THEN CASE WHEN (g.home_score - g.away_score) + c.spread_home > 0 THEN TRUE
+                        WHEN (g.home_score - g.away_score) + c.spread_home < 0 THEN FALSE END
+         ELSE CASE WHEN (g.away_score - g.home_score) - c.spread_home > 0 THEN TRUE
+                   WHEN (g.away_score - g.home_score) - c.spread_home < 0 THEN FALSE END
+       END AS covered,
+       CASE
+         WHEN g.status <> 'final' OR c.total IS NULL THEN NULL
+         WHEN (g.home_score + g.away_score) > c.total THEN TRUE
+         WHEN (g.home_score + g.away_score) < c.total THEN FALSE
+       END AS went_over
   FROM games g
   JOIN teams opp
     ON opp.id = CASE WHEN g.home_team_id = %(team_id)s
                      THEN g.away_team_id ELSE g.home_team_id END
+  LEFT JOIN consensus c ON c.game_id = g.id
  WHERE g.season = %(season)s
    AND (g.home_team_id = %(team_id)s OR g.away_team_id = %(team_id)s)
  ORDER BY g.start_time DESC

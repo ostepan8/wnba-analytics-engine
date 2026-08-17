@@ -251,19 +251,48 @@ def _shot_rows(
 ) -> tuple[list[tuple], set[int]]:
     rows: list[tuple] = []
     touched: set[int] = set()
+    # The shot feed does not name the team, but the box score does: a player in
+    # a game played for exactly one team. Resolved once per game rather than per
+    # shot -- a game is ~170 attempts across ~25 players.
+    #
+    # This used to pass a literal None and every shot_locations row in the
+    # database had a NULL team, which only surfaced when a team shot chart
+    # returned nothing (db/migrations/0032).
+    teams = _team_by_player(conn, game_id)
     for shot in attempts:
         player = _player_id(conn, shot.player_external_id, shot.player_name, cache)
         if player is not None:
             touched.add(player)
         rows.append(
             (
-                game_id, player, None, PROVIDER, shot.game_event_id, shot.period,
+                game_id, player, teams.get(player) if player is not None else None,
+                PROVIDER, shot.game_event_id, shot.period,
                 shot.seconds_remaining, shot.action_type, shot.shot_type,
                 shot.shot_zone_basic, shot.shot_zone_area, shot.shot_zone_range,
                 shot.shot_distance, shot.loc_x, shot.loc_y, shot.made,
             )
         )
     return rows, touched
+
+
+def _team_by_player(conn: Connection, game_id: int) -> dict[int, int]:
+    """Which team each player played for in this game, from the box score.
+
+    player_game_stats is keyed by source and providers can disagree, so this
+    collapses to one row per player with the same ESPN-first precedence used
+    elsewhere in the codebase.
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT ON (player_id) player_id, team_id
+          FROM player_game_stats
+         WHERE game_id = %s AND team_id IS NOT NULL
+         ORDER BY player_id,
+                  CASE source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+        """,
+        (game_id,),
+    ).fetchall()
+    return {int(player_id): int(team_id) for player_id, team_id in rows}
 
 
 def _split_score(score: str | None) -> tuple[int | None, int | None]:

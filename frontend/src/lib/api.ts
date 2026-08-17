@@ -120,6 +120,14 @@ export interface ScheduleRow {
   opponent_id: number;
   opponent: string;
   opponent_abbr: string;
+  /** Closing consensus, from THIS team's perspective — already sign-flipped
+      for road games, so it never needs flipping at the call site. */
+  spread: string | null;
+  total: string | null;
+  books: number | null;
+  /** null on a push, and for anything not yet final. */
+  covered: boolean | null;
+  went_over: boolean | null;
 }
 
 export interface PlayerRow {

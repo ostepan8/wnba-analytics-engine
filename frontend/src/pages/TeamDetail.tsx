@@ -17,7 +17,7 @@ import type {
   TeamBettingRecord,
   TeamRow,
 } from "../lib/api";
-import { useQuery } from "../lib/api";
+import { useQuery, spreadLabel } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from "../lib/format";
 
 interface TeamResponse {
@@ -99,7 +99,7 @@ export default function TeamDetail() {
             </Panel>
           </Section>
 
-          <div className="grid grid--sidebar">
+          <div className="grid grid--2">
             <Section title="Roster" note="Ordered by minutes — the rotation, top to bottom.">
               <Panel flush>
                 {data.roster.length === 0 ? (
@@ -139,7 +139,7 @@ export default function TeamDetail() {
               </Panel>
             </Section>
 
-            <Section title="Schedule">
+            <Section title="Schedule" note="With the closing number each game was played to.">
               <Panel flush>
                 {data.schedule.length === 0 ? (
                   <p className="empty">No games scheduled.</p>
@@ -151,6 +151,10 @@ export default function TeamDetail() {
                           <th>Date</th>
                           <th>Opponent</th>
                           <th>Result</th>
+                          <th>Spread</th>
+                          <th>ATS</th>
+                          <th>Total</th>
+                          <th>O/U</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -172,6 +176,26 @@ export default function TeamDetail() {
                                   </span>
                                 ) : (
                                   <span className="muted">—</span>
+                                )}
+                              </td>
+                              <td className="num">{spreadLabel(game.spread)}</td>
+                              <td>
+                                {game.covered === null ? (
+                                  <span className="muted">—</span>
+                                ) : (
+                                  <span
+                                    className={game.covered ? "badge badge--good" : "badge badge--bad"}
+                                  >
+                                    {game.covered ? "cover" : "no"}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="num">{game.total ?? "—"}</td>
+                              <td>
+                                {game.went_over === null ? (
+                                  <span className="muted">—</span>
+                                ) : (
+                                  <span className="badge">{game.went_over ? "over" : "under"}</span>
                                 )}
                               </td>
                             </tr>
