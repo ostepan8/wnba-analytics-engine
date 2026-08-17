@@ -26,6 +26,7 @@ import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from ".
 import { useSort } from "../lib/useSort";
 
 type RosterSortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists";
+type ScheduleSortColumn = "start_time" | "spread" | "total";
 
 interface TeamResponse {
   season: number;
@@ -69,6 +70,16 @@ export default function TeamDetail() {
     team.data?.roster ?? [],
     rosterAccessor,
     "minutes",
+  );
+  // No initial column: the schedule starts in the order the API returns it
+  // (chronological) and only reorders once someone actually clicks a header.
+  const scheduleAccessor = useCallback(
+    (row: ScheduleRow, key: ScheduleSortColumn) => row[key],
+    [],
+  );
+  const schedule = useSort<ScheduleRow, ScheduleSortColumn>(
+    team.data?.schedule ?? [],
+    scheduleAccessor,
   );
 
   return (
@@ -224,7 +235,10 @@ export default function TeamDetail() {
               </Panel>
             </Section>
 
-            <Section title="Schedule" note="With the closing number each game was played to.">
+            <Section
+              title="Schedule"
+              note="With the closing number each game was played to — click a column to re-sort."
+            >
               <Panel flush>
                 {data.schedule.length === 0 ? (
                   <p className="empty">No games scheduled.</p>
@@ -233,17 +247,35 @@ export default function TeamDetail() {
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Date</th>
+                          <SortTh
+                            label="Date"
+                            column="start_time"
+                            active={schedule.sortKey === "start_time"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>Opponent</th>
                           <th>Result</th>
-                          <th>Spread</th>
+                          <SortTh
+                            label="Spread"
+                            column="spread"
+                            active={schedule.sortKey === "spread"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>ATS</th>
-                          <th>Total</th>
+                          <SortTh
+                            label="Total"
+                            column="total"
+                            active={schedule.sortKey === "total"}
+                            direction={schedule.direction}
+                            onSort={schedule.toggleSort}
+                          />
                           <th>O/U</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.schedule.map((game) => {
+                        {schedule.sorted.map((game) => {
                           const result = resultOf(game);
                           return (
                             <tr key={game.id}>
