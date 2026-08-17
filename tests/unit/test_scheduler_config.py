@@ -41,6 +41,7 @@ class TestRepoSchedule:
             "odds-focused",
             "market-injury-snapshot",
             "espn-sync",
+            "wnba-stats-sync",
             "image-sync",
             "db-backup",
             "balldontlie-season",

@@ -471,3 +471,42 @@ export const spreadLabel = (value: string | null) =>
 
 export const moneylineLabel = (value: string | number | null) =>
   value == null ? "—" : `${Number(value) > 0 ? "+" : ""}${Math.round(Number(value))}`;
+
+/* --- per-game detail ----------------------------------------------------- */
+
+export interface GamePropRow {
+  player_id: number;
+  full_name: string;
+  team_abbr: string | null;
+  team_id: number | null;
+  prop_type: string;
+  line: string;
+  books: number;
+  captured_at: string;
+  realized: number | null;
+}
+
+export interface GameShotsResponse {
+  game_id: number;
+  team_id: number | null;
+  bin_size: number;
+  cells: ShotCell[];
+  attempts: number;
+  points_per_attempt: number | null;
+  teams: {
+    home_team_id: number;
+    away_team_id: number;
+    home_abbr: string;
+    away_abbr: string;
+  } | null;
+}
+
+export interface ShotDefenseResponse {
+  team_id: number;
+  season: number;
+  bin_size: number;
+  cells: ShotCell[];
+  zones: ShotZone[];
+  attempts: number;
+  points_per_attempt: number | null;
+}

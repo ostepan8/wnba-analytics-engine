@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
 from wnba_engine.api.deps import get_connection
-from wnba_engine.repositories import analytics_repo
+from wnba_engine.repositories import analytics_repo, game_detail_repo
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -64,6 +64,53 @@ def game_odds(
     response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
     history = analytics_repo.fetch_game_odds_history(conn, game_id, limit=limit)
     return {"game_id": game_id, "odds": history, "count": len(history)}
+
+
+@router.get("/{game_id}/shots")
+def game_shots(
+    game_id: int,
+    response: Response,
+    team_id: int | None = Query(None, description="One side only; omit for both."),
+    bin_size: int = Query(25, ge=5, le=50),
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Shot locations for one game, binned, optionally for a single team.
+
+    A larger default bin than the season chart: one game is a few hundred
+    attempts rather than thirty thousand, so finer cells would mostly hold one
+    shot each and the chart would read as noise.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    cells = game_detail_repo.fetch_game_shots(
+        conn, game_id, team_id=team_id, bin_size=bin_size
+    )
+    attempts = sum(int(cell["attempts"]) for cell in cells)
+    points = sum(int(cell["points"]) for cell in cells)
+    return {
+        "game_id": game_id,
+        "team_id": team_id,
+        "bin_size": bin_size,
+        "cells": cells,
+        "attempts": attempts,
+        "points_per_attempt": round(points / attempts, 4) if attempts else None,
+        "teams": game_detail_repo.fetch_game_teams(conn, game_id),
+    }
+
+
+@router.get("/{game_id}/props")
+def game_props(
+    game_id: int,
+    response: Response,
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Player prop lines posted for this game, with what the player did.
+
+    One consensus line per player-market: the prop table holds a row per book,
+    so reading it raw counts a six-book game six times.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    props = game_detail_repo.fetch_game_player_props(conn, game_id)
+    return {"game_id": game_id, "props": props, "count": len(props)}
 
 
 @router.get("/{game_id}/box")

@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GameDetail from "./pages/GameDetail";
 import Games from "./pages/Games";
+import Home from "./pages/Home";
 import League from "./pages/League";
 import Model from "./pages/Model";
 import NotFound from "./pages/NotFound";
@@ -13,7 +14,8 @@ import TeamDetail from "./pages/TeamDetail";
 import Teams from "./pages/Teams";
 
 const LINKS = [
-  { to: "/", label: "League", end: true },
+  { to: "/", label: "Scoreboard", end: true },
+  { to: "/league", label: "League" },
   { to: "/teams", label: "Teams" },
   { to: "/players", label: "Players" },
   { to: "/games", label: "Games" },
@@ -90,7 +92,8 @@ export default function App() {
       <main className="container page">
         <ErrorBoundary resetKey={pathname}>
           <Routes>
-          <Route path="/" element={<League />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/league" element={<League />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/teams/:teamId" element={<TeamDetail />} />
           <Route path="/players" element={<Players />} />

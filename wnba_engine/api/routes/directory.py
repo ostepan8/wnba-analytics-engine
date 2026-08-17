@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
 from wnba_engine.api.deps import get_connection
-from wnba_engine.repositories import analytics_repo
+from wnba_engine.repositories import analytics_repo, game_detail_repo
 
 router = APIRouter(tags=["directory"])
 
@@ -50,6 +50,38 @@ def get_team(
         "team": team,
         "roster": analytics_repo.fetch_team_roster(conn, team_id, season=resolved),
         "schedule": analytics_repo.fetch_team_schedule(conn, team_id, season=resolved),
+    }
+
+
+@router.get("/teams/{team_id}/defense")
+def team_shot_defense(
+    team_id: int,
+    response: Response,
+    season: int | None = Query(None, ge=1997, le=2100),
+    bin_size: int = Query(20, ge=5, le=50),
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Where opponents shoot against this team, and how well they do.
+
+    shot_locations records who TOOK a shot and never who allowed it, so this
+    resolves the opponent per game rather than filtering on team_id. Filtering
+    the obvious way returns the team's own offence with a defensive label on it.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={DIRECTORY_MAX_AGE}"
+    resolved = _season(season)
+    cells = game_detail_repo.fetch_shot_defence(
+        conn, team_id, season=resolved, bin_size=bin_size
+    )
+    attempts = sum(int(cell["attempts"]) for cell in cells)
+    points = sum(int(cell["points"]) for cell in cells)
+    return {
+        "team_id": team_id,
+        "season": resolved,
+        "bin_size": bin_size,
+        "cells": cells,
+        "zones": game_detail_repo.fetch_shot_defence_zones(conn, team_id, season=resolved),
+        "attempts": attempts,
+        "points_per_attempt": round(points / attempts, 4) if attempts else None,
     }
 
 

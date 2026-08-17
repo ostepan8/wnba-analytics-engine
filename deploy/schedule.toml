@@ -180,6 +180,31 @@ steps = [
 ]
 
 # --------------------------------------------------------------------------
+# stats.wnba.com play-by-play and SHOT LOCATIONS.
+#
+# This was never scheduled at all. Shot locations were last written on
+# 2026-08-04 by a manual run and would have stayed there indefinitely: every
+# other feed had a job and this one did not, so shot charts silently stopped at
+# a date nobody chose.
+#
+# Daily rather than weekly, because it is the only source of shot coordinates
+# and a game missed here leaves a hole in the chart it feeds. The ingest skips
+# games it already holds, so a normal run costs a handful of requests.
+#
+# Deliberately slow: stats.wnba.com is an unauthenticated public endpoint with
+# no published quota, paced at 0.6s between requests
+# (DEFAULT_WNBA_STATS_MIN_REQUEST_INTERVAL_SECONDS). A full-season rebuild is
+# ~10 minutes, which is why the timeout is generous.
+[[jobs]]
+name = "wnba-stats-sync"
+description = "Play-by-play and shot locations from stats.wnba.com"
+daily_at = "14:30"
+timeout = "2h"
+steps = [
+  ["wnba-engine", "ingest-wnba-stats", "--season", "{season}"],
+]
+
+# --------------------------------------------------------------------------
 # Nightly database dump.
 #
 # NOT an off-site backup -- these land on the same host as the database and do

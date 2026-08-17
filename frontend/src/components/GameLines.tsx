@@ -109,6 +109,16 @@ export default function GameLines({
   return (
     <>
       <Panel title="Closing line" hint={books ? `${books} books` : undefined}>
+        {!closing.loading && !closing.error && !line && (
+          <p className="empty">
+            No sportsbook line recorded for this game.
+            <br />
+            <span style={{ fontSize: "var(--t-xs)" }}>
+              The odds feed stopped on 2026-08-10 when its API key lapsed; history back to 2022
+              is complete.
+            </span>
+          </p>
+        )}
         <Async query={closing} empty={() => !line}>
           {() => (
             <div className="grid grid--4">
