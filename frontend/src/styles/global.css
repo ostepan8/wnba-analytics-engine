@@ -314,6 +314,7 @@ select.control { padding-right: var(--s-2); }
 }
 .badge--good { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
 .badge--bad { background: color-mix(in srgb, var(--critical) 14%, transparent); color: var(--critical); }
+.badge--warn { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
 
 .muted { color: var(--ink-muted); }
 .num { font-variant-numeric: tabular-nums; }

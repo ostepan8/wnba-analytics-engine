@@ -133,13 +133,19 @@ steps = [
 #   - standings shift on every completed game; the upsert is ~13 rows and cheap.
 [[jobs]]
 name = "market-injury-snapshot"
-description = "Kalshi/Polymarket prices, injuries, standings, and current odds"
+description = "Kalshi/Polymarket prices, injury reports, standings, and current odds"
 every = "2h"
 timeout = "1h"
 steps = [
   ["wnba-engine", "snapshot-kalshi"],
   ["wnba-engine", "snapshot-polymarket"],
   ["wnba-engine", "snapshot-injuries"],
+  # The league's own report, and the only source with real designations.
+  # ESPN publishes just Out/Day-To-Day for the WNBA and the two disagree:
+  # on 2026-08-17 ESPN had Jessica Shepard Out while the league had her
+  # Probable. Teams file by 5pm the day before, refiling as news breaks,
+  # so a 2-hourly poll tracks it closely enough.
+  ["wnba-engine", "snapshot-official-injuries"],
   ["wnba-engine", "backfill-standings", "--season", "{season}"],
   ["wnba-engine", "backfill-odds", "--since", "{days_ago:2}", "--until", "{today}"],
   ["wnba-engine", "snapshot-odds-api"],

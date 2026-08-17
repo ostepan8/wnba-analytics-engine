@@ -572,3 +572,18 @@ def resolve_or_create_player_by_name(
     player_id = int(row[0])
     _insert_mapping(conn, provider, ENTITY_PLAYER, external_id, player_id)
     return player_id
+
+
+def list_team_names(conn: Connection) -> list[tuple[int, str]]:
+    """Every known team as (id, full name).
+
+    The official injury report identifies a team only by its printed name, and
+    the parser needs the real list rather than a regex for "a capitalised
+    phrase that might be a team" -- that pattern cannot be told apart from a
+    capitalised injury reason, and a wrong match reassigns a player to the
+    opposing side.
+    """
+    rows = conn.execute(
+        "SELECT id, name FROM teams WHERE name IS NOT NULL ORDER BY name"
+    ).fetchall()
+    return [(int(row[0]), str(row[1])) for row in rows]

@@ -635,6 +635,8 @@ export interface InjuryRow {
   short_comment: string | null;
   reported_at: string | null;
   captured_at: string;
+  /** 'wnba_official' carries real designations; 'espn' only Out/Day-To-Day. */
+  source?: string;
 }
 
 export interface MatchupSide {

@@ -86,6 +86,7 @@ from wnba_engine.pipeline.odds_api_player_props_ingest import (
 from wnba_engine.pipeline.odds_api_scores_ingest import (
     snapshot_current_scores as snapshot_odds_api_scores,
 )
+from wnba_engine.pipeline.official_injury_ingest import ingest_official_injury_report
 from wnba_engine.pipeline.polymarket_ingest import ingest_polymarket_wnba_markets
 from wnba_engine.pipeline.polymarket_trade_backfill import backfill_polymarket_trades
 from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
@@ -218,6 +219,25 @@ def snapshot_injuries() -> None:
     try:
         with EspnClient(settings) as client:
             click.echo(ingest_current_injury_report(db, client))
+    finally:
+        db.close()
+
+
+@cli.command("snapshot-official-injuries")
+def snapshot_official_injuries() -> None:
+    """Snapshot the league's OWN injury report (the PDF teams file into).
+
+    The only source carrying real game-status designations -- Probable,
+    Questionable, Doubtful, Out. ESPN's feed publishes just Out/Day-To-Day for
+    the WNBA and the two disagree, so this is what the site should show.
+    """
+    from wnba_engine.wnba_official.client import WnbaOfficialClient
+
+    settings = load_settings()
+    db = Database(settings.database_url)
+    try:
+        with WnbaOfficialClient() as client:
+            click.echo(str(ingest_official_injury_report(db, client)))
     finally:
         db.close()
 

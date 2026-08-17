@@ -71,3 +71,25 @@ class WaybackInjuryEntry:
     description: str | None
     reported_at: datetime
     captured_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialInjuryEntry:
+    """One row of the league's own injury report PDF.
+
+    Carries no external ids: the report identifies a player by name only
+    ("Shepard, Jessica") and a team by full name. Resolution happens in the
+    ingest, against players and teams already known from box scores.
+
+    `status` is a real game-status designation -- Probable, Questionable,
+    Doubtful, Out -- which is the entire reason this source exists.
+    """
+
+    player_name: str
+    team_name: str
+    status: str
+    reason: str | None
+    game_date: str | None
+    matchup: str | None
+    reported_at: datetime
+    captured_at: datetime

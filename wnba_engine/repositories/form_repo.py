@@ -196,13 +196,21 @@ _CURRENT_INJURIES = """
 SELECT DISTINCT ON (i.player_id)
        i.player_id, p.full_name, p.position, i.team_id, t.abbreviation,
        i.status, i.injury_type, i.side, i.return_date,
-       i.short_comment, i.reported_at, i.captured_at
+       i.short_comment, i.reported_at, i.captured_at, i.source
   FROM injury_reports i
   JOIN players p ON p.id = i.player_id
   LEFT JOIN teams t ON t.id = i.team_id
  WHERE (%(team_ids)s::bigint[] IS NULL OR i.team_id = ANY(%(team_ids)s))
    AND i.captured_at >= now() - interval '3 days'
- ORDER BY i.player_id, i.captured_at DESC
+ ORDER BY i.player_id,
+          -- The league's own report wins over ESPN's, even when ESPN's capture
+          -- is newer. ESPN publishes only Out/Day-To-Day for the WNBA and the
+          -- two disagree: on 2026-08-17 ESPN had Jessica Shepard Out while the
+          -- league's 04:00 PM report had her Probable. Sorting by recency alone
+          -- would let the coarser, wrong answer overwrite the filed one every
+          -- time ESPN happens to poll last.
+          (i.source = 'wnba_official') DESC,
+          i.captured_at DESC
 """
 
 

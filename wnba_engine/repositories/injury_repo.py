@@ -13,7 +13,11 @@ from datetime import datetime
 
 from psycopg import Connection
 
-from wnba_engine.models.injuries import InjuryReportEntry, WaybackInjuryEntry
+from wnba_engine.models.injuries import (
+    InjuryReportEntry,
+    OfficialInjuryEntry,
+    WaybackInjuryEntry,
+)
 
 _INSERT_SNAPSHOT = """
 INSERT INTO injury_reports (
@@ -131,5 +135,52 @@ def insert_wayback_snapshots(
     if rows:
         with conn.cursor() as cursor:
             cursor.executemany(_INSERT_WAYBACK_SNAPSHOT, rows)
+            return max(cursor.rowcount, 0)
+    return 0
+
+
+_INSERT_OFFICIAL_SNAPSHOT = """
+INSERT INTO injury_reports (
+    espn_injury_id, player_id, team_id, status, status_type,
+    injury_type, side, return_date, short_comment, long_comment,
+    reported_at, captured_at, source
+) VALUES (%s, %s, %s, %s, %s, NULL, NULL, NULL, %s, NULL, %s, %s, %s)
+ON CONFLICT (source, player_id, captured_at) DO NOTHING
+"""
+
+
+def insert_official_snapshots(
+    conn: Connection,
+    resolved: Sequence[tuple[int, int, OfficialInjuryEntry]],
+    *,
+    source: str = "wnba_official",
+) -> int:
+    """Append rows from the league's own injury report.
+
+    `espn_injury_id` is NOT NULL on this table but means nothing for a source
+    that has no ids of its own, so it carries a synthetic key built from the
+    report's filing time and the player -- unique per row, and obviously not an
+    ESPN id to anyone reading it.
+
+    status_type mirrors ESPN's enum spelling (INJURY_STATUS_QUESTIONABLE) so a
+    reader can switch on one column across both sources.
+    """
+    rows = [
+        (
+            f"{source}:{entry.reported_at:%Y%m%dT%H%M}:{player_id}",
+            player_id,
+            team_id,
+            entry.status,
+            f"INJURY_STATUS_{entry.status.upper()}",
+            entry.reason,
+            entry.reported_at,
+            entry.captured_at,
+            source,
+        )
+        for player_id, team_id, entry in resolved
+    ]
+    if rows:
+        with conn.cursor() as cursor:
+            cursor.executemany(_INSERT_OFFICIAL_SNAPSHOT, rows)
             return max(cursor.rowcount, 0)
     return 0

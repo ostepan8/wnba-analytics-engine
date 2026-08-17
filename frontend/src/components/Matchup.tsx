@@ -15,6 +15,7 @@ import { Async, TeamLogo } from "./ui";
 import type { MatchupResponse, MatchupSide } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { pct } from "../lib/format";
+import { badgeClass, injuryDetail, isOut, statusRank } from "../lib/injury";
 
 function Row({ label, home, away }: { label: string; home: string; away: string }) {
   return (
@@ -63,8 +64,10 @@ function lastTen(side: MatchupSide) {
 }
 
 function Injuries({ side, label }: { side: MatchupSide; label: string }) {
-  const out = side.injuries.filter((row) => /out|doubtful/i.test(row.status ?? ""));
-  const rest = side.injuries.filter((row) => !/out|doubtful/i.test(row.status ?? ""));
+  // Most severe first, so the name that changes a lineup is the one read first.
+  const listed = [...side.injuries].sort(
+    (a, b) => statusRank(a.status) - statusRank(b.status),
+  );
   return (
     <div>
       <h5 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
@@ -76,20 +79,17 @@ function Injuries({ side, label }: { side: MatchupSide; label: string }) {
         </p>
       ) : (
         <ul style={{ display: "grid", gap: "var(--s-1)" }}>
-          {[...out, ...rest].map((row) => (
+          {listed.map((row) => (
             <li
               key={row.player_id}
               style={{ display: "flex", gap: "var(--s-2)", fontSize: "var(--t-sm)" }}
             >
-              <span
-                className={/out/i.test(row.status ?? "") ? "badge badge--bad" : "badge"}
-                style={{ flex: "none" }}
-              >
+              <span className={badgeClass(row.status)} style={{ flex: "none" }}>
                 {row.status}
               </span>
               <Link to={`/players/${row.player_id}`}>{row.full_name}</Link>
               <span className="muted" style={{ fontSize: "var(--t-xs)", alignSelf: "center" }}>
-                {row.injury_type ?? row.short_comment ?? ""}
+                {injuryDetail(row)}
               </span>
             </li>
           ))}
@@ -169,8 +169,8 @@ export default function Matchup({
                 <Row label="Over / under" away={overUnder(data.away)} home={overUnder(data.home)} />
                 <Row
                   label="Out"
-                  away={String(data.away.injuries.filter((r) => /out/i.test(r.status ?? "")).length)}
-                  home={String(data.home.injuries.filter((r) => /out/i.test(r.status ?? "")).length)}
+                  away={String(data.away.injuries.filter((r) => isOut(r.status)).length)}
+                  home={String(data.home.injuries.filter((r) => isOut(r.status)).length)}
                 />
               </tbody>
             </table>

@@ -48,6 +48,9 @@ MAX_GAMES = 20
 # headroom rather than a cut.
 PROPS_PER_GAME = 300
 
+# Ruled out or unlikely. "Day-To-Day" and "Questionable" are explicitly NOT
+# here: a questionable player is expected to be a game-time decision, and
+# counting her as unavailable overstates what her team actually filed.
 OUT_STATUSES = ("out", "doubtful")
 
 
