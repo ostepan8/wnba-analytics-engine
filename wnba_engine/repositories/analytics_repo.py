@@ -454,3 +454,247 @@ def _all(conn: Connection, sql: str, params: dict[str, Any]) -> list[dict[str, A
 def _one(conn: Connection, sql: str, params: dict[str, Any]) -> dict[str, Any] | None:
     rows = _all(conn, sql, params)
     return rows[0] if rows else None
+
+
+# Entities that have an ESPN id, which is what an image URL is built from.
+# INNER JOIN on the crosswalk: a player with no mapping has no image to fetch,
+# and returning them would only produce 404s to count.
+_IMAGE_TARGETS_PLAYERS = """
+SELECT p.id AS internal_id, m.external_id, p.full_name AS label
+  FROM players p
+  JOIN provider_entity_map m
+    ON m.internal_id = p.id AND m.provider = 'espn' AND m.entity_type = 'player'
+ ORDER BY p.id
+"""
+
+_IMAGE_TARGETS_TEAMS = """
+SELECT t.id AS internal_id, t.abbreviation AS external_id, t.name AS label
+  FROM teams t
+ WHERE t.abbreviation IS NOT NULL
+ ORDER BY t.id
+"""
+
+
+def fetch_player_image_targets(conn: Connection) -> list[dict[str, Any]]:
+    return _all(conn, _IMAGE_TARGETS_PLAYERS, {})
+
+
+def fetch_team_image_targets(conn: Connection) -> list[dict[str, Any]]:
+    return _all(conn, _IMAGE_TARGETS_TEAMS, {})
+
+
+# --------------------------------------------------------------------- teams
+_TEAMS = """
+SELECT t.id, t.name, t.abbreviation, t.is_franchise,
+       s.conference, s.wins, s.losses, s.win_percentage, s.playoff_seed
+  FROM teams t
+  LEFT JOIN team_standings s ON s.team_id = t.id AND s.season = %(season)s
+ WHERE t.is_franchise
+ ORDER BY s.win_percentage DESC NULLS LAST, t.name
+"""
+
+_TEAM_BY_ID = """
+SELECT t.id, t.name, t.abbreviation, t.is_franchise,
+       s.conference, s.wins, s.losses, s.win_percentage, s.games_behind,
+       s.home_record, s.away_record, s.playoff_seed
+  FROM teams t
+  LEFT JOIN team_standings s ON s.team_id = t.id AND s.season = %(season)s
+ WHERE t.id = %(team_id)s
+"""
+
+# Roster for a season, built from who actually played rather than from a roster
+# feed we do not ingest. Ordered by minutes, so the rotation reads top to bottom.
+_TEAM_ROSTER = """
+WITH one_row_per_game AS (
+    SELECT DISTINCT ON (s.player_id, s.game_id)
+           s.player_id, s.game_id, s.team_id, s.points, s.rebounds,
+           s.assists, s.minutes
+      FROM player_game_stats s
+      JOIN games g ON g.id = s.game_id
+     WHERE g.season = %(season)s
+       AND s.team_id = %(team_id)s
+       AND s.did_not_play IS NOT TRUE
+     ORDER BY s.player_id, s.game_id,
+              CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+)
+SELECT p.id AS player_id, p.full_name, p.position, p.jersey_number,
+       count(*)                           AS games_played,
+       round(avg(r.points)::numeric, 1)   AS points,
+       round(avg(r.rebounds)::numeric, 1) AS rebounds,
+       round(avg(r.assists)::numeric, 1)  AS assists,
+       round(avg(r.minutes)::numeric, 1)  AS minutes
+  FROM one_row_per_game r
+  JOIN players p ON p.id = r.player_id
+ GROUP BY p.id, p.full_name, p.position, p.jersey_number
+ ORDER BY avg(r.minutes) DESC NULLS LAST
+"""
+
+_TEAM_SCHEDULE = """
+SELECT g.id, g.start_time, g.status, g.home_score, g.away_score,
+       (g.home_team_id = %(team_id)s) AS is_home,
+       opp.id AS opponent_id, opp.name AS opponent, opp.abbreviation AS opponent_abbr
+  FROM games g
+  JOIN teams opp
+    ON opp.id = CASE WHEN g.home_team_id = %(team_id)s
+                     THEN g.away_team_id ELSE g.home_team_id END
+ WHERE g.season = %(season)s
+   AND (g.home_team_id = %(team_id)s OR g.away_team_id = %(team_id)s)
+ ORDER BY g.start_time DESC
+"""
+
+# ------------------------------------------------------------------- players
+# `has_image` comes from the crosswalk rather than from asking object storage
+# per row: the mirror only fetches players with an ESPN id, so that mapping is
+# exactly what determines whether an image can exist.
+_PLAYERS = """
+WITH one_row_per_game AS (
+    SELECT DISTINCT ON (s.player_id, s.game_id)
+           s.player_id, s.game_id, s.team_id, s.points, s.minutes
+      FROM player_game_stats s
+      JOIN games g ON g.id = s.game_id
+     WHERE g.season = %(season)s
+       AND s.did_not_play IS NOT TRUE
+     ORDER BY s.player_id, s.game_id,
+              CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+)
+SELECT p.id AS player_id, p.full_name, p.position,
+       (array_agg(t.abbreviation ORDER BY r.game_id DESC))[1] AS team_abbr,
+       (array_agg(t.id           ORDER BY r.game_id DESC))[1] AS team_id,
+       count(*)                          AS games_played,
+       round(avg(r.points)::numeric, 1)  AS points,
+       round(avg(r.minutes)::numeric, 1) AS minutes,
+       EXISTS (SELECT 1 FROM provider_entity_map m
+                WHERE m.internal_id = p.id AND m.provider = 'espn'
+                  AND m.entity_type = 'player') AS has_image
+  FROM one_row_per_game r
+  JOIN players p ON p.id = r.player_id
+  JOIN teams   t ON t.id = r.team_id
+ WHERE (%(query)s::text IS NULL OR p.full_name ILIKE '%%' || %(query)s::text || '%%')
+ GROUP BY p.id, p.full_name, p.position
+ ORDER BY avg(r.points) DESC NULLS LAST
+ LIMIT %(limit)s
+"""
+
+_PLAYER_BY_ID = """
+SELECT p.id AS player_id, p.full_name, p.position, p.height, p.weight,
+       p.jersey_number, p.college, p.age,
+       EXISTS (SELECT 1 FROM provider_entity_map m
+                WHERE m.internal_id = p.id AND m.provider = 'espn'
+                  AND m.entity_type = 'player') AS has_image
+  FROM players p
+ WHERE p.id = %(player_id)s
+"""
+
+# Per-season averages, so a profile shows a career arc rather than one row.
+_PLAYER_SEASONS = """
+WITH one_row_per_game AS (
+    SELECT DISTINCT ON (s.player_id, s.game_id)
+           s.player_id, s.game_id, s.team_id, g.season,
+           s.points, s.rebounds, s.assists, s.steals, s.blocks, s.minutes,
+           s.field_goals_made, s.field_goals_attempted,
+           s.three_pointers_made, s.three_pointers_attempted
+      FROM player_game_stats s
+      JOIN games g ON g.id = s.game_id
+     WHERE s.player_id = %(player_id)s
+       AND s.did_not_play IS NOT TRUE
+     ORDER BY s.player_id, s.game_id,
+              CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+)
+SELECT r.season,
+       (array_agg(t.abbreviation ORDER BY r.game_id DESC))[1] AS team_abbr,
+       count(*)                            AS games_played,
+       round(avg(r.points)::numeric, 1)    AS points,
+       round(avg(r.rebounds)::numeric, 1)  AS rebounds,
+       round(avg(r.assists)::numeric, 1)   AS assists,
+       round(avg(r.steals)::numeric, 1)    AS steals,
+       round(avg(r.blocks)::numeric, 1)    AS blocks,
+       round(avg(r.minutes)::numeric, 1)   AS minutes,
+       CASE WHEN sum(r.field_goals_attempted) > 0
+            THEN round((sum(r.field_goals_made)::numeric
+                        / sum(r.field_goals_attempted)), 3) END AS field_goal_pct,
+       CASE WHEN sum(r.three_pointers_attempted) > 0
+            THEN round((sum(r.three_pointers_made)::numeric
+                        / sum(r.three_pointers_attempted)), 3) END AS three_point_pct
+  FROM one_row_per_game r
+  JOIN teams t ON t.id = r.team_id
+ GROUP BY r.season
+ ORDER BY r.season DESC
+"""
+
+_PLAYER_GAME_LOG = """
+SELECT DISTINCT ON (g.id)
+       g.id AS game_id, g.start_time, g.status, g.season,
+       s.points, s.rebounds, s.assists, s.steals, s.blocks, s.turnovers,
+       s.minutes, s.field_goals_made, s.field_goals_attempted,
+       s.three_pointers_made, s.three_pointers_attempted, s.plus_minus,
+       opp.abbreviation AS opponent_abbr, opp.id AS opponent_id,
+       (g.home_team_id = s.team_id) AS is_home,
+       g.home_score, g.away_score
+  FROM player_game_stats s
+  JOIN games g ON g.id = s.game_id
+  JOIN teams opp
+    ON opp.id = CASE WHEN g.home_team_id = s.team_id
+                     THEN g.away_team_id ELSE g.home_team_id END
+ WHERE s.player_id = %(player_id)s
+   AND (%(season)s::int IS NULL OR g.season = %(season)s::int)
+   AND s.did_not_play IS NOT TRUE
+ ORDER BY g.id DESC,
+          CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+"""
+
+_GAME_BOX_SCORE = """
+SELECT DISTINCT ON (s.player_id)
+       s.player_id, p.full_name, s.team_id, t.abbreviation AS team_abbr,
+       s.starter, s.minutes, s.points, s.rebounds, s.assists, s.steals,
+       s.blocks, s.turnovers, s.fouls, s.plus_minus,
+       s.field_goals_made, s.field_goals_attempted,
+       s.three_pointers_made, s.three_pointers_attempted,
+       s.free_throws_made, s.free_throws_attempted
+  FROM player_game_stats s
+  JOIN players p ON p.id = s.player_id
+  JOIN teams   t ON t.id = s.team_id
+ WHERE s.game_id = %(game_id)s
+   AND s.did_not_play IS NOT TRUE
+ ORDER BY s.player_id,
+          CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
+"""
+
+
+def fetch_teams(conn: Connection, *, season: int) -> list[dict[str, Any]]:
+    return _all(conn, _TEAMS, {"season": season})
+
+
+def fetch_team(conn: Connection, team_id: int, *, season: int) -> dict[str, Any] | None:
+    return _one(conn, _TEAM_BY_ID, {"team_id": team_id, "season": season})
+
+
+def fetch_team_roster(conn: Connection, team_id: int, *, season: int) -> list[dict[str, Any]]:
+    return _all(conn, _TEAM_ROSTER, {"team_id": team_id, "season": season})
+
+
+def fetch_team_schedule(conn: Connection, team_id: int, *, season: int) -> list[dict[str, Any]]:
+    return _all(conn, _TEAM_SCHEDULE, {"team_id": team_id, "season": season})
+
+
+def fetch_players(
+    conn: Connection, *, season: int, query: str | None, limit: int
+) -> list[dict[str, Any]]:
+    return _all(conn, _PLAYERS, {"season": season, "query": query, "limit": _cap(limit)})
+
+
+def fetch_player(conn: Connection, player_id: int) -> dict[str, Any] | None:
+    return _one(conn, _PLAYER_BY_ID, {"player_id": player_id})
+
+
+def fetch_player_seasons(conn: Connection, player_id: int) -> list[dict[str, Any]]:
+    return _all(conn, _PLAYER_SEASONS, {"player_id": player_id})
+
+
+def fetch_player_game_log(
+    conn: Connection, player_id: int, *, season: int | None
+) -> list[dict[str, Any]]:
+    return _all(conn, _PLAYER_GAME_LOG, {"player_id": player_id, "season": season})
+
+
+def fetch_game_box_score(conn: Connection, game_id: int) -> list[dict[str, Any]]:
+    return _all(conn, _GAME_BOX_SCORE, {"game_id": game_id})

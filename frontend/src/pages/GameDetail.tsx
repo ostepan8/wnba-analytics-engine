@@ -1,0 +1,184 @@
+import { useMemo } from "react";
+import { useParams } from "react-router-dom";
+import GameFlow from "../charts/GameFlow";
+import { TimeSeries, type Series } from "../charts/primitives";
+import { Async, Panel, PlayerCell, Section, Stat } from "../components/ui";
+import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
+import { useQuery } from "../lib/api";
+import { impliedFromAmerican, longDate, madeAttempted, pct, signed } from "../lib/format";
+
+function BoxScore({ rows, title }: { rows: BoxScoreRow[]; title: string }) {
+  if (!rows.length) return null;
+  return (
+    <Panel title={title} flush>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>MIN</th>
+              <th>PTS</th>
+              <th>REB</th>
+              <th>AST</th>
+              <th>FG</th>
+              <th>3P</th>
+              <th>FT</th>
+              <th>TO</th>
+              <th>+/-</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.player_id}>
+                <td>
+                  <PlayerCell
+                    playerId={row.player_id}
+                    name={row.full_name}
+                    meta={row.starter ? "starter" : undefined}
+                  />
+                </td>
+                <td>{row.minutes ?? "—"}</td>
+                <td>{row.points ?? "—"}</td>
+                <td>{row.rebounds ?? "—"}</td>
+                <td>{row.assists ?? "—"}</td>
+                <td>{madeAttempted(row.field_goals_made, row.field_goals_attempted)}</td>
+                <td>{madeAttempted(row.three_pointers_made, row.three_pointers_attempted)}</td>
+                <td>{madeAttempted(row.free_throws_made, row.free_throws_attempted)}</td>
+                <td>{row.turnovers ?? "—"}</td>
+                <td>{signed(row.plus_minus)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+export default function GameDetail() {
+  const { gameId } = useParams();
+  const game = useQuery<Game>(gameId ? `/games/${gameId}` : null);
+  const box = useQuery<{ players: BoxScoreRow[] }>(gameId ? `/games/${gameId}/box` : null);
+  const flow = useQuery<{ plays: FlowPlay[] }>(gameId ? `/games/${gameId}/flow` : null);
+  const odds = useQuery<{ odds: OddsRow[] }>(gameId ? `/games/${gameId}/odds?limit=500` : null);
+  const markets = useQuery<{ prices: MarketPrice[] }>(
+    gameId ? `/games/${gameId}/markets?limit=500` : null,
+  );
+
+  /* Every venue normalised to one quantity: the probability the HOME team wins.
+     Both sides of a market are quoted at the same instant and, once flipped,
+     describe the same number twice -- so co-timestamped quotes are averaged to
+     their midpoint. Plotting them as consecutive points draws a sawtooth that
+     is an artefact of the bid/ask spread, not a price movement. */
+  const series = useMemo<Series[]>(() => {
+    const buckets: Record<string, Map<number, number[]>> = {
+      book: new Map(),
+      polymarket: new Map(),
+      kalshi: new Map(),
+    };
+
+    for (const row of odds.data?.odds ?? []) {
+      const value = impliedFromAmerican(row.moneyline_home_odds);
+      if (value != null) buckets.book.set(new Date(row.captured_at).getTime(), [value]);
+    }
+    for (const row of markets.data?.prices ?? []) {
+      const key = row.provider === "kalshi" ? "kalshi" : "polymarket";
+      const raw = Number(row.implied_probability);
+      if (!Number.isFinite(raw)) continue;
+      const value = row.side === "home" ? raw : 1 - raw;
+      const time = new Date(row.captured_at).getTime();
+      buckets[key].set(time, [...(buckets[key].get(time) ?? []), value]);
+    }
+
+    const meta = [
+      { key: "book", label: "Sportsbook", color: "var(--series-1)" },
+      { key: "polymarket", label: "Polymarket", color: "var(--series-2)" },
+      { key: "kalshi", label: "Kalshi", color: "var(--series-3)" },
+    ];
+    return meta.map((entry) => ({
+      ...entry,
+      points: [...buckets[entry.key]].map(([t, values]) => ({
+        t,
+        v: values.reduce((a, b) => a + b, 0) / values.length,
+      })),
+    }));
+  }, [odds.data, markets.data]);
+
+  return (
+    <Async query={game}>
+      {(data) => {
+        const rows = box.data?.players ?? [];
+        const away = rows.filter((row) => row.team_abbr === data.away_abbr);
+        const home = rows.filter((row) => row.team_abbr === data.home_abbr);
+        const final = data.status === "final";
+
+        return (
+          <>
+            <Section title={`${data.away_team} at ${data.home_team}`} note={longDate(data.start_time)}>
+              <Panel>
+                <div style={{ display: "flex", gap: "var(--s-6)", flexWrap: "wrap" }}>
+                  <Stat
+                    value={final ? `${data.away_score}–${data.home_score}` : "—"}
+                    label={`${data.away_abbr} – ${data.home_abbr}`}
+                    detail={final ? "Final" : data.status}
+                  />
+                  {data.venue_name && <Stat value={data.venue_name} label="Venue" />}
+                  {data.attendance != null && (
+                    <Stat value={data.attendance.toLocaleString()} label="Attendance" />
+                  )}
+                </div>
+              </Panel>
+            </Section>
+
+            <Section title="Score flow" note="One point per scoring play, from play-by-play.">
+              <Panel>
+                <Async query={flow} empty={(d) => d.plays.length < 2}>
+                  {(flowData) => (
+                    <GameFlow
+                      plays={flowData.plays}
+                      homeAbbr={data.home_abbr}
+                      awayAbbr={data.away_abbr}
+                    />
+                  )}
+                </Async>
+              </Panel>
+            </Section>
+
+            <Section
+              title="Home win probability"
+              note="Moneyline only, normalised across venues to one quantity."
+            >
+              <Panel>
+                <div className="legend" style={{ marginBottom: "var(--s-3)" }}>
+                  {series
+                    .filter((entry) => entry.points.length)
+                    .map((entry) => (
+                      <span key={entry.key}>
+                        <span className="swatch" style={{ background: entry.color }} />
+                        {entry.label}
+                      </span>
+                    ))}
+                </div>
+                <TimeSeries
+                  series={series}
+                  formatValue={(value) => pct(value, 0)}
+                  formatTime={(time) => new Date(time).toLocaleString()}
+                />
+              </Panel>
+            </Section>
+
+            <Section title="Box score">
+              <div className="grid" style={{ gap: "var(--s-4)" }}>
+                <BoxScore rows={away} title={data.away_team} />
+                <BoxScore rows={home} title={data.home_team} />
+                {!rows.length && <Panel>
+                  <p className="empty">No box score recorded for this game yet.</p>
+                </Panel>}
+              </div>
+            </Section>
+          </>
+        );
+      }}
+    </Async>
+  );
+}

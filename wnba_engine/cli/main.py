@@ -12,6 +12,7 @@ from datetime import UTC, date, timedelta
 from pathlib import Path
 
 import click
+import httpx
 
 from wnba_engine.analysis import style as style_space
 from wnba_engine.analysis.divergence import DEFAULT_MIN_VOLUME
@@ -91,7 +92,7 @@ from wnba_engine.pipeline.wayback_injury_backfill import backfill_injury_history
 from wnba_engine.pipeline.wnba_stats_ingest import ingest_season as ingest_wnba_stats_season
 from wnba_engine.polymarket.client import PolymarketClient
 from wnba_engine.polymarket.data_client import PolymarketDataClient
-from wnba_engine.repositories import style_repo
+from wnba_engine.repositories import analytics_repo, style_repo
 from wnba_engine.validation.runner import run_all_checks
 from wnba_engine.wnba_stats.client import WnbaStatsClient
 
@@ -1187,6 +1188,58 @@ def validate() -> None:
 
     if not report.passed:
         sys.exit(1)
+
+
+@cli.command("sync-images")
+@click.option(
+    "--kind",
+    type=click.Choice(["all", "players", "teams"]),
+    default="all",
+    show_default=True,
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-fetch images already in the bucket (use after changing the target size).",
+)
+def sync_images_cmd(kind: str, force: bool) -> None:
+    """Mirror team logos and player headshots into object storage.
+
+    Idempotent: an object already present is skipped, so a re-run after
+    adding players fetches only the new ones.
+    """
+    from wnba_engine.assets.images import (
+        BUCKET,
+        player_target,
+        sync_images,
+        team_target,
+    )
+    from wnba_engine.assets.store import S3ObjectStore, S3Settings
+
+    settings = load_settings()
+    store = S3ObjectStore(S3Settings.from_environment())
+    store.ensure_bucket(BUCKET)
+
+    db = Database(settings.database_url)
+    try:
+        with db.connection() as conn:
+            targets = []
+            if kind in ("all", "teams"):
+                targets += [
+                    team_target(team_id=row["internal_id"], abbreviation=row["external_id"])
+                    for row in analytics_repo.fetch_team_image_targets(conn)
+                ]
+            if kind in ("all", "players"):
+                targets += [
+                    player_target(player_id=row["internal_id"], external_id=row["external_id"])
+                    for row in analytics_repo.fetch_player_image_targets(conn)
+                ]
+    finally:
+        db.close()
+
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        result = sync_images(targets, store=store, client=client, force=force)
+    click.echo(f"images: {result}")
 
 
 @cli.command("backup-database")

@@ -66,6 +66,22 @@ def game_odds(
     return {"game_id": game_id, "odds": history, "count": len(history)}
 
 
+@router.get("/{game_id}/box")
+def game_box_score(
+    game_id: int,
+    response: Response,
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Per-player box score, one row per player.
+
+    player_game_stats is keyed by SOURCE, so a raw select returns each player
+    once per provider; DISTINCT ON collapses to the preferred feed.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    rows = analytics_repo.fetch_game_box_score(conn, game_id)
+    return {"game_id": game_id, "players": rows, "count": len(rows)}
+
+
 @router.get("/{game_id}/flow")
 def game_flow(
     game_id: int,

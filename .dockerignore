@@ -1,0 +1,17 @@
+# Keep the build context small and the runtime image clean.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+
+# node_modules is reinstalled from the lockfile inside the frontend stage; it is
+# ~200 MB of platform-specific binaries that must never enter the context.
+frontend/node_modules
+frontend/dist
+
+# Local data and secrets never belong in an image.
+.env
+data/
+logs/
+*.dump

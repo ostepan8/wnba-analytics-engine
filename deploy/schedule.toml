@@ -158,6 +158,21 @@ steps = [
 ]
 
 # --------------------------------------------------------------------------
+# Mirror team logos and player headshots into object storage.
+#
+# Weekly, and cheap: the sync skips anything already stored, so a normal run
+# fetches only players added since the last one. A full rebuild is ~600 images.
+# Runs after the season backfill so newly-seen players already exist.
+[[jobs]]
+name = "image-sync"
+description = "Mirror team logos and player headshots into object storage"
+weekly_at = "sun 17:00"
+timeout = "1h"
+steps = [
+  ["wnba-engine", "sync-images", "--kind", "all"],
+]
+
+# --------------------------------------------------------------------------
 # Nightly database dump.
 #
 # NOT an off-site backup -- these land on the same host as the database and do

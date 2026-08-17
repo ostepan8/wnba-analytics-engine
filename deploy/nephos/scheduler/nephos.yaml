@@ -40,6 +40,8 @@ volumes:
 env:
   WNBA_CAPTURE_ROOT: /data/captures
   WNBA_SCHEDULE_PATH: /app/deploy/schedule.toml
+  # MinIO on this same node. Loopback, reachable because of `network: host`.
+  WNBA_S3_ENDPOINT: http://127.0.0.1:9000
 
 command: ["python", "-m", "wnba_engine.scheduler"]
 
@@ -53,3 +55,5 @@ secrets:
   WNBA_ENGINE_DATABASE_URL: "printf 'postgresql://wnba:%s@127.0.0.1:5434/wnba_engine' \"$(cat $HOME/.config/nephos/wnba-db.pass)\""
   WNBA_ENGINE_BALLDONTLIE_API_KEY: "cat $HOME/.config/nephos/wnba-balldontlie.key"
   WNBA_ENGINE_ODDS_API_KEY: "cat $HOME/.config/nephos/wnba-odds-api.key"
+  WNBA_S3_ACCESS_KEY: "cat $HOME/.config/nephos/wnba-s3.access"
+  WNBA_S3_SECRET_KEY: "cat $HOME/.config/nephos/wnba-s3.secret"

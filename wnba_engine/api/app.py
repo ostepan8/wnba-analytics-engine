@@ -27,9 +27,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException
 
 from wnba_engine.api.deps import lifespan
-from wnba_engine.api.routes import games, health, markets, shooting, stats
+from wnba_engine.api.routes import directory, games, health, markets, shooting, stats
 
 TITLE = "WNBA Analytics Engine API"
 DESCRIPTION = (
@@ -42,6 +43,9 @@ DESCRIPTION = (
 # an unauthenticated public read API -- CORS is not an access control here, and
 # pretending otherwise would only make it look like one.
 DEFAULT_ALLOWED_ORIGINS = "*"
+
+# Single prefix for every data endpoint; see create_app for why it is mandatory.
+API_PREFIX = "/api"
 
 
 def create_app() -> FastAPI:
@@ -56,8 +60,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    for module in (health, markets, games, stats, shooting):
-        app.include_router(module.router)
+    # Everything lives under /api, and it has to.
+    #
+    # The client owns routing, so /players/36 is a page. It was also an
+    # endpoint, and FastAPI matches routes before mounts -- so navigating to a
+    # player returned raw JSON instead of the app. Two namespaces sharing one
+    # URL space cannot both win; giving the API its own prefix settles it
+    # permanently rather than per-collision.
+    for module in (health, markets, directory, games, stats, shooting):
+        app.include_router(module.router, prefix=API_PREFIX)
 
     _mount_dashboard(app)
     return app
@@ -81,7 +92,34 @@ def _mount_dashboard(app: FastAPI) -> None:
             "no static directory at %s; serving API only", static_dir
         )
         return
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
+    app.mount("/", _SinglePageApp(directory=static_dir, html=True), name="app")
+
+
+class _SinglePageApp(StaticFiles):
+    """StaticFiles that falls back to index.html for unknown paths.
+
+    The client owns routing, so /players/36 is a real page but not a real file.
+    Plain StaticFiles 404s it, which breaks every deep link, refresh and shared
+    URL -- the app works only if you always arrive at "/" and click.
+
+    Only a missing FILE falls through. A missing /assets/* bundle must stay a
+    404: answering it with HTML makes a bad deploy look like a working one that
+    renders nothing, which is far harder to diagnose.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+        try:
+            response = await super().get_response(path, scope)
+        except HTTPException as exc:
+            # Starlette RAISES on a missing file rather than returning a 404
+            # response, so checking the status code alone never fires.
+            if exc.status_code != 404 or path.startswith("assets/"):
+                raise
+            return await super().get_response("index.html", scope)
+
+        if response.status_code == 404 and not path.startswith("assets/"):
+            return await super().get_response("index.html", scope)
+        return response
 
 
 def _allowed_origins() -> list[str]:
