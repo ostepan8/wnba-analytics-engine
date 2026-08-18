@@ -8,9 +8,9 @@
 
 import { Link } from "react-router-dom";
 import GameFlow from "../charts/GameFlow";
-import GameShotPlot from "../charts/GameShotPlot";
-import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
+import { ShotChartLegend } from "../charts/ShotChart";
 import GameLines from "./GameLines";
+import { TeamShots, TeamShotDefense } from "./GameShotSections";
 import HeadToHead from "./HeadToHead";
 import Matchup from "./Matchup";
 import PropTrends from "./PropTrends";
@@ -22,14 +22,12 @@ import type {
   FlowPlay,
   GamePropRow,
   GameRow,
-  GameShotsResponse,
   MarketPropRow,
   Query,
-  ShotDefenseResponse,
   SlateTeam,
 } from "../lib/api";
 import { moneylineLabel, propLabel, spreadLabel, useQuery } from "../lib/api";
-import { madeAttempted, num, pct, signed, timeOf } from "../lib/format";
+import { madeAttempted, pct, signed, timeOf } from "../lib/format";
 
 /** A titled block inside a game. Sections read in order rather than hiding
     behind tabs; each mounts as it nears the viewport. */
@@ -199,73 +197,6 @@ function SportsbookProps({ query }: { query: Query<{ props: GamePropRow[] }> }) 
         </div>
       )}
     </Async>
-  );
-}
-
-function TeamShots({ gameId, teamId, label }: { gameId: number; teamId: number; label: string }) {
-  const query = useQuery<GameShotsResponse>(`/games/${gameId}/shots?team_id=${teamId}`);
-  if (!query.loading && !query.error && !query.data?.cells.length) {
-    return (
-      <div>
-        <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
-          {label}
-        </h4>
-        <NotCovered
-          what="shot locations"
-          why="stats.wnba.com does not publish coordinates for every game; 261 of 281 games this season are covered."
-        />
-      </div>
-    );
-  }
-  return (
-    <div>
-      <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
-        {label}
-      </h4>
-      <Async query={query} empty={(data) => (data.shots ?? []).length === 0}>
-        {(data) => (
-          <>
-            {/* Individual attempts, not a heat grid: sixty-five shots binned
-                onto a season-sized grid is one shot per cell and reads as
-                noise. */}
-            <GameShotPlot shots={data.shots ?? []} />
-            <p className="prose" style={{ marginTop: "var(--s-2)" }}>
-              {data.points_per_attempt?.toFixed(2) ?? "—"} points per attempt
-            </p>
-          </>
-        )}
-      </Async>
-    </div>
-  );
-}
-
-function DefenseTab({ teamId, label, season }: { teamId: number; label: string; season: number }) {
-  const query = useQuery<ShotDefenseResponse>(
-    `/teams/${teamId}/defense?season=${season}&bin_size=25`,
-  );
-  return (
-    <div>
-      <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
-        {label} — shots allowed
-      </h4>
-      <Async query={query} empty={(data) => data.cells.length === 0}>
-        {(data) => (
-          <>
-            <ShotChart
-              cells={data.cells}
-              binSize={data.bin_size}
-              midpoint={data.points_per_attempt ?? 1}
-              minAttempts={2}
-            />
-            <p className="prose" style={{ marginTop: "var(--s-2)" }}>
-              {num(data.attempts)} allowed · {data.points_per_attempt?.toFixed(2) ?? "—"} pts/att.
-              Blue is where opponents score <em>well</em> against this team — the defensive weak
-              spots, not its strengths.
-            </p>
-          </>
-        )}
-      </Async>
-    </div>
   );
 }
 
@@ -478,8 +409,8 @@ export default function GamePanel({
 
       <Block title="Shot defense" hint="season profile" minHeight={420}>
         <div className="grid grid--2">
-          <DefenseTab teamId={game.away_team_id} label={game.away_team} season={season} />
-          <DefenseTab teamId={game.home_team_id} label={game.home_team} season={season} />
+          <TeamShotDefense teamId={game.away_team_id} label={game.away_team} season={season} />
+          <TeamShotDefense teamId={game.home_team_id} label={game.home_team} season={season} />
         </div>
         <div style={{ marginTop: "var(--s-3)" }}>
           <ShotChartLegend />

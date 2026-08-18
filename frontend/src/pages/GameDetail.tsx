@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import GameFlow from "../charts/GameFlow";
+import { ShotChartLegend } from "../charts/ShotChart";
 import GameLines from "../components/GameLines";
+import { TeamShots, TeamShotDefense } from "../components/GameShotSections";
 import HeadToHead from "../components/HeadToHead";
 import LazySection from "../components/LazySection";
 import Matchup from "../components/Matchup";
@@ -282,6 +284,31 @@ export default function GameDetail() {
                     awayAbbr={data.away_abbr}
                     before={data.start_time}
                   />
+                </LazySection>
+              </Panel>
+            </Section>
+
+            <Section title="Shot charts" note="Individual attempts, this game only.">
+              <Panel>
+                <LazySection minHeight={420}>
+                  <div className="grid grid--2">
+                    <TeamShots gameId={data.id} teamId={data.away_team_id} label={data.away_team} />
+                    <TeamShots gameId={data.id} teamId={data.home_team_id} label={data.home_team} />
+                  </div>
+                </LazySection>
+              </Panel>
+            </Section>
+
+            <Section
+              title="Shot defense"
+              note="Season profile, not this game alone — one game is far too few shots to say where a defence leaks."
+            >
+              <Panel tools={<ShotChartLegend />}>
+                <LazySection minHeight={420}>
+                  <div className="grid grid--2">
+                    <TeamShotDefense teamId={data.away_team_id} label={data.away_team} season={data.season} />
+                    <TeamShotDefense teamId={data.home_team_id} label={data.home_team} season={data.season} />
+                  </div>
                 </LazySection>
               </Panel>
             </Section>
