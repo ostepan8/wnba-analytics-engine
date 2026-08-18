@@ -54,6 +54,7 @@ export default function Players() {
               placeholder="Search by name"
               value={search}
               aria-label="Search players by name"
+              maxLength={60}
               onChange={(event) => setSearch(event.target.value)}
             />
             <SeasonPicker season={season} seasons={seasons} onChange={setSeason} />
