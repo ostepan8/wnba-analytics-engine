@@ -20,7 +20,12 @@
   /* --- ink --------------------------------------------------------------- */
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --ink-muted: #898781;
+  /* Darkened from #898781 -- that value failed WCAG AA (needs 4.5:1) against
+     every light-mode surface it sits on: 3.06:1 on --sunken (table headers),
+     3.26:1 on --plane, 3.50:1 on --surface. #6a6862 clears all three with
+     margin (4.75/5.06/5.43:1) at the same hue. Dark mode's own value below
+     already passes AA and is untouched. */
+  --ink-muted: #6a6862;
   --ink-inverse: #fcfcfb;
 
   /* --- lines ------------------------------------------------------------- */

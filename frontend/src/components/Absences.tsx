@@ -113,16 +113,28 @@ function Line({
   );
 }
 
-export default function Absences({ side, label }: { side: MatchupSide; label: string }) {
+export default function Absences({
+  side,
+  label,
+  headingLevel = "h5",
+}: {
+  side: MatchupSide;
+  label: string;
+  /** Matchup renders this one level below whatever contains it -- h5 when
+   *  nested under Home's h4 Block, h3 when nested directly under
+   *  GameDetail's h2 Section, which has no intervening Panel title. */
+  headingLevel?: "h3" | "h4" | "h5";
+}) {
   const absences = side.absences;
   if (!absences) return null;
   const anything = absences.out.count + absences.at_risk.count + absences.likely.count;
+  const Heading = headingLevel;
 
   return (
     <div>
-      <h5 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
+      <Heading style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
         {label}
-      </h5>
+      </Heading>
       {anything === 0 ? (
         <p className="muted" style={{ fontSize: "var(--t-sm)" }}>
           Nobody listed.

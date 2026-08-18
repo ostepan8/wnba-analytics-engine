@@ -42,6 +42,7 @@ export default function Players() {
     <Section
       title="Players"
       note="Everyone who appeared this season, ranked by scoring — click a column to sort by it instead."
+      level="h1"
     >
       <Panel
         title={query ? `Matching “${query}”` : `${season} players`}

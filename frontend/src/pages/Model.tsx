@@ -97,7 +97,11 @@ export default function Model() {
 
   return (
     <>
-      <Section title="Access the full dataset" note="What is sold is the data, not a prediction.">
+      <Section
+        title="Access the full dataset"
+        note="What is sold is the data, not a prediction."
+        level="h1"
+      >
         <Panel>
           <p className="prose">
             This project has run well over 200 hypothesis tests across 126 features, four prop

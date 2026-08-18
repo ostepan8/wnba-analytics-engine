@@ -65,16 +65,25 @@ function lastTen(side: MatchupSide) {
   return `${f.wins_l10}-${f.games_l10 - f.wins_l10}`;
 }
 
-function Injuries({ side, label }: { side: MatchupSide; label: string }) {
+function Injuries({
+  side,
+  label,
+  headingLevel,
+}: {
+  side: MatchupSide;
+  label: string;
+  headingLevel: "h3" | "h4" | "h5";
+}) {
   // Most severe first, so the name that changes a lineup is the one read first.
   const listed = [...side.injuries].sort(
     (a, b) => statusRank(a.status) - statusRank(b.status),
   );
+  const Heading = headingLevel;
   return (
     <div>
-      <h5 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
+      <Heading style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
         {label}
-      </h5>
+      </Heading>
       {side.injuries.length === 0 ? (
         <p className="muted" style={{ fontSize: "var(--t-sm)" }}>
           Nobody listed.
@@ -108,14 +117,20 @@ export default function Matchup({
   awayAbbr,
   homeTeamId,
   awayTeamId,
+  headingLevel = "h5",
 }: {
   gameId: number;
   homeAbbr: string;
   awayAbbr: string;
   homeTeamId: number;
   awayTeamId: number;
+  /** One level below whatever contains this component -- h5 under Home's h4
+   *  Block (the default), h3 under GameDetail's h2 Section, which has no
+   *  intervening Panel title to supply an h3 of its own. */
+  headingLevel?: "h3" | "h4" | "h5";
 }) {
   const query = useQuery<MatchupResponse>(`/games/${gameId}/matchup`);
+  const DefenseHeading = headingLevel;
 
   return (
     <Async query={query}>
@@ -181,22 +196,24 @@ export default function Matchup({
 
           <div className="grid grid--2" style={{ marginTop: "var(--s-4)" }}>
             {data.away.absences ? (
-              <Absences side={data.away} label={`${awayAbbr} availability`} />
+              <Absences side={data.away} label={`${awayAbbr} availability`} headingLevel={headingLevel} />
             ) : (
-              <Injuries side={data.away} label={`${awayAbbr} injury report`} />
+              <Injuries side={data.away} label={`${awayAbbr} injury report`} headingLevel={headingLevel} />
             )}
             {data.home.absences ? (
-              <Absences side={data.home} label={`${homeAbbr} availability`} />
+              <Absences side={data.home} label={`${homeAbbr} availability`} headingLevel={headingLevel} />
             ) : (
-              <Injuries side={data.home} label={`${homeAbbr} injury report`} />
+              <Injuries side={data.home} label={`${homeAbbr} injury report`} headingLevel={headingLevel} />
             )}
           </div>
 
           {(data.away.defense?.length || data.home.defense?.length) && (
             <div style={{ marginTop: "var(--s-5)" }}>
-              <h5 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
+              <DefenseHeading
+                style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}
+              >
                 What each defence gives up
-              </h5>
+              </DefenseHeading>
               <DefenseBars
                 away={{ abbr: awayAbbr, rows: data.away.defense ?? [] }}
                 home={{ abbr: homeAbbr, rows: data.home.defense ?? [] }}

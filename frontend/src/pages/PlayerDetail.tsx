@@ -79,7 +79,7 @@ export default function PlayerDetail() {
 
         return (
           <>
-            <Section title={data.player.full_name}>
+            <Section title={data.player.full_name} level="h1">
               <Panel
                 accent={teamColor(current?.team_abbr)}
                 tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}

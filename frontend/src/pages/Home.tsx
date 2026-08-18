@@ -89,6 +89,7 @@ export default function Home() {
     <Section
       title="Scoreboard"
       note="Open a game for lines, props, shot charts, defense and the box score."
+      level="h1"
     >
       <Panel
         title={current ? longDate(current[1][0].start_time) : "No games"}
