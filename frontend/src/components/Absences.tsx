@@ -26,15 +26,18 @@ import { PlayerCell } from "./ui";
 import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
 
-/** null under 5 in a row -- a short absence needs no marker, it still reads
- *  as news on its own. Above that: the current streak, and separately how
- *  much of the recent stretch she's missed at all -- a player back for one
- *  game then out again reads as "1 in a row" and would otherwise look fresh. */
+/** Gated on WHICHEVER number is notable, not just the streak -- a player
+ *  back for one game then out again can show a streak of 0 or 1 while
+ *  she's actually missed most of the last 20, and gating on the streak
+ *  alone hides exactly the in-and-out case this exists to catch. Nothing
+ *  under 5 either way: a short absence still reads as real news on its own. */
 function longAbsenceLabel(player: AbsentPlayer): string | null {
-  if (player.games_missed < 5) return null;
-  const streak = `${player.games_missed} in a row`;
-  if (player.recent_window === 0) return streak;
-  return `${streak} · missed ${player.recent_missed} of last ${player.recent_window}`;
+  const notable = player.games_missed >= 5 || player.recent_missed >= 5;
+  if (!notable || player.recent_window === 0) return null;
+  if (player.games_missed === 0) {
+    return `missed ${player.recent_missed} of last ${player.recent_window}`;
+  }
+  return `${player.games_missed} in a row · missed ${player.recent_missed} of last ${player.recent_window}`;
 }
 
 function Line({
