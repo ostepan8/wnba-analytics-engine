@@ -436,9 +436,28 @@ HAVING count(*) >= %(min_games)s
 # every period, so ordering by it interleaves the quarters. Only scoring plays
 # are returned -- the other ~85% of rows leave the margin unchanged and would
 # quadruple the payload to draw the same staircase.
+# game_plays.sequence is assigned independently PER PROVIDER (balldontlie and
+# wnba_stats each number their own scoring plays from roughly 1, covering
+# overlapping ranges for the same game) -- interleaving both by raw sequence
+# treats two unrelated numbering systems as one timeline, which produces a
+# score margin that jumps backward every time the two providers' rows
+# alternate rather than climbing monotonically. Picking one provider per game
+# (whichever has fuller scoring-play coverage for THIS game, tie-broken
+# alphabetically for determinism) keeps sequence meaningful, the same way
+# _LEADERS picks one source per player rather than averaging both.
 _GAME_FLOW = """
-SELECT DISTINCT ON (p.sequence)
-       p.sequence, p.period, p.clock,
+WITH preferred_source AS (
+    SELECT source
+      FROM game_plays
+     WHERE game_id = %(game_id)s
+       AND scoring_play
+       AND home_score IS NOT NULL
+       AND away_score IS NOT NULL
+     GROUP BY source
+     ORDER BY count(*) DESC, source
+     LIMIT 1
+)
+SELECT p.sequence, p.period, p.clock,
        p.home_score, p.away_score,
        (p.home_score - p.away_score) AS margin,
        p.description
@@ -447,7 +466,8 @@ SELECT DISTINCT ON (p.sequence)
    AND p.scoring_play
    AND p.home_score IS NOT NULL
    AND p.away_score IS NOT NULL
- ORDER BY p.sequence, p.source
+   AND p.source = (SELECT source FROM preferred_source)
+ ORDER BY p.sequence
 """
 
 # Season leaders, averaged over games actually played.
@@ -828,6 +848,10 @@ WITH one_row_per_game AS (
       JOIN games g ON g.id = s.game_id
      WHERE s.player_id = %(player_id)s
        AND s.did_not_play IS NOT TRUE
+       -- Missed in the original cut (commit 1e7b3ed fixed every sibling
+       -- query in this file, this one included season 2026's All-Star Game
+       -- and preseason exhibitions in a player's own "season" averages.
+       AND g.season_type IN ('regular-season', 'post-season')
      ORDER BY s.player_id, s.game_id,
               CASE s.source WHEN 'espn' THEN 0 WHEN 'balldontlie' THEN 1 ELSE 2 END
 )
