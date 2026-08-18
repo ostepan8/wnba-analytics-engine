@@ -51,11 +51,12 @@ function Court() {
   );
 }
 
-/** Diverging: blue above the reference, red below, neutral at it. */
+/** Diverging: red above the reference (a hot zone), blue below (cold),
+ *  neutral at it -- the universal shot-chart convention. */
 function cellColor(ppa: number, midpoint: number) {
   const spread = 0.45;
   const t = Math.max(-1, Math.min(1, (ppa - midpoint) / spread));
-  const pole = t >= 0 ? "var(--div-high)" : "var(--div-low)";
+  const pole = t >= 0 ? "var(--div-red)" : "var(--div-blue)";
   return `color-mix(in oklab, ${pole} ${Math.round(Math.abs(t) * 100)}%, var(--div-mid))`;
 }
 
@@ -139,7 +140,7 @@ export function ShotChartLegend() {
             height: 9,
             borderRadius: 5,
             background:
-              "linear-gradient(90deg, var(--div-low), var(--div-mid), var(--div-high))",
+              "linear-gradient(90deg, var(--div-blue), var(--div-mid), var(--div-red))",
           }}
         />
         Above avg

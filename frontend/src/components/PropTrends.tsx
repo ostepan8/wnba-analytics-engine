@@ -78,7 +78,7 @@ function RecentRun({ row }: { row: PropTrendRow }) {
             width={8}
             height={push ? 6 : 7}
             rx={2}
-            fill={push ? "var(--ink-muted)" : over ? "var(--div-high)" : "var(--div-low)"}
+            fill={push ? "var(--ink-muted)" : over ? "var(--div-blue)" : "var(--div-red)"}
           >
             <title>
               {game.value} · {game.cleared}

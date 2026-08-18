@@ -34,10 +34,15 @@
   --series-4: #eda100;
   --series-5: #e87ba4;
 
-  /* --- diverging (magnitude with polarity) ------------------------------- */
-  --div-high: #2a78d6;
+  /* --- diverging (a signed quantity, blue<->red, neutral midpoint) -------
+     Named by hue, not by which pole is "good": that call belongs to each
+     chart (a shot chart's hot zone is red; a prop's "over" happens to be
+     blue), and a name like --div-high previously baked in an assumption --
+     high points-per-attempt is a hot zone, and hot is red everywhere except
+     here, where it was blue. */
+  --div-blue: #2a78d6;
   --div-mid: #f0efec;
-  --div-low: #e34948;
+  --div-red: #e34948;
 
   /* --- status (reserved; never reused as a series colour) ---------------- */
   --good: #0ca30c;
@@ -108,9 +113,9 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --series-5: #d55181;
-    --div-high: #3987e5;
+    --div-blue: #3987e5;
     --div-mid: #383835;
-    --div-low: #e66767;
+    --div-red: #e66767;
     --accent-wash: rgba(57, 135, 229, 0.14);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -134,9 +139,9 @@
   --series-3: #199e70;
   --series-4: #c98500;
   --series-5: #d55181;
-  --div-high: #3987e5;
+  --div-blue: #3987e5;
   --div-mid: #383835;
-  --div-low: #e66767;
+  --div-red: #e66767;
   --accent-wash: rgba(57, 135, 229, 0.14);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
