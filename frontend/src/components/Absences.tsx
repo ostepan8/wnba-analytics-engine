@@ -26,18 +26,18 @@ import { PlayerCell } from "./ui";
 import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
 
-/** Gated on WHICHEVER number is notable, not just the streak -- a player
- *  back for one game then out again can show a streak of 0 or 1 while
- *  she's actually missed most of the last 20, and gating on the streak
- *  alone hides exactly the in-and-out case this exists to catch. Nothing
- *  under 5 either way: a short absence still reads as real news on its own. */
+/** One number, not two. The trailing-window count alone already covers what
+ *  the current streak used to add: the streak is always contained inside
+ *  this window, so anything a 5+ streak would have flagged already clears
+ *  this bar on its own, and a player back for one game after being out
+ *  most of the month (streak resets to near 0) still shows up here.
+ *  Nothing under 5 -- a short absence still reads as real news on its own. */
 function longAbsenceLabel(player: AbsentPlayer): string | null {
-  const notable = player.games_missed >= 5 || player.recent_missed >= 5;
-  if (!notable || player.recent_window === 0) return null;
-  if (player.games_missed === 0) {
-    return `missed ${player.recent_missed} of last ${player.recent_window}`;
+  if (player.recent_missed < 5 || player.recent_window === 0) return null;
+  if (player.recent_missed >= player.recent_window) {
+    return `missed last ${player.recent_window} games`;
   }
-  return `${player.games_missed} in a row · missed ${player.recent_missed} of last ${player.recent_window}`;
+  return `missed ${player.recent_missed} of last ${player.recent_window} games`;
 }
 
 function Line({
@@ -94,7 +94,7 @@ function Line({
                 <span
                   className="muted"
                   style={{ fontSize: "var(--t-xs)", flex: "none" }}
-                  title="Consecutive games missed so far -- already reflected in her team's recent form, not fresh news."
+                  title="Already reflected in her team's recent form, not fresh news."
                 >
                   {longAbsence}
                 </span>
