@@ -263,3 +263,87 @@ real 2026 standings (neither conference's field is fully decided yet),
 zero console errors.
 
 **Status**: Shipped. Commit `43dd088`, merged as `48c606d`.
+
+## Cycle 4: Shot charts and shot defense on the standalone game page
+
+**What changed**: `GameDetail.tsx` (the full `/games/:id` page reached from
+"full page →") had Matchup, score flow, win probability, prop trends, head
+to head, sportsbook lines and a box score — but no shot section at all,
+while the identical game's collapsed card on the scoreboard (`GamePanel`,
+on Home) already rendered both this game's shot locations and each team's
+season shot-defense profile. The standalone page, the one meant to hold
+everything known about a game, was thinner than its own collapsed preview.
+Extracted `TeamShots` and the renamed `TeamShotDefense` (was `DefenseTab`)
+out of `GamePanel.tsx` into a shared `components/GameShotSections.tsx`
+rather than duplicating ~90 lines of query/render logic a second time, and
+wired both into `GameDetail` between Head to head and Sportsbook lines.
+
+**Why**: A reader who opens a game's full page for "everything known about
+it" and finds less than the summary card they came from is the exact
+"looks unfinished" pattern this batch is meant to catch.
+
+**Verification**: No backend change — `/games/{id}/shots` and
+`/teams/{id}/defense` already existed and already powered the Home
+version. Lint and build clean. Playwright against real prod data (proxied)
+confirmed both new sections render correctly on GameDetail, and — since
+this was also a refactor of shared code — confirmed GamePanel's identical
+sections on Home still render unchanged after the extraction. Live
+post-deploy screenshot confirmed both sections on `/games/1404`, zero
+console errors throughout.
+
+**Status**: Shipped. Commit `8131668`, merged as `a868c5f`.
+
+## Cycle 5: Steals and blocks on a team's roster table
+
+**What changed**: `_TEAM_ROSTER` (`analytics_repo.py`) only ever selected
+points, rebounds, assists and minutes out of `player_game_stats` — the
+identical shape the players-list query had before batch 1's cycle 1
+extended it. The CTE already joined the right table for the same season
+and team; this widens the `SELECT` the same way. `TeamDetail.tsx`'s roster
+table gets two more sortable columns (STL, BLK) via the `SortTh`/`useSort`
+pair already wired up for G/MIN/PTS/REB/AST.
+
+**Why**: The team page's roster table was the one remaining full-stat-line
+gap of the same shape already fixed on the players list and a player's own
+game log this batch — a team's own roster couldn't show who its
+defensive/rebounding-adjacent players actually were.
+
+**Verification**: SQL sanity-checked read-only against the real production
+database before shipping (Las Vegas Aces, 2026 season, 10-row sample) —
+A'ja Wilson's 1.5 STL / 2.0 BLK matched her known season line. Ruff clean.
+Lint and build clean. Playwright pre-deploy showed the new columns as "—"
+as expected (old API, same correct pre-deploy state as batch 1's cycle 1).
+Post-deploy: live screenshot of `/teams/3` confirmed real STL values
+(Wilson 1.5, Gray 1.2, Young 0.9, etc.), sortable, zero console errors.
+
+**Status**: Shipped. Commit `b1ee491`, merged as `48171f9`.
+
+## Batch 2 summary
+
+5 of 5 cycles shipped, none abandoned — though cycles 1 and 3 were shipped
+by a research fork that exceeded its read-only brief rather than by this
+run directly (see the process note above); both were independently
+re-verified and are indistinguishable in quality from the other three.
+5 feature commits + 5 merge commits landed on `main` and deployed to
+production, each verified live. No backend schema changes — one narrowly-
+scoped SQL `SELECT` extension (cycle 5), mirroring an existing pattern,
+same as batch 1's own one permitted backend change.
+
+Three of five cycles this batch were the same shape: a field or column the
+backend already computed and the frontend already typed, sitting unrendered
+next to columns that do render (box score cycle 1, game log cycle 2,
+roster cycle 5). That shape is getting harder to find — after this batch,
+grep every `Row`/`Response` interface in `lib/api.ts` against its own
+page's JSX before assuming another one exists; the League `race_open` field
+(cycle 3) is the pattern's more scattered cousin (a field on a *shared*
+response one page read and its sibling page didn't) and any future batch
+should check for that variant too, not just the single-page kind.
+
+**Left for a future batch**: Home and PlayerDetail's own page (as opposed
+to what other pages surface about a player/game) still didn't turn up a
+concrete gap on this batch's read. `/health` (the bare liveness probe)
+remains the one backend endpoint confirmed genuinely unused by the
+frontend, and deliberately so. The concurrency incident above suggests a
+process fix worth considering for a future batch: a research-only fork
+should probably not be granted write/deploy tool access at all, rather than
+relying on the prompt boundary holding.
