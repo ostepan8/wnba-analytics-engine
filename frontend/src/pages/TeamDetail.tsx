@@ -123,8 +123,8 @@ export default function TeamDetail() {
                   value={
                     data.team.standing?.conference_seed
                       ? `#${data.team.standing.conference_seed}`
-                      : data.team.playoff_seed
-                        ? `#${data.team.playoff_seed}`
+                      : data.team.conference_seed
+                        ? `#${data.team.conference_seed}`
                         : "—"
                   }
                   label="Conference seed"

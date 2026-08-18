@@ -11,7 +11,7 @@
 
 import { useMemo } from "react";
 import { Async, Panel, Stat } from "./ui";
-import type { ClosingLine, LineMovementRow } from "../lib/api";
+import type { ClosingLine, LineMovementRow, Query } from "../lib/api";
 import { moneylineLabel, spreadLabel, useQuery } from "../lib/api";
 import { TimeSeries, type Series } from "../charts/primitives";
 
@@ -69,12 +69,22 @@ export default function GameLines({
   gameId,
   homeAbbr,
   awayAbbr,
+  movement: providedMovement,
 }: {
   gameId: number;
   homeAbbr: string;
   awayAbbr: string;
+  /** GameDetail already fetches /games/{id}/lines for its own win-probability
+   *  chart (moneyline_home_odds lives on this same row) and passes it here
+   *  instead of it being fetched twice -- that used to duplicate ~28KB per
+   *  page view. Home's GamePanel has no sibling fetch of the same data, so it
+   *  omits this and GameLines fetches for itself as before. */
+  movement?: Query<{ movement: LineMovementRow[] }>;
 }) {
-  const movement = useQuery<{ movement: LineMovementRow[] }>(`/games/${gameId}/lines?limit=500`);
+  const ownMovement = useQuery<{ movement: LineMovementRow[] }>(
+    providedMovement ? null : `/games/${gameId}/lines?limit=500`,
+  );
+  const movement = providedMovement ?? ownMovement;
   const closing = useQuery<{ lines: Record<string, ClosingLine> }>(
     `/lines/closing?game_ids=${gameId}`,
   );

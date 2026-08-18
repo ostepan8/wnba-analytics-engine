@@ -149,12 +149,13 @@ def efficiency(
     season: int | None = Query(None, ge=1997, le=2100),
     min_games: int = Query(10, ge=1, le=100),
     limit: int = Query(200, ge=1, le=500),
+    player_id: int | None = Query(None, description="Restrict to one player's row."),
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
     """Usage rate against true shooting — volume separated from value."""
     response.headers["Cache-Control"] = f"public, max-age={SEASON_MAX_AGE}"
     resolved = _season(season)
     players = analytics_repo.fetch_efficiency(
-        conn, season=resolved, min_games=min_games, limit=limit
+        conn, season=resolved, min_games=min_games, limit=limit, player_id=player_id
     )
     return {"season": resolved, "min_games": min_games, "players": players}

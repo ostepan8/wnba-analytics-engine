@@ -49,13 +49,12 @@ export default function PlayerDetail() {
   const shots = useQuery<ShotChartResponse>(
     playerId ? `/shots?season=${season}&player_id=${playerId}&bin_size=25` : null,
   );
-  // `/efficiency` has no player_id filter, so the league table is fetched and
-  // this one row picked out client-side. min_games=1 on purpose: the league
-  // leaderboard uses 10 to keep its ranking meaningful, but a single player's
-  // own profile should show their number even in a three-game season, not
-  // silently omit it because they fell under someone else's cutoff.
+  // min_games=1 on purpose: the league leaderboard uses 10 to keep its
+  // ranking meaningful, but a single player's own profile should show their
+  // number even in a three-game season, not silently omit it because they
+  // fell under someone else's cutoff.
   const efficiency = useQuery<{ players: EfficiencyRow[] }>(
-    playerId ? `/efficiency?season=${season}&min_games=1&limit=500` : null,
+    playerId ? `/efficiency?season=${season}&min_games=1&player_id=${playerId}` : null,
   );
   // Which team to ask "who shoots well against them" about isn't known from
   // the URL -- it only exists once the player's own season row has loaded, so

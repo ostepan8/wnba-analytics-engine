@@ -24,6 +24,20 @@ FINISHED_GAME_MAX_AGE = 3600
 LIVE_DATA_MAX_AGE = 60
 
 
+def _max_age_for_game(conn: Connection, game_id: int) -> int:
+    """FINISHED_GAME_MAX_AGE once a game is final, else LIVE_DATA_MAX_AGE.
+
+    Mirrors get_game()'s own branch so every other per-game endpoint caches a
+    finished game exactly as aggressively as the game record itself, instead
+    of the 60x-shorter live TTL. Doesn't 404 on a missing game_id -- these
+    endpoints have always returned an empty payload for one rather than an
+    error, and this only ever chooses a cache header.
+    """
+    game = analytics_repo.fetch_game(conn, game_id)
+    is_final = bool(game and game.get("status") == "final")
+    return FINISHED_GAME_MAX_AGE if is_final else LIVE_DATA_MAX_AGE
+
+
 @router.get("")
 def list_games(
     response: Response,
@@ -62,7 +76,7 @@ def game_odds(
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
     """Sportsbook line movement for one game, oldest first, ready to chart."""
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     history = analytics_repo.fetch_game_odds_history(conn, game_id, limit=limit)
     return {"game_id": game_id, "odds": history, "count": len(history)}
 
@@ -81,7 +95,7 @@ def game_shots(
     attempts rather than thirty thousand, so finer cells would mostly hold one
     shot each and the chart would read as noise.
     """
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     cells = game_detail_repo.fetch_game_shots(
         conn, game_id, team_id=team_id, bin_size=bin_size
     )
@@ -114,7 +128,7 @@ def game_props(
     One consensus line per player-market: the prop table holds a row per book,
     so reading it raw counts a six-book game six times.
     """
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     props = game_detail_repo.fetch_game_player_props(conn, game_id)
     return {"game_id": game_id, "props": props, "count": len(props)}
 
@@ -130,7 +144,7 @@ def game_box_score(
     player_game_stats is keyed by SOURCE, so a raw select returns each player
     once per provider; DISTINCT ON collapses to the preferred feed.
     """
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     rows = analytics_repo.fetch_game_box_score(conn, game_id)
     return {"game_id": game_id, "players": rows, "count": len(rows)}
 
@@ -146,7 +160,7 @@ def game_flow(
     Only scoring plays: the other ~85% of play-by-play rows leave the margin
     unchanged and would quadruple the payload to draw the same staircase.
     """
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     plays = analytics_repo.fetch_game_flow(conn, game_id)
     return {"game_id": game_id, "plays": plays, "count": len(plays)}
 
@@ -159,7 +173,7 @@ def game_markets(
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
     """Prediction-market implied probabilities for one game, both venues."""
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     prices = analytics_repo.fetch_game_market_prices(conn, game_id, limit=limit)
     return {"game_id": game_id, "prices": prices, "count": len(prices)}
 
@@ -178,7 +192,10 @@ def game_zone_matchups(
     game = analytics_repo.fetch_game(conn, game_id)
     if game is None:
         raise HTTPException(status_code=404, detail=f"no game with id {game_id}")
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+    is_final = game.get("status") == "final"
+    response.headers["Cache-Control"] = (
+        f"public, max-age={FINISHED_GAME_MAX_AGE if is_final else LIVE_DATA_MAX_AGE}"
+    )
 
     season = int(game["season"])
     home_id = int(game["home_team_id"])
