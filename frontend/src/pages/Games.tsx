@@ -4,16 +4,21 @@ import { Async, Panel, Section, SeasonPicker, TeamLogo } from "../components/ui"
 import type { ClosingLine, GameRow } from "../lib/api";
 import { moneylineLabel, spreadLabel, useQuery } from "../lib/api";
 import { CURRENT_SEASON, longDate, seasonOptions, shortDate, timeOf } from "../lib/format";
+import { teamColor } from "../lib/teamColors";
 
-/** One team's row inside a game: logo, name, score. */
+/** One team's row inside a game: logo, name, score. A 3px tick in the
+ *  winner's own colour is the only thing distinguishing a final from the
+ *  120 identical-looking rows around it at a glance. */
 function Side({
   teamId,
+  abbr,
   name,
   score,
   winner,
   show,
 }: {
   teamId: number | undefined;
+  abbr: string;
   name: string;
   score: number | null;
   winner: boolean;
@@ -21,9 +26,27 @@ function Side({
 }) {
   return (
     <span style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 3,
+          height: 18,
+          borderRadius: 2,
+          background: winner ? teamColor(abbr) : "transparent",
+        }}
+      />
       <TeamLogo teamId={teamId} size="sm" />
       <span style={{ fontWeight: winner ? 640 : 460, minWidth: 0 }}>{name}</span>
-      <span className="num" style={{ marginLeft: "auto", fontWeight: winner ? 640 : 460 }}>
+      <span
+        className="num"
+        style={{
+          marginLeft: "auto",
+          fontFamily: "var(--t-display)",
+          fontSize: "17px",
+          fontWeight: winner ? 700 : 500,
+          color: winner ? "var(--ink)" : "var(--ink-muted)",
+        }}
+      >
         {show ? score : ""}
       </span>
     </span>
@@ -49,6 +72,7 @@ function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
       <span style={{ display: "grid", gap: "var(--s-2)" }}>
         <Side
           teamId={game.away_team_id}
+          abbr={game.away_abbr}
           name={game.away_team}
           score={game.away_score}
           winner={final && !homeWon}
@@ -56,6 +80,7 @@ function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
         />
         <Side
           teamId={game.home_team_id}
+          abbr={game.home_abbr}
           name={game.home_team}
           score={game.home_score}
           winner={homeWon}
@@ -205,11 +230,13 @@ export default function Games() {
                     style={{
                       padding: "var(--s-2) var(--s-4)",
                       background: "var(--sunken)",
-                      fontSize: "var(--t-xs)",
+                      borderBottom: "1px solid var(--line)",
+                      fontFamily: "var(--t-display)",
+                      fontSize: "15px",
                       textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      color: "var(--ink-muted)",
-                      fontWeight: 600,
+                      letterSpacing: "0.02em",
+                      color: "var(--ink-2)",
+                      fontWeight: 700,
                       position: "sticky",
                       top: "var(--nav-height)",
                       zIndex: 1,

@@ -7,10 +7,11 @@ import LazySection from "../components/LazySection";
 import Matchup from "../components/Matchup";
 import PropTrends from "../components/PropTrends";
 import { TimeSeries, type Series } from "../charts/primitives";
-import { Async, Panel, PlayerCell, Section, Stat } from "../components/ui";
+import { Async, Panel, PlayerCell, Section, Stat, TeamLogo } from "../components/ui";
 import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { impliedFromAmerican, longDate, madeAttempted, pct, signed } from "../lib/format";
+import { teamColor } from "../lib/teamColors";
 
 function BoxScore({ rows, title }: { rows: BoxScoreRow[]; title: string }) {
   if (!rows.length) return null;
@@ -120,13 +121,72 @@ export default function GameDetail() {
         return (
           <>
             <Section title={`${data.away_team} at ${data.home_team}`} note={longDate(data.start_time)}>
-              <Panel>
-                <div style={{ display: "flex", gap: "var(--s-6)", flexWrap: "wrap", alignItems: "center" }}>
-                  <Stat
-                    value={final ? `${data.away_score}–${data.home_score}` : "—"}
-                    label={`${data.away_abbr} – ${data.home_abbr}`}
-                    detail={final ? "Final" : data.status}
-                  />
+              <Panel
+                accent={`linear-gradient(to right, ${teamColor(data.away_abbr)} 0 50%, ${teamColor(data.home_abbr)} 50% 100%)`}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto 1fr",
+                    alignItems: "center",
+                    gap: "var(--s-5)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                      gap: "var(--s-3)",
+                      textAlign: "right",
+                    }}
+                  >
+                    <div>
+                      <div className="team-mark" style={{ color: teamColor(data.away_abbr) }}>
+                        {data.away_abbr}
+                      </div>
+                      <div className="muted" style={{ fontSize: "var(--t-xs)" }}>
+                        {data.away_team}
+                      </div>
+                    </div>
+                    <TeamLogo teamId={data.away_team_id} size="lg" />
+                  </div>
+
+                  <div style={{ textAlign: "center" }}>
+                    <div
+                      className="num"
+                      style={{ fontFamily: "var(--t-display)", fontSize: "var(--t-4xl)", fontWeight: 700, lineHeight: 1 }}
+                    >
+                      {final ? `${data.away_score}–${data.home_score}` : "—"}
+                    </div>
+                    <div className="muted" style={{ fontSize: "var(--t-xs)", marginTop: "var(--s-1)" }}>
+                      {final ? "Final" : data.status}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+                    <TeamLogo teamId={data.home_team_id} size="lg" />
+                    <div>
+                      <div className="team-mark" style={{ color: teamColor(data.home_abbr) }}>
+                        {data.home_abbr}
+                      </div>
+                      <div className="muted" style={{ fontSize: "var(--t-xs)" }}>
+                        {data.home_team}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--s-6)",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginTop: "var(--s-5)",
+                  }}
+                >
                   {data.venue_name && <Stat value={data.venue_name} label="Venue" />}
                   {data.attendance != null && (
                     <Stat value={data.attendance.toLocaleString()} label="Attendance" />
