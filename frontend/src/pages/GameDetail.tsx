@@ -26,10 +26,13 @@ function BoxScore({ rows, title }: { rows: BoxScoreRow[]; title: string }) {
               <th>PTS</th>
               <th>REB</th>
               <th>AST</th>
+              <th>STL</th>
+              <th>BLK</th>
               <th>FG</th>
               <th>3P</th>
               <th>FT</th>
               <th>TO</th>
+              <th>PF</th>
               <th>+/-</th>
             </tr>
           </thead>
@@ -47,10 +50,13 @@ function BoxScore({ rows, title }: { rows: BoxScoreRow[]; title: string }) {
                 <td>{row.points ?? "—"}</td>
                 <td>{row.rebounds ?? "—"}</td>
                 <td>{row.assists ?? "—"}</td>
+                <td>{row.steals ?? "—"}</td>
+                <td>{row.blocks ?? "—"}</td>
                 <td>{madeAttempted(row.field_goals_made, row.field_goals_attempted)}</td>
                 <td>{madeAttempted(row.three_pointers_made, row.three_pointers_attempted)}</td>
                 <td>{madeAttempted(row.free_throws_made, row.free_throws_attempted)}</td>
                 <td>{row.turnovers ?? "—"}</td>
+                <td>{row.fouls ?? "—"}</td>
                 <td>{signed(row.plus_minus)}</td>
               </tr>
             ))}
