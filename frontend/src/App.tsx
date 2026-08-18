@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GameDetail from "./pages/GameDetail";
@@ -57,10 +57,50 @@ function ScrollToTop() {
   return null;
 }
 
+/** The nav's link row overflows on narrow viewports (seven destinations plus
+ *  the brand and theme toggle). A static right-edge fade signals "more to the
+ *  right" on first load but goes on showing the same thing once the user has
+ *  scrolled past it -- and says nothing about the content that's now cut off
+ *  on the left. This tracks real scroll position so each edge fades only
+ *  while there is actually more of the row hidden behind it. */
+function useEdgeFade() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ start: false, end: false });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    function update() {
+      // 1px of slack: fractional scroll widths (from browser zoom or subpixel
+      // layout) can leave scrollLeft + clientWidth a hair short of
+      // scrollWidth even when fully scrolled, which would leave the end fade
+      // stuck on at rest.
+      const node = ref.current;
+      if (!node) return;
+      setFade({
+        start: node.scrollLeft > 1,
+        end: node.scrollLeft + node.clientWidth < node.scrollWidth - 1,
+      });
+    }
+
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  return { ref, fade };
+}
+
 export default function App() {
   const [theme, setTheme] = useTheme();
   const { pathname } = useLocation();
   const next: Theme = theme === "dark" ? "light" : "dark";
+  const { ref: navLinksRef, fade } = useEdgeFade();
 
   return (
     <div className="app">
@@ -70,7 +110,10 @@ export default function App() {
           <NavLink to="/" className="nav__brand">
             WNBA Analytics
           </NavLink>
-          <div className="nav__links">
+          <div
+            className={`nav__links${fade.start ? " nav__links--fade-start" : ""}${fade.end ? " nav__links--fade-end" : ""}`}
+            ref={navLinksRef}
+          >
             {LINKS.map((link) => (
               <NavLink key={link.to} to={link.to} end={link.end} className="nav__link">
                 {link.label}

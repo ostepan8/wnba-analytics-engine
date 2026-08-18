@@ -90,6 +90,14 @@ button {
   gap: var(--s-6);
 }
 
+/* Every Section/Panel root is a <section>. Without this, a scroll-into-view
+   that isn't a plain mouse scroll -- Tab-focusing an off-screen control,
+   browser Find-on-page, deep links to a fragment -- can land its target
+   partially hidden under the sticky nav above it. */
+section {
+  scroll-margin-top: var(--nav-height);
+}
+
 /* --- navigation --------------------------------------------------------- */
 
 .nav {
@@ -130,13 +138,35 @@ button {
 /* Below this width the link row genuinely outruns the viewport -- seven
    destinations plus the brand and the theme toggle. overflow-x already makes
    it swipeable, but a plain clipped edge looks identical to a page that
-   stopped rendering, so the mask fades the last ~28px as a "there's more"
-   cue. Gated to the width where it actually overflows: applied unconditionally
-   it would fade the final pixels of "Model" even when the row already fits. */
+   stopped rendering, so the mask fades whichever edge(s) still hide content,
+   as a "there's more" cue -- App.tsx tracks real scroll position and toggles
+   these two classes, rather than a static one-sided fade that goes on
+   claiming "more to the right" after the user has scrolled past it while
+   never signalling the now-hidden content on the left. */
 @media (max-width: 640px) {
-  .nav__links {
+  .nav__links--fade-end {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .nav__links--fade-start {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  }
+  .nav__links--fade-start.nav__links--fade-end {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 28px,
+      #000 calc(100% - 28px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 28px,
+      #000 calc(100% - 28px),
+      transparent
+    );
   }
 }
 

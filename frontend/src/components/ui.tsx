@@ -300,7 +300,7 @@ export function Empty({ children }: { children: ReactNode }) {
 /** The failed state: what broke, and a way to try again without reloading
  *  the whole page. A transient network blip is common enough here that
  *  forcing a full reload to recover from it is its own small annoyance. */
-function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="empty">
       <p>Could not load this: {message}</p>

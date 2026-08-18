@@ -105,8 +105,8 @@ export default function Model() {
         <Panel>
           <p className="prose">
             This project has run well over 200 hypothesis tests across 126 features, four prop
-            markets and two venues. At that count roughly ten results with |t| &gt; 2 are expected
-            from noise alone, so the bar here is |t| ≈ 3.5 — and{" "}
+            markets and two venues. At that count roughly ten results with <code>|t|</code> &gt; 2
+            are expected from noise alone, so the bar here is <code>|t|</code> ≈ 3.5 — and{" "}
             <strong>exactly one result clears it</strong>: sportsbooks and prediction markets
             disagree often enough to be worth about +0.97 points of closing-line value, replicated
             independently on Polymarket (t = +7.77) and Kalshi (t = +8.28).
