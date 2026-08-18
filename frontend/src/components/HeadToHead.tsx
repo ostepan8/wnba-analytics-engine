@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { Async } from "./ui";
 import type { HeadToHeadResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
-import { shortDate } from "../lib/format";
+import { shortDateWithYear } from "../lib/format";
 
 export default function HeadToHead({
   homeTeamId,
@@ -55,7 +55,7 @@ export default function HeadToHead({
                   return (
                     <tr key={game.id}>
                       <td className="name">
-                        <Link to={`/games/${game.id}`}>{shortDate(game.start_time)}</Link>
+                        <Link to={`/games/${game.id}`}>{shortDateWithYear(game.start_time)}</Link>
                       </td>
                       <td>
                         {game.away_abbr} @ {game.home_abbr}

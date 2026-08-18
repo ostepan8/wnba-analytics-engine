@@ -288,12 +288,15 @@ export default function GameDetail() {
               </Panel>
             </Section>
 
-            <Section title="Shot charts" note="Individual attempts, this game only.">
+            <Section
+              title="Shot charts"
+              note={final ? "Individual attempts, this game only." : "Recent form -- this game hasn't been played yet."}
+            >
               <Panel>
                 <LazySection minHeight={420}>
                   <div className="grid grid--2">
-                    <TeamShots gameId={data.id} teamId={data.away_team_id} label={data.away_team} />
-                    <TeamShots gameId={data.id} teamId={data.home_team_id} label={data.home_team} />
+                    <TeamShots gameId={data.id} teamId={data.away_team_id} label={data.away_team} gameStatus={data.status} />
+                    <TeamShots gameId={data.id} teamId={data.home_team_id} label={data.home_team} gameStatus={data.status} />
                   </div>
                 </LazySection>
               </Panel>

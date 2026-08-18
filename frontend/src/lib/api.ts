@@ -574,6 +574,20 @@ export interface GameShotsResponse {
   } | null;
 }
 
+/** A team's shot chart windowed by recent games rather than by season --
+ *  the preview for a game that hasn't been played yet. */
+export interface TeamRecentShotsResponse {
+  team_id: number;
+  games_requested: number;
+  /** Can be less than requested early in a season. */
+  games_found: number;
+  bin_size: number;
+  cells: ShotCell[];
+  zones: ShotZone[];
+  attempts: number;
+  points_per_attempt: number | null;
+}
+
 /** One opposing player's shooting against a team, all season. team_abbr is
  *  THEIR team, not the one being defended. */
 export interface ShotDefensePlayerRow {

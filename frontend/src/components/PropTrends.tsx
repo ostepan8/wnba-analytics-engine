@@ -135,6 +135,7 @@ export default function PropTrends({ gameId }: { gameId: number }) {
                   <th>Market</th>
                   <th>Line</th>
                   <th title="The market's implied probability of going over">Mkt</th>
+                  <th>Venue</th>
                   {COLUMNS.map((label) => (
                     <th key={label}>{label}</th>
                   ))}
@@ -150,6 +151,7 @@ export default function PropTrends({ gameId }: { gameId: number }) {
                     <td>{propLabel(row.prop_type)}</td>
                     <td className="num">o{row.line}</td>
                     <td className="num muted">{pct(Number(row.over_probability), 0)}</td>
+                    <td className="muted">{row.provider}</td>
                     {COLUMNS.map((label) => (
                       <td key={label}>
                         <WindowCell window={windowOf(row, label)} />

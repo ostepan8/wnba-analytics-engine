@@ -98,6 +98,51 @@ def shot_chart(
     }
 
 
+@router.get("/teams/{team_id}/shots/recent")
+def team_recent_shot_chart(
+    team_id: int,
+    response: Response,
+    last_n_games: int = Query(
+        5, ge=1, le=20, description="How many of the team's most recent final games to include."
+    ),
+    bin_size: int = Query(DEFAULT_BIN_SIZE, ge=5, le=50),
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """A team's shot chart windowed by recent games rather than by season.
+
+    Built for previewing a game that hasn't been played yet: the season chart
+    is empty until the season has shots in it, and a single upcoming game has
+    none at all by definition. This looks backward instead -- recent form, not
+    a preview of a specific matchup.
+    """
+    # Short-lived: unlike a season total, "recent" changes with every final
+    # whistle rather than every 15 minutes.
+    response.headers["Cache-Control"] = "public, max-age=300"
+    game_ids = analytics_repo.fetch_team_recent_game_ids(
+        conn, team_id=team_id, last_n_games=last_n_games
+    )
+    cells = analytics_repo.fetch_team_recent_shot_chart(
+        conn, team_id=team_id, last_n_games=last_n_games, bin_size=bin_size
+    )
+    zones = analytics_repo.fetch_team_recent_shot_zones(
+        conn, team_id=team_id, last_n_games=last_n_games
+    )
+    attempts = sum(int(cell["attempts"]) for cell in cells)
+    points = sum(int(cell["points"]) for cell in cells)
+    return {
+        "team_id": team_id,
+        "games_requested": last_n_games,
+        # Early in a season "last 10" may only find 4 -- said plainly rather
+        # than silently showing a thinner window as if it were the full one.
+        "games_found": len(game_ids),
+        "bin_size": bin_size,
+        "cells": cells,
+        "zones": zones,
+        "attempts": attempts,
+        "points_per_attempt": round(points / attempts, 4) if attempts else None,
+    }
+
+
 @router.get("/efficiency")
 def efficiency(
     response: Response,
