@@ -398,7 +398,16 @@ export default function GamePanel({
                 </Link>
                 <TeamLine team={context?.[String(side.id)]} />
               </span>
-              <span className="num" style={{ marginLeft: "auto", fontWeight: side.win ? 640 : 460 }}>
+              <span
+                className="num"
+                style={{
+                  marginLeft: "auto",
+                  fontFamily: "var(--t-display)",
+                  fontSize: "20px",
+                  fontWeight: side.win ? 700 : 500,
+                  color: side.win ? "var(--ink)" : "var(--ink-muted)",
+                }}
+              >
                 {final ? side.score : ""}
               </span>
             </span>

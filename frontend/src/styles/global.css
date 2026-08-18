@@ -105,9 +105,11 @@ button {
 }
 
 .nav__brand {
-  font-weight: 660;
-  letter-spacing: -0.015em;
-  font-size: var(--t-base);
+  font-family: var(--t-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  font-size: var(--t-lg);
   white-space: nowrap;
 }
 
@@ -119,6 +121,19 @@ button {
   scrollbar-width: none;
 }
 .nav__links::-webkit-scrollbar { display: none; }
+
+/* Below this width the link row genuinely outruns the viewport -- seven
+   destinations plus the brand and the theme toggle. overflow-x already makes
+   it swipeable, but a plain clipped edge looks identical to a page that
+   stopped rendering, so the mask fades the last ~28px as a "there's more"
+   cue. Gated to the width where it actually overflows: applied unconditionally
+   it would fade the final pixels of "Model" even when the row already fits. */
+@media (max-width: 640px) {
+  .nav__links {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+}
 
 .nav__link {
   padding: var(--s-1) var(--s-3);
@@ -175,9 +190,11 @@ button {
   margin-bottom: var(--s-3);
 }
 .section__title {
-  font-size: var(--t-lg);
-  font-weight: 640;
-  letter-spacing: -0.01em;
+  font-family: var(--t-display);
+  font-size: 21px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 .section__note {
   font-size: var(--t-sm);
@@ -197,11 +214,12 @@ button {
 
 .stat { display: flex; flex-direction: column; gap: 2px; }
 .stat__value {
-  font-size: var(--t-2xl);
-  font-weight: 620;
-  letter-spacing: -0.025em;
+  font-family: var(--t-display);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1;
 }
 .stat__label { font-size: var(--t-xs); color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
 .stat__detail { font-size: var(--t-xs); color: var(--ink-muted); }

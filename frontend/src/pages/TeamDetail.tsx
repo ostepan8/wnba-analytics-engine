@@ -23,6 +23,7 @@ import type {
 } from "../lib/api";
 import { useQuery, spreadLabel } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from "../lib/format";
+import { teamColor } from "../lib/teamColors";
 import { useSort } from "../lib/useSort";
 
 type RosterSortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists";
@@ -87,7 +88,10 @@ export default function TeamDetail() {
       {(data) => (
         <>
           <Section title={data.team.name} note={data.team.conference ?? undefined}>
-            <Panel tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}>
+            <Panel
+              accent={teamColor(data.team.abbreviation)}
+              tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}
+            >
               <div style={{ display: "flex", gap: "var(--s-5)", alignItems: "center", flexWrap: "wrap" }}>
                 <TeamLogo teamId={data.team.id} size="lg" />
                 <Stat

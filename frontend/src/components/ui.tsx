@@ -12,16 +12,21 @@ export function Panel({
   hint,
   tools,
   flush,
+  accent,
   children,
 }: {
   title?: string;
   hint?: string;
   tools?: ReactNode;
   flush?: boolean;
+  /** A team's real colour, as a 4px top edge. Decorative only -- never carries
+   *  text, so an off-brand hex or a low-contrast one against either surface
+   *  still reads fine. */
+  accent?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="panel">
+    <section className="panel" style={accent ? { borderTop: `4px solid ${accent}` } : undefined}>
       {(title || tools) && (
         <header className="panel__head">
           {title && <h3 className="panel__title">{title}</h3>}

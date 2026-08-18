@@ -31,6 +31,7 @@ import {
   shortDate,
   signed,
 } from "../lib/format";
+import { teamColor } from "../lib/teamColors";
 
 interface PlayerResponse {
   player: PlayerProfile;
@@ -78,7 +79,10 @@ export default function PlayerDetail() {
         return (
           <>
             <Section title={data.player.full_name}>
-              <Panel tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}>
+              <Panel
+                accent={teamColor(current?.team_abbr)}
+                tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}
+              >
                 <div
                   style={{
                     display: "flex",
