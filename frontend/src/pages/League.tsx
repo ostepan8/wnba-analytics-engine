@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import { BarList } from "../charts/primitives";
-import { Async, Panel, Section, SeasonPicker, Stat, TeamCell } from "../components/ui";
+import { Async, Panel, RaceBadge, Section, SeasonPicker, Stat, TeamCell } from "../components/ui";
 import type {
   DatasetSummary,
   EfficiencyRow,
@@ -13,6 +13,13 @@ import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, avg, num, pct, rate, relativeTime, seasonOptions } from "../lib/format";
 import EfficiencyScatter from "../charts/EfficiencyScatter";
 
+/** Grouped by conference, so "GB" here is the provider's conference-relative
+ *  figure -- the right read inside a table already scoped to one conference.
+ *  "GB8" is the league-wide games-behind-the-cut and Status is the same
+ *  RaceBadge Teams.tsx uses for the combined table: a conference table alone
+ *  answers "how does this team compare to its own conference", never "is it
+ *  actually going to make the playoffs" -- the WNBA's cut is league-wide, not
+ *  per-conference, so that second question needs the league-wide fields. */
 function StandingsTable({ rows }: { rows: StandingRow[] }) {
   return (
     <div className="table-wrap">
@@ -24,8 +31,11 @@ function StandingsTable({ rows }: { rows: StandingRow[] }) {
             <th>L</th>
             <th>PCT</th>
             <th>GB</th>
+            <th title="Games behind the last league-wide playoff spot">GB8</th>
+            <th>L10</th>
             <th>Home</th>
             <th>Away</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -38,8 +48,15 @@ function StandingsTable({ rows }: { rows: StandingRow[] }) {
               <td>{row.losses ?? "—"}</td>
               <td>{rate(row.win_percentage)}</td>
               <td>{row.games_behind ?? "—"}</td>
+              <td>{row.in_playoff_position ? "—" : row.games_behind_playoff}</td>
+              <td>
+                {row.last10_wins}-{row.last10_losses}
+              </td>
               <td>{row.home_record ?? "—"}</td>
               <td>{row.away_record ?? "—"}</td>
+              <td>
+                <RaceBadge status={row} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -72,8 +89,13 @@ export default function League() {
 
   return (
     <>
+      {/* Full width, stacked, not the side-by-side pair this used to be: the
+          added GB8/L10/Status columns make each table too wide to share a
+          row without hiding a column behind horizontal scroll, and a
+          standings table is a list read top to bottom, not something that
+          benefits from sitting beside its twin. */}
       <Section title={`${season} season`} note="Standings, scoring, and league-wide shooting.">
-        <div className="grid grid--2">
+        <div style={{ display: "grid", gap: "var(--s-4)" }}>
           <Async query={standings} empty={(d) => d.standings.length === 0}>
             {() =>
               conferences.map(([conference, rows]) => (

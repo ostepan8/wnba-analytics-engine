@@ -155,6 +155,12 @@ button {
   border: 1px solid var(--line);
   border-radius: var(--r-2);
   overflow: hidden;
+  /* Grid items default to min-width: auto, which refuses to shrink below the
+     panel's intrinsic content width -- a wide table then grows the whole grid
+     track past the viewport instead of scrolling inside .table-wrap's own
+     overflow-x. min-width: 0 lets the track take the size the grid actually
+     gave it, so the table's own scrollbar is what handles the overflow. */
+  min-width: 0;
 }
 
 .panel__head {
