@@ -1,17 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Async, Panel, Section, Stat } from "../components/ui";
 import type { DivergenceObservation, DivergenceVenue, JobHealth, PropMarketRow } from "../lib/api";
 import { propLabel, useQuery } from "../lib/api";
 import { num, pct, relativeTime, shortDate, signed, timeOf } from "../lib/format";
 
-const STATUS: Record<string, { color: string; icon: string; label: string }> = {
-  ok: { color: "var(--good)", icon: "✓", label: "Healthy" },
-  running: { color: "var(--series-1)", icon: "◍", label: "Running" },
-  failed: { color: "var(--critical)", icon: "✕", label: "Failing" },
-  timeout: { color: "var(--serious)", icon: "⧗", label: "Timing out" },
-  pending: { color: "var(--warning)", icon: "◌", label: "Not yet run" },
-  disabled: { color: "var(--ink-muted)", icon: "◻", label: "Disabled" },
+// `priority` is display order, not severity math -- lower sorts first. A
+// failing or timed-out job is the one thing on this page someone actually
+// needs to act on, so it leads; a merely-disabled job is expected and least
+// urgent, so it trails even a healthy one.
+const STATUS: Record<string, { color: string; icon: string; label: string; priority: number }> = {
+  failed: { color: "var(--critical)", icon: "✕", label: "Failing", priority: 0 },
+  timeout: { color: "var(--serious)", icon: "⧗", label: "Timing out", priority: 1 },
+  pending: { color: "var(--warning)", icon: "◌", label: "Not yet run", priority: 2 },
+  running: { color: "var(--series-1)", icon: "◍", label: "Running", priority: 3 },
+  ok: { color: "var(--good)", icon: "✓", label: "Healthy", priority: 4 },
+  disabled: { color: "var(--ink-muted)", icon: "◻", label: "Disabled", priority: 5 },
 };
 
 function stateOf(job: JobHealth) {
@@ -20,10 +24,40 @@ function stateOf(job: JobHealth) {
   return STATUS[job.last_status] ?? STATUS.failed;
 }
 
+/** Whatever needs attention first, first. `/health/jobs` returns jobs in
+ *  schedule order, which is fine for reading "what runs" but buries a
+ *  failure among healthy jobs alphabetically above and below it -- the
+ *  one thing this grid exists to catch becomes something you have to
+ *  scan for instead of something the page leads with. Stable within a
+ *  priority tier, so jobs that are equally urgent keep their schedule
+ *  order rather than reshuffling on every render. */
+function byUrgency(jobs: JobHealth[]): JobHealth[] {
+  return jobs
+    .map((job, index) => ({ job, index }))
+    .sort((a, b) => {
+      const delta = stateOf(a.job).priority - stateOf(b.job).priority;
+      return delta !== 0 ? delta : a.index - b.index;
+    })
+    .map((entry) => entry.job);
+}
+
 export default function Research() {
   const [logOpen, setLogOpen] = useState(false);
   const divergence = useQuery<{ venues: DivergenceVenue[] }>("/divergences/summary");
   const health = useQuery<{ jobs: JobHealth[]; any_failing: boolean }>("/health/jobs");
+  // Sorted at the top level, not inside Async's render prop -- a hook there
+  // only fires once data exists, which breaks React's hook-order rule the
+  // moment the query is still loading (see lib/useSort.ts for the same fix
+  // applied to Players and a team roster).
+  const sortedJobs = useMemo(() => byUrgency(health.data?.jobs ?? []), [health.data]);
+  // `any_failing` came back from /health/jobs already; it just went unread.
+  // The failing count needs its own pass rather than reusing that boolean,
+  // since "something is wrong" and "here is how many" are different claims
+  // and the grid below can now show the second one for free.
+  const failingCount = useMemo(
+    () => sortedJobs.filter((job) => job.enabled && stateOf(job).priority <= 1).length,
+    [sortedJobs],
+  );
   const props = useQuery<{ markets: PropMarketRow[] }>("/lines/props");
   // Only fetched once opened -- the aggregates above are the page's real
   // content; the itemized log is an audit trail for someone who wants to
@@ -213,7 +247,16 @@ export default function Research() {
         title="Pipeline"
         note="Every scheduled run is recorded, successes and failures alike."
       >
-        <Panel>
+        <Panel
+          title="Scheduled jobs"
+          hint={
+            health.data
+              ? failingCount === 0
+                ? "✓ All enabled jobs healthy"
+                : `${failingCount} job${failingCount === 1 ? "" : "s"} failing or timing out`
+              : undefined
+          }
+        >
           <p className="prose" style={{ marginBottom: "var(--s-4)" }}>
             The engine's real failure mode is not a crash — it is jobs quietly not running while
             every page above keeps rendering week-old numbers as though they were current. Data
@@ -221,9 +264,9 @@ export default function Research() {
             scheduler. Only a record of job <em>execution</em> separates them.
           </p>
           <Async query={health} empty={(data) => data.jobs.length === 0}>
-            {(data) => (
+            {() => (
               <div className="grid grid--3">
-                {data.jobs.map((job) => {
+                {sortedJobs.map((job) => {
                   const state = stateOf(job);
                   return (
                     <div key={job.job_name} style={{ display: "flex", gap: "var(--s-2)" }}>
