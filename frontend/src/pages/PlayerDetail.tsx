@@ -94,6 +94,15 @@ export default function PlayerDetail() {
                 >
                   <PlayerAvatar playerId={data.player.player_id} size="xl" />
                   <div>
+                    {current?.team_abbr && current.team_id != null && (
+                      <Link
+                        to={`/teams/${current.team_id}`}
+                        className="team-mark"
+                        style={{ color: teamColor(current.team_abbr), fontSize: "var(--t-lg)" }}
+                      >
+                        {current.team_abbr}
+                      </Link>
+                    )}
                     <p className="muted" style={{ fontSize: "var(--t-sm)" }}>
                       {[
                         data.player.position,

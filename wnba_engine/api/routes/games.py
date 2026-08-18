@@ -14,6 +14,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from psycopg import Connection
 
+from wnba_engine.analysis import zone_matchups
 from wnba_engine.api.deps import get_connection
 from wnba_engine.repositories import analytics_repo, game_detail_repo
 
@@ -161,3 +162,73 @@ def game_markets(
     response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
     prices = analytics_repo.fetch_game_market_prices(conn, game_id, limit=limit)
     return {"game_id": game_id, "prices": prices, "count": len(prices)}
+
+
+@router.get("/{game_id}/zone-matchups")
+def game_zone_matchups(
+    game_id: int,
+    response: Response,
+    conn: Connection = Depends(get_connection),
+) -> dict[str, object]:
+    """Rotation players on both sides with a real zone edge against tonight's
+    specific opponent -- see wnba_engine/analysis/zone_matchups.py for what
+    "real" means here and why it's season-long on both sides, not this
+    pairing's own (far too little volume for that).
+    """
+    game = analytics_repo.fetch_game(conn, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail=f"no game with id {game_id}")
+    response.headers["Cache-Control"] = f"public, max-age={LIVE_DATA_MAX_AGE}"
+
+    season = int(game["season"])
+    home_id = int(game["home_team_id"])
+    away_id = int(game["away_team_id"])
+
+    rosters = {
+        home_id: analytics_repo.fetch_team_roster(conn, home_id, season=season),
+        away_id: analytics_repo.fetch_team_roster(conn, away_id, season=season),
+    }
+    rotation_ids = [
+        int(player["player_id"])
+        for roster in rosters.values()
+        for player in roster[: zone_matchups.PLAYERS_PER_TEAM]
+    ]
+    player_zone_rows = analytics_repo.fetch_players_shot_zones(
+        conn, player_ids=rotation_ids, season=season
+    )
+    player_zones: dict[int, list[dict[str, object]]] = {}
+    for row in player_zone_rows:
+        player_zones.setdefault(int(row["player_id"]), []).append(row)
+
+    defense_zones = {
+        home_id: game_detail_repo.fetch_shot_defence_zones(conn, home_id, season=season),
+        away_id: game_detail_repo.fetch_shot_defence_zones(conn, away_id, season=season),
+    }
+    league_zones = analytics_repo.fetch_shot_zones(
+        conn, season=season, player_id=None, team_id=None
+    )
+
+    edges = zone_matchups.compute_zone_edges(
+        rosters=rosters,
+        player_zones=player_zones,
+        defense_zones=defense_zones,
+        league_zones=league_zones,
+        opponent_of={home_id: away_id, away_id: home_id},
+    )
+    return {
+        "game_id": game_id,
+        "season": season,
+        "edges": [
+            {
+                "player_id": edge.player_id,
+                "full_name": edge.full_name,
+                "team_id": edge.team_id,
+                "opponent_team_id": edge.opponent_team_id,
+                "zone": edge.zone,
+                "player_rate": round(edge.player_rate, 4),
+                "defense_rate": round(edge.defense_rate, 4),
+                "league_rate": round(edge.league_rate, 4),
+            }
+            for edge in edges[:15]
+        ],
+    }

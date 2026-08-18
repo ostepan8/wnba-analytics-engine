@@ -324,6 +324,23 @@ SELECT s.shot_zone_basic AS zone,
  ORDER BY 2 DESC
 """
 
+# Zone splits for a whole roster in one query, not one round trip per player --
+# built for the pre-game "who has a real edge tonight" matchup, which checks a
+# team's rotation (5-8 players) against an opponent, and doubling that per game
+# would otherwise be a dozen-plus requests for one section.
+_PLAYERS_SHOT_ZONES = """
+SELECT s.player_id, s.shot_zone_basic AS zone,
+       count(*)                       AS attempts,
+       count(*) FILTER (WHERE s.made) AS makes
+  FROM shot_locations s
+  JOIN games g ON g.id = s.game_id
+ WHERE g.season = %(season)s
+    AND g.season_type IN ('regular-season', 'post-season')
+   AND s.player_id = ANY(%(player_ids)s::bigint[])
+   AND s.shot_zone_basic IS NOT NULL
+ GROUP BY 1, 2
+"""
+
 # A team's shot chart windowed by RECENT GAMES rather than season -- built
 # for previewing a game that hasn't been played yet, where the season-long
 # profile above would silently include nothing (no shots exist for a future
@@ -550,6 +567,14 @@ def fetch_shot_zones(
     return _all(
         conn, _SHOT_ZONES, {"season": season, "player_id": player_id, "team_id": team_id}
     )
+
+
+def fetch_players_shot_zones(
+    conn: Connection, *, player_ids: list[int], season: int
+) -> list[dict[str, Any]]:
+    if not player_ids:
+        return []
+    return _all(conn, _PLAYERS_SHOT_ZONES, {"player_ids": player_ids, "season": season})
 
 
 def fetch_team_recent_shot_chart(
