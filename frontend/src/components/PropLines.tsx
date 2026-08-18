@@ -82,9 +82,9 @@ function LineVsResult({ rows }: { rows: PropLogRow[] }) {
             r={5}
             fill={
               row.result === "over"
-                ? "var(--div-high)"
+                ? "var(--div-blue)"
                 : row.result === "under"
-                  ? "var(--div-low)"
+                  ? "var(--div-red)"
                   : "var(--ink-muted)"
             }
             stroke="var(--surface)"
@@ -118,11 +118,11 @@ function LineVsResult({ rows }: { rows: PropLogRow[] }) {
           Closing line
         </span>
         <span>
-          <span className="swatch" style={{ background: "var(--div-high)" }} />
+          <span className="swatch" style={{ background: "var(--div-blue)" }} />
           Over
         </span>
         <span>
-          <span className="swatch" style={{ background: "var(--div-low)" }} />
+          <span className="swatch" style={{ background: "var(--div-red)" }} />
           Under
         </span>
       </div>
