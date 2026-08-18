@@ -45,16 +45,22 @@ export function Panel({
 export function Section({
   title,
   note,
+  level = "h2",
   children,
 }: {
   title: string;
   note?: string;
+  /** Every page needs exactly one h1 naming its content; nested Sections on
+   *  the same page stay h2. Defaults to h2 since most Section usages are
+   *  nested under a page's own top-level Section. */
+  level?: "h1" | "h2";
   children: ReactNode;
 }) {
+  const Heading = level;
   return (
     <section>
       <div className="section__head">
-        <h2 className="section__title">{title}</h2>
+        <Heading className="section__title">{title}</Heading>
         {note && <p className="section__note">{note}</p>}
       </div>
       {children}

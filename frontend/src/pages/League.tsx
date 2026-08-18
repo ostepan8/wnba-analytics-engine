@@ -96,7 +96,11 @@ export default function League() {
           row without hiding a column behind horizontal scroll, and a
           standings table is a list read top to bottom, not something that
           benefits from sitting beside its twin. */}
-      <Section title={`${season} season`} note="Standings, scoring, and league-wide shooting.">
+      <Section
+        title={`${season} season`}
+        note="Standings, scoring, and league-wide shooting."
+        level="h1"
+      >
         <div style={{ display: "grid", gap: "var(--s-4)" }}>
           <Async query={standings} empty={(d) => d.standings.length === 0}>
             {(data) =>

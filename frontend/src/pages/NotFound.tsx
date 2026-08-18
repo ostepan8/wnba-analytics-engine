@@ -3,7 +3,7 @@ import { Panel, Section } from "../components/ui";
 
 export default function NotFound() {
   return (
-    <Section title="Not found">
+    <Section title="Not found" level="h1">
       <Panel>
         <p className="prose">
           That page does not exist.{" "}

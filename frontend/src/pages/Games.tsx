@@ -201,7 +201,7 @@ export default function Games() {
   }, [games.data, lines.data]);
 
   return (
-    <Section title="Games" note="Most recent first.">
+    <Section title="Games" note="Most recent first." level="h1">
       <Panel
         title={`${season} schedule`}
         hint={

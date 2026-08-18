@@ -71,6 +71,7 @@ export default function Research() {
       <Section
         title="Cross-venue divergence"
         note="A forward experiment in progress, not a result."
+        level="h1"
       >
         <Panel>
           <p className="prose">

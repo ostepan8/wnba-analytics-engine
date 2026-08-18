@@ -106,6 +106,7 @@ export default function Teams() {
       <Section
         title="Playoff picture"
         note="Top eight records league-wide, not by conference."
+        level="h1"
       >
         <Panel
           title={`${season} standings`}

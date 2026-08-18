@@ -129,7 +129,11 @@ export default function GameDetail() {
 
         return (
           <>
-            <Section title={`${data.away_team} at ${data.home_team}`} note={longDate(data.start_time)}>
+            <Section
+              title={`${data.away_team} at ${data.home_team}`}
+              note={longDate(data.start_time)}
+              level="h1"
+            >
               <Panel
                 accent={`linear-gradient(to right, ${teamColor(data.away_abbr)} 0 50%, ${teamColor(data.home_abbr)} 50% 100%)`}
               >
@@ -222,6 +226,7 @@ export default function GameDetail() {
                     awayAbbr={data.away_abbr}
                     homeTeamId={data.home_team_id}
                     awayTeamId={data.away_team_id}
+                    headingLevel="h3"
                   />
                 </LazySection>
               </Panel>

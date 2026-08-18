@@ -94,7 +94,7 @@ export default function TeamDetail() {
     <Async query={team}>
       {(data) => (
         <>
-          <Section title={data.team.name} note={data.team.conference ?? undefined}>
+          <Section title={data.team.name} note={data.team.conference ?? undefined} level="h1">
             <Panel
               accent={teamColor(data.team.abbreviation)}
               tools={<SeasonPicker season={season} seasons={seasons} onChange={setSeason} />}
