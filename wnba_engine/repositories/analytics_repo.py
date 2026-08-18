@@ -583,7 +583,7 @@ _TEAM_ROSTER = """
 WITH one_row_per_game AS (
     SELECT DISTINCT ON (s.player_id, s.game_id)
            s.player_id, s.game_id, s.team_id, s.points, s.rebounds,
-           s.assists, s.minutes
+           s.assists, s.steals, s.blocks, s.minutes
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
@@ -598,6 +598,8 @@ SELECT p.id AS player_id, p.full_name, p.position, p.jersey_number,
        round(avg(r.points)::numeric, 1)   AS points,
        round(avg(r.rebounds)::numeric, 1) AS rebounds,
        round(avg(r.assists)::numeric, 1)  AS assists,
+       round(avg(r.steals)::numeric, 1)   AS steals,
+       round(avg(r.blocks)::numeric, 1)   AS blocks,
        round(avg(r.minutes)::numeric, 1)  AS minutes
   FROM one_row_per_game r
   JOIN players p ON p.id = r.player_id
