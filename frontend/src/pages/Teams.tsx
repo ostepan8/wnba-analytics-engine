@@ -3,6 +3,7 @@ import { Async, Panel, RaceBadge, Section, SeasonPicker, TeamCell, TeamLogo } fr
 import type { StandingsResponse } from "../lib/api";
 import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, rate, seasonOptions } from "../lib/format";
+import { teamColor } from "../lib/teamColors";
 
 function StandingsTable({ data }: { data: StandingsResponse }) {
   return (
@@ -136,7 +137,7 @@ export default function Teams() {
           {(data) => (
             <div className="grid grid--3">
               {data.standings.map((row) => (
-                <article key={row.team_id} className="panel" style={{ padding: "var(--s-4)" }}>
+                <Panel key={row.team_id} accent={teamColor(row.abbreviation)}>
                   <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
                     <TeamLogo teamId={row.team_id} size="lg" />
                     <div style={{ minWidth: 0 }}>
@@ -164,7 +165,7 @@ export default function Teams() {
                       </div>
                     </div>
                   </div>
-                </article>
+                </Panel>
               ))}
             </div>
           )}
