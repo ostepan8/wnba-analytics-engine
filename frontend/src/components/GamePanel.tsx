@@ -14,6 +14,7 @@ import { TeamShots, TeamShotDefense } from "./GameShotSections";
 import HeadToHead from "./HeadToHead";
 import Matchup from "./Matchup";
 import PropTrends from "./PropTrends";
+import ZoneMatchups from "./ZoneMatchups";
 import LazySection from "./LazySection";
 import { Async, PlayerCell, TeamLogo } from "./ui";
 import type { BoxScoreRow, ClosingLine, FlowPlay, GameRow, SlateTeam } from "../lib/api";
@@ -232,6 +233,16 @@ export default function GamePanel({
           awayAbbr={game.away_abbr}
           homeTeamId={game.home_team_id}
           awayTeamId={game.away_team_id}
+        />
+      </Block>
+
+      <Block title="Zone matchups" hint="hot zones vs the other side's soft spots" minHeight={280}>
+        <ZoneMatchups
+          gameId={game.id}
+          homeTeamId={game.home_team_id}
+          awayTeamId={game.away_team_id}
+          homeAbbr={game.home_abbr}
+          awayAbbr={game.away_abbr}
         />
       </Block>
 

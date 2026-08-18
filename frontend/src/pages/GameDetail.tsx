@@ -8,6 +8,7 @@ import HeadToHead from "../components/HeadToHead";
 import LazySection from "../components/LazySection";
 import Matchup from "../components/Matchup";
 import PropTrends from "../components/PropTrends";
+import ZoneMatchups from "../components/ZoneMatchups";
 import { TimeSeries, type Series } from "../charts/primitives";
 import { Async, Panel, PlayerCell, Section, Stat, TeamLogo } from "../components/ui";
 import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
@@ -221,6 +222,23 @@ export default function GameDetail() {
                     awayAbbr={data.away_abbr}
                     homeTeamId={data.home_team_id}
                     awayTeamId={data.away_team_id}
+                  />
+                </LazySection>
+              </Panel>
+            </Section>
+
+            <Section
+              title="Zone matchups"
+              note="Rotation players on both sides whose own hot zones line up with the other defense's soft spots."
+            >
+              <Panel>
+                <LazySection minHeight={280}>
+                  <ZoneMatchups
+                    gameId={data.id}
+                    homeTeamId={data.home_team_id}
+                    awayTeamId={data.away_team_id}
+                    homeAbbr={data.home_abbr}
+                    awayAbbr={data.away_abbr}
                   />
                 </LazySection>
               </Panel>

@@ -315,17 +315,23 @@ function Failed({ message, onRetry }: { message: string; onRetry: () => void }) 
 export function Async<T>({
   query,
   empty,
+  emptyMessage,
   skeleton,
   children,
 }: {
   query: Query<T>;
   empty?: (data: T) => boolean;
+  /** Overrides the default "Nothing recorded here yet." -- use this when an
+   *  empty result is a real, checked answer (e.g. "no standout matchups
+   *  tonight") rather than a genuine data gap; the default phrasing implies
+   *  the latter and misdescribes the former. */
+  emptyMessage?: string;
   skeleton?: ReactNode;
   children: (data: T) => ReactNode;
 }) {
   if (query.loading) return <>{skeleton ?? <Skeleton />}</>;
   if (query.error) return <Failed message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <Empty>No data.</Empty>;
-  if (empty?.(query.data)) return <Empty>Nothing recorded here yet.</Empty>;
+  if (empty?.(query.data)) return <Empty>{emptyMessage ?? "Nothing recorded here yet."}</Empty>;
   return <>{children(query.data)}</>;
 }

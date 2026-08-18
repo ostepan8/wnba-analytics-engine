@@ -680,6 +680,27 @@ export interface HeadToHeadResponse {
   wins_b: number;
 }
 
+/** One rotation player's real season-long zone edge against tonight's
+ *  specific opponent -- see wnba_engine/analysis/zone_matchups.py for what
+ *  qualifies and why both sides are season-long rather than this pairing's
+ *  own (too little volume for that). */
+export interface ZoneEdgeRow {
+  player_id: number;
+  full_name: string;
+  team_id: number;
+  opponent_team_id: number;
+  zone: string;
+  player_rate: number;
+  defense_rate: number;
+  league_rate: number;
+}
+
+export interface ZoneMatchupsResponse {
+  game_id: number;
+  season: number;
+  edges: ZoneEdgeRow[];
+}
+
 export interface DefenseByPositionRow {
   team_id: number;
   abbreviation: string;
