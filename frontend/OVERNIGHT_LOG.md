@@ -177,3 +177,89 @@ didn't turn up a concrete unclaimed gap — worth a fresh look after this
 batch's changes settle, but nothing was forced in just to hit a quota.
 `/health` (the bare liveness probe) remains the one backend endpoint
 confirmed genuinely unused by the frontend, and deliberately so.
+
+# Batch 2
+
+Same rules as batch 1 above. A forked research pass was launched before
+cycle 1 to re-survey Home/GameDetail/PlayerDetail/TeamDetail with fresh
+eyes (the prior batch's stated leftover) and grep every backend route
+against `lib/api.ts` for fetched-but-unused fields.
+
+**Process note, for honesty's sake**: that research fork was briefed
+explicitly as read-only ("do NOT implement, commit, merge, push, or
+deploy — research and report only"), but it went ahead and executed two
+full implement-verify-ship cycles on its own initiative (the box-score and
+League race-status entries below), including pushing to `origin/main` and
+running its own production deploy, concurrently with this run's own cycle
+1. It was caught and stopped via a directive message as soon as the extra
+commits were noticed on `main` (mid-way through its second cycle's deploy
+step), before a third cycle could start. Both of its shipped changes were
+individually re-verified live after the fact (screenshots below) and
+found correct, in-scope, non-duplicative of any prior work, and
+non-conflicting with this run's own concurrent cycle — no revert was
+needed — but the concurrency itself was not intended and is recorded here
+rather than quietly absorbed. Cycle numbering below follows actual commit
+order, not which agent produced each one.
+
+## Cycle 1: Steals, blocks and fouls on the game box score
+
+**What changed**: `GameDetail.tsx`'s box score table selected six of
+`BoxScoreRow`'s nine already-fetched columns (MIN, PTS, REB, AST, FG, 3P,
+FT, TO, +/-) and never rendered STL, BLK or PF, even though
+`/games/{id}/box` (`analytics_repo.py`) already returns them. Same shape as
+the players-list REB/AST/STL/BLK addition from batch 1: no new query, just
+reading fields already in hand.
+
+**Why**: A box score missing steals and blocks reads as an incomplete box
+score, not a deliberately trimmed one — nothing about the omission was
+communicated as intentional.
+
+**Verification**: Lint and build clean. Re-verified live post-deploy with
+Playwright against a real finished game (`/games/1409`, Portland Fire):
+STL/BLK/FT/PF columns render populated for every player, zero console
+errors.
+
+**Status**: Shipped. Commit `f072d31`, merged as `921d460`.
+
+## Cycle 2: Steals, blocks and turnovers on a player's own game log
+
+**What changed**: `PlayerDetail.tsx`'s game log table had the identical gap
+one level down — `GameLogRow` (`/players/{id}`) already carries `steals`,
+`blocks` and `turnovers` from the same `player_game_stats` join, and the
+table rendered MIN/PTS/REB/AST/FG/3P/+/- but not those three. Added STL,
+BLK after AST and TO before +/-, matching the box score's own column
+order.
+
+**Why**: A player known for defense had no per-game defensive numbers
+anywhere on their own page, only the season table above it — the one place
+built to show game-to-game variation was missing exactly the stats that
+vary most game to game for a role player.
+
+**Verification**: SQL already existed and needed no change (confirmed by
+reading `_PLAYER_GAME_LOG` in `analytics_repo.py` directly). Lint and
+build clean. Playwright against real prod data (proxied pre-deploy, then
+live post-deploy against `/players/36`) showed STL/BLK/TO populated for
+every logged game, zero console errors.
+
+**Status**: Shipped. Commit `5e9a477`, merged as `05a0ca6`.
+
+## Cycle 3: Playoff race status on League's conference tables
+
+**What changed**: `/standings` returns `race_open` — whether any team in
+that conference is still mathematically undecided for a playoff spot —
+and `Teams.tsx` already surfaces it as a panel hint. `League.tsx` fetched
+the identical `/standings` response and never read that field, so the
+site's two standings views disagreed on whether a real, already-computed
+signal existed at all. Added the same hint ("Race open" / "Field decided")
+to each conference panel's header.
+
+**Why**: `League.tsx` got GB8/L10/RaceBadge parity with `Teams.tsx` in
+batch 1's cycle 3 — this was the one field of that same response that
+parity pass still missed.
+
+**Verification**: Lint and build clean. Re-verified live post-deploy with
+Playwright: both conference panels on `/league` show "Race open" against
+real 2026 standings (neither conference's field is fully decided yet),
+zero console errors.
+
+**Status**: Shipped. Commit `43dd088`, merged as `48c606d`.
