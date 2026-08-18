@@ -5,6 +5,7 @@ import PlayerMatchup from "../components/PlayerMatchup";
 import PropLines from "../components/PropLines";
 import {
   Async,
+  Failed,
   Panel,
   PlayerAvatar,
   PlayerCell,
@@ -66,6 +67,21 @@ export default function PlayerDetail() {
   const shotDefense = useQuery<ShotDefenseResponse>(
     teamId ? `/teams/${teamId}/defense?season=${season}` : null,
   );
+
+  // Async's own Failed state renders bare (no card chrome) since most Asyncs
+  // on this page already sit inside a Section+Panel the page wrote. This is
+  // the one Async that IS the page -- it has no such wrapper yet, because
+  // its real title (the player's name) doesn't exist until it loads -- so an
+  // invalid id needs one supplied here instead of getting no chrome at all.
+  if (player.error) {
+    return (
+      <Section title="Player" level="h1">
+        <Panel>
+          <Failed message={player.error.message} onRetry={player.refetch} />
+        </Panel>
+      </Section>
+    );
+  }
 
   return (
     <Async query={player}>

@@ -133,6 +133,32 @@ export default function DefenseBars({
                 {positionLabel(position)}
               </text>
 
+              {/* League average, same scale on both sides. Painted before the
+                  bars and their value/rank text below, not after: an SVG
+                  paints later siblings over earlier ones, and this used to be
+                  last -- drawing the tick on top of the text it frequently
+                  sits beneath, slicing through the digits, since the two are
+                  positioned independently and land close together whenever a
+                  team's own value is near the league average (the normal
+                  case). Text painted on top of the tick instead keeps every
+                  digit intact; the tick still reads fine passing near/through
+                  the letter-spacing gaps around it. */}
+              {average > 0 &&
+                [
+                  centre - LABEL_WIDTH / 2 - GUTTER - scale(average),
+                  centre + LABEL_WIDTH / 2 + GUTTER + scale(average),
+                ].map((x) => (
+                  <line
+                    key={x}
+                    x1={x}
+                    x2={x}
+                    y1={y - 3}
+                    y2={y + BAR_HEIGHT + 3}
+                    stroke="var(--line-strong)"
+                    strokeWidth={2}
+                  />
+                ))}
+
               {a && aValue > 0 && (
                 <g>
                   {/* Rounded data-end away from the baseline; the baseline end
@@ -191,23 +217,6 @@ export default function DefenseBars({
                   </text>
                 </g>
               )}
-
-              {/* League average, same scale on both sides. */}
-              {average > 0 &&
-                [
-                  centre - LABEL_WIDTH / 2 - GUTTER - scale(average),
-                  centre + LABEL_WIDTH / 2 + GUTTER + scale(average),
-                ].map((x) => (
-                  <line
-                    key={x}
-                    x1={x}
-                    x2={x}
-                    y1={y - 3}
-                    y2={y + BAR_HEIGHT + 3}
-                    stroke="var(--line-strong)"
-                    strokeWidth={2}
-                  />
-                ))}
             </g>
           );
         })}

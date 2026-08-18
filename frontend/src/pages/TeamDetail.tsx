@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
 import {
   Async,
+  Failed,
   Panel,
   PlayerCell,
   RaceBadge,
@@ -89,6 +90,21 @@ export default function TeamDetail() {
     team.data?.schedule ?? [],
     scheduleAccessor,
   );
+
+  // Async's own Failed state renders bare (no card chrome) since most Asyncs
+  // on this page already sit inside a Section+Panel the page wrote. This is
+  // the one Async that IS the page -- it has no such wrapper yet, because
+  // its real title (the team's name) doesn't exist until it loads -- so an
+  // invalid id needs one supplied here instead of getting no chrome at all.
+  if (team.error) {
+    return (
+      <Section title="Team" level="h1">
+        <Panel>
+          <Failed message={team.error.message} onRetry={team.refetch} />
+        </Panel>
+      </Section>
+    );
+  }
 
   return (
     <Async query={team}>
