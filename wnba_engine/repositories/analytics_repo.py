@@ -788,9 +788,12 @@ SELECT g.id, g.start_time, g.status, g.home_score, g.away_score,
 """
 
 # ------------------------------------------------------------------- players
-# `has_image` comes from the crosswalk rather than from asking object storage
-# per row: the mirror only fetches players with an ESPN id, so that mapping is
-# exactly what determines whether an image can exist.
+# `has_image` starts from the crosswalk rather than asking object storage per
+# row: the mirror only fetches players with an ESPN id, so that mapping is
+# most of what determines whether an image can exist. It isn't all of it --
+# an id existing doesn't mean ESPN's own resizer actually has a photo behind
+# it, so `headshot_unavailable` (set by a one-time backfill migration; see
+# 0037) excludes the known cases where it doesn't.
 _PLAYERS = """
 WITH one_row_per_game AS (
     SELECT DISTINCT ON (s.player_id, s.game_id)
@@ -814,9 +817,10 @@ SELECT p.id AS player_id, p.full_name, p.position,
        round(avg(r.assists)::numeric, 1)   AS assists,
        round(avg(r.steals)::numeric, 1)    AS steals,
        round(avg(r.blocks)::numeric, 1)    AS blocks,
-       EXISTS (SELECT 1 FROM provider_entity_map m
-                WHERE m.internal_id = p.id AND m.provider = 'espn'
-                  AND m.entity_type = 'player') AS has_image
+       (EXISTS (SELECT 1 FROM provider_entity_map m
+                 WHERE m.internal_id = p.id AND m.provider = 'espn'
+                   AND m.entity_type = 'player')
+        AND NOT p.headshot_unavailable) AS has_image
   FROM one_row_per_game r
   JOIN players p ON p.id = r.player_id
   JOIN teams   t ON t.id = r.team_id
@@ -829,9 +833,10 @@ SELECT p.id AS player_id, p.full_name, p.position,
 _PLAYER_BY_ID = """
 SELECT p.id AS player_id, p.full_name, p.position, p.height, p.weight,
        p.jersey_number, p.college, p.age,
-       EXISTS (SELECT 1 FROM provider_entity_map m
-                WHERE m.internal_id = p.id AND m.provider = 'espn'
-                  AND m.entity_type = 'player') AS has_image
+       (EXISTS (SELECT 1 FROM provider_entity_map m
+                 WHERE m.internal_id = p.id AND m.provider = 'espn'
+                   AND m.entity_type = 'player')
+        AND NOT p.headshot_unavailable) AS has_image
   FROM players p
  WHERE p.id = %(player_id)s
 """
