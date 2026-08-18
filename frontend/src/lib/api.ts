@@ -195,6 +195,10 @@ export interface PlayerRow {
   games_played: number;
   points: string | null;
   minutes: string | null;
+  rebounds: string | null;
+  assists: string | null;
+  steals: string | null;
+  blocks: string | null;
   has_image: boolean;
 }
 

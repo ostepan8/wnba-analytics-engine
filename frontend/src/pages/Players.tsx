@@ -5,7 +5,7 @@ import { useQuery } from "../lib/api";
 import { CURRENT_SEASON, avg, seasonOptions } from "../lib/format";
 import { useSort } from "../lib/useSort";
 
-type SortColumn = "games_played" | "minutes" | "points";
+type SortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists" | "steals" | "blocks";
 
 /** Debounced so typing a name does not fire a request per keystroke. */
 function useDebounced<T>(value: T, delay = 250) {
@@ -91,6 +91,34 @@ export default function Players() {
                       direction={direction}
                       onSort={toggleSort}
                     />
+                    <SortTh
+                      label="REB"
+                      column="rebounds"
+                      active={sortKey === "rebounds"}
+                      direction={direction}
+                      onSort={toggleSort}
+                    />
+                    <SortTh
+                      label="AST"
+                      column="assists"
+                      active={sortKey === "assists"}
+                      direction={direction}
+                      onSort={toggleSort}
+                    />
+                    <SortTh
+                      label="STL"
+                      column="steals"
+                      active={sortKey === "steals"}
+                      direction={direction}
+                      onSort={toggleSort}
+                    />
+                    <SortTh
+                      label="BLK"
+                      column="blocks"
+                      active={sortKey === "blocks"}
+                      direction={direction}
+                      onSort={toggleSort}
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -104,6 +132,10 @@ export default function Players() {
                       <td>{player.games_played}</td>
                       <td>{avg(player.minutes)}</td>
                       <td>{avg(player.points)}</td>
+                      <td>{avg(player.rebounds)}</td>
+                      <td>{avg(player.assists)}</td>
+                      <td>{avg(player.steals)}</td>
+                      <td>{avg(player.blocks)}</td>
                     </tr>
                   ))}
                 </tbody>
