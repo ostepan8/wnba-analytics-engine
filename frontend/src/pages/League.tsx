@@ -69,7 +69,9 @@ export default function League() {
   const [season, setSeason] = useState(CURRENT_SEASON);
   const seasons = useMemo(() => seasonOptions(), []);
 
-  const standings = useQuery<{ standings: StandingRow[] }>(`/standings?season=${season}`);
+  const standings = useQuery<{ standings: StandingRow[]; race_open: boolean }>(
+    `/standings?season=${season}`,
+  );
   const leaders = useQuery<{ leaders: LeaderRow[] }>(`/leaders?season=${season}&limit=10`);
   const shots = useQuery<ShotChartResponse>(`/shots?season=${season}`);
   const efficiency = useQuery<{ players: EfficiencyRow[] }>(
@@ -97,9 +99,14 @@ export default function League() {
       <Section title={`${season} season`} note="Standings, scoring, and league-wide shooting.">
         <div style={{ display: "grid", gap: "var(--s-4)" }}>
           <Async query={standings} empty={(d) => d.standings.length === 0}>
-            {() =>
+            {(data) =>
               conferences.map(([conference, rows]) => (
-                <Panel key={conference} title={conference} flush>
+                <Panel
+                  key={conference}
+                  title={conference}
+                  hint={data.race_open ? "Race open" : "Field decided"}
+                  flush
+                >
                   <StandingsTable rows={rows} />
                 </Panel>
               ))
