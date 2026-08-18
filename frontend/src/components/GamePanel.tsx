@@ -16,18 +16,9 @@ import Matchup from "./Matchup";
 import PropTrends from "./PropTrends";
 import LazySection from "./LazySection";
 import { Async, PlayerCell, TeamLogo } from "./ui";
-import type {
-  BoxScoreRow,
-  ClosingLine,
-  FlowPlay,
-  GamePropRow,
-  GameRow,
-  MarketPropRow,
-  Query,
-  SlateTeam,
-} from "../lib/api";
-import { moneylineLabel, propLabel, spreadLabel, useQuery } from "../lib/api";
-import { madeAttempted, pct, signed, timeOf } from "../lib/format";
+import type { BoxScoreRow, ClosingLine, FlowPlay, GameRow, SlateTeam } from "../lib/api";
+import { moneylineLabel, spreadLabel, useQuery } from "../lib/api";
+import { madeAttempted, signed, timeOf } from "../lib/format";
 
 /** A titled block inside a game. Sections read in order rather than hiding
     behind tabs; each mounts as it nears the viewport. */
@@ -59,144 +50,6 @@ function Block({
       </h4>
       <LazySection minHeight={minHeight ?? 260}>{children}</LazySection>
     </section>
-  );
-}
-
-/* --------------------------------------------------------------- tabs --- */
-
-/** An empty tab explains itself. "Nothing recorded" reads as a broken feature;
-    these gaps have causes, and naming them is the difference. */
-function NotCovered({ what, why }: { what: string; why: string }) {
-  return (
-    <p className="empty">
-      No {what} recorded for this game.
-      <br />
-      <span style={{ fontSize: "var(--t-xs)" }}>{why}</span>
-    </p>
-  );
-}
-
-/** Live props from Kalshi and Polymarket.
- *
- * These are the props that still arrive: the venues are free and unmetered and
- * captured every half hour, while the sportsbook prop feed is paid and lapsed
- * on 2026-08-03. Both are normalised to a line and the probability of going
- * over it, so a Kalshi threshold ("15+") and a Polymarket O/U sit in one table.
- */
-function MarketProps({ gameId }: { gameId: number }) {
-  const query = useQuery<{ props: MarketPropRow[] }>(
-    `/lines/market-props?game_id=${gameId}&limit=300`,
-  );
-  if (!query.loading && !query.error && !query.data?.props.length) return null;
-  return (
-    <div style={{ marginBottom: "var(--s-5)" }}>
-      <h4 style={{ fontSize: "var(--t-sm)", fontWeight: 620, marginBottom: "var(--s-2)" }}>
-        Prediction markets <span className="muted">· live</span>
-      </h4>
-      <Async query={query} empty={(data) => data.props.length === 0}>
-        {(data) => (
-          <div className="table-wrap" style={{ maxHeight: 360, overflowY: "auto" }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="name">Player</th>
-                  <th>Market</th>
-                  <th>Line</th>
-                  <th>Over</th>
-                  <th>Venue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.props.map((row) => (
-                  <tr key={`${row.provider}-${row.player_id}-${row.prop_type}-${row.line}`}>
-                    <td className="name">
-                      <PlayerCell playerId={row.player_id} name={row.full_name} />
-                    </td>
-                    <td>{propLabel(row.prop_type)}</td>
-                    <td className="num">o{row.line}</td>
-                    <td className="num">{pct(Number(row.over_probability))}</td>
-                    <td className="muted">{row.provider}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Async>
-    </div>
-  );
-}
-
-function PropsTab({ gameId }: { gameId: number }) {
-  const query = useQuery<{ props: GamePropRow[] }>(`/games/${gameId}/props`);
-  const hasSportsbook = !!query.data?.props.length;
-  return (
-    <>
-      <MarketProps gameId={gameId} />
-      {!query.loading && !query.error && !hasSportsbook ? (
-        <NotCovered
-          what="sportsbook prop lines"
-          why="That feed is paid and its key lapsed on 2026-08-03. Prediction-market props above are free and still live."
-        />
-      ) : (
-        <SportsbookProps query={query} />
-      )}
-    </>
-  );
-}
-
-function SportsbookProps({ query }: { query: Query<{ props: GamePropRow[] }> }) {
-  return (
-    <Async query={query} empty={(data) => data.props.length === 0}>
-      {(data) => (
-        <div className="table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th className="name">Player</th>
-                <th>Team</th>
-                <th>Market</th>
-                <th>Line</th>
-                <th>Actual</th>
-                <th>Result</th>
-                <th>Books</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.props.map((row) => {
-                const line = Number(row.line);
-                const settled = row.realized != null;
-                const over = settled && row.realized! > line;
-                const push = settled && row.realized === line;
-                return (
-                  <tr key={`${row.player_id}-${row.prop_type}`}>
-                    <td className="name">
-                      <PlayerCell playerId={row.player_id} name={row.full_name} />
-                    </td>
-                    <td>{row.team_abbr ?? "—"}</td>
-                    <td>{propLabel(row.prop_type)}</td>
-                    <td className="num">{row.line}</td>
-                    <td className="num">{row.realized ?? "—"}</td>
-                    <td>
-                      {!settled ? (
-                        <span className="muted">pending</span>
-                      ) : push ? (
-                        <span className="badge">push</span>
-                      ) : (
-                        <span className={over ? "badge badge--good" : "badge badge--bad"}>
-                          {over ? "over" : "under"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="num muted">{row.books}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Async>
   );
 }
 
@@ -396,14 +249,10 @@ export default function GamePanel({
         />
       </Block>
 
-      <Block title="Prop lines" minHeight={300}>
-        <PropsTab gameId={game.id} />
-      </Block>
-
       <Block title="Shot charts" minHeight={420}>
         <div className="grid grid--2">
-          <TeamShots gameId={game.id} teamId={game.away_team_id} label={game.away_team} />
-          <TeamShots gameId={game.id} teamId={game.home_team_id} label={game.home_team} />
+          <TeamShots gameId={game.id} teamId={game.away_team_id} label={game.away_team} gameStatus={game.status} />
+          <TeamShots gameId={game.id} teamId={game.home_team_id} label={game.home_team} gameStatus={game.status} />
         </div>
       </Block>
 

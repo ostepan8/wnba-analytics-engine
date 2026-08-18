@@ -324,6 +324,54 @@ SELECT s.shot_zone_basic AS zone,
  ORDER BY 2 DESC
 """
 
+# A team's shot chart windowed by RECENT GAMES rather than season -- built
+# for previewing a game that hasn't been played yet, where the season-long
+# profile above would silently include nothing (no shots exist for a future
+# game) and a single game's shots would be too few to bin meaningfully. Games
+# not yet final are excluded by construction: ordering by start_time DESC and
+# taking the games table's own rows says nothing about whether shots exist yet,
+# so the JOIN to shot_locations is what actually limits this to played games.
+_TEAM_RECENT_GAMES = """
+SELECT g.id
+  FROM games g
+ WHERE %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
+   AND g.season_type IN ('regular-season', 'post-season')
+   AND g.status = 'final'
+ ORDER BY g.start_time DESC
+ LIMIT %(last_n_games)s
+"""
+
+_TEAM_RECENT_SHOT_CHART = """
+WITH recent_games AS (""" + _TEAM_RECENT_GAMES + """)
+SELECT (floor(s.loc_x / %(bin)s) * %(bin)s)::int AS x,
+       (floor(s.loc_y / %(bin)s) * %(bin)s)::int AS y,
+       count(*)                        AS attempts,
+       count(*) FILTER (WHERE s.made)  AS makes,
+       sum(CASE WHEN s.made
+                THEN CASE WHEN s.shot_zone_basic LIKE '%%3%%' THEN 3 ELSE 2 END
+                ELSE 0 END)            AS points
+  FROM shot_locations s
+  JOIN recent_games rg ON rg.id = s.game_id
+ WHERE s.team_id = %(team_id)s::bigint
+   AND s.loc_y BETWEEN -50 AND 470
+ GROUP BY 1, 2
+ ORDER BY 1, 2
+"""
+
+_TEAM_RECENT_SHOT_ZONES = """
+WITH recent_games AS (""" + _TEAM_RECENT_GAMES + """)
+SELECT s.shot_zone_basic AS zone,
+       count(*)                        AS attempts,
+       count(*) FILTER (WHERE s.made)  AS makes,
+       round(avg(s.shot_distance)::numeric, 1) AS avg_distance
+  FROM shot_locations s
+  JOIN recent_games rg ON rg.id = s.game_id
+ WHERE s.team_id = %(team_id)s::bigint
+   AND s.shot_zone_basic IS NOT NULL
+ GROUP BY 1
+ ORDER BY 2 DESC
+"""
+
 # Usage against efficiency -- the standard way to separate volume from value.
 #
 # Same DISTINCT ON guard as the leaders query, and for the same reason:
@@ -502,6 +550,34 @@ def fetch_shot_zones(
     return _all(
         conn, _SHOT_ZONES, {"season": season, "player_id": player_id, "team_id": team_id}
     )
+
+
+def fetch_team_recent_shot_chart(
+    conn: Connection, *, team_id: int, last_n_games: int, bin_size: int
+) -> list[dict[str, Any]]:
+    return _all(
+        conn,
+        _TEAM_RECENT_SHOT_CHART,
+        {"team_id": team_id, "last_n_games": last_n_games, "bin": bin_size},
+    )
+
+
+def fetch_team_recent_shot_zones(
+    conn: Connection, *, team_id: int, last_n_games: int
+) -> list[dict[str, Any]]:
+    return _all(
+        conn, _TEAM_RECENT_SHOT_ZONES, {"team_id": team_id, "last_n_games": last_n_games}
+    )
+
+
+def fetch_team_recent_game_ids(
+    conn: Connection, *, team_id: int, last_n_games: int
+) -> list[int]:
+    """How many of the requested games actually exist -- early in a season,
+    "last 10" may only find 4, and the response should say so rather than
+    implying a full window."""
+    rows = _all(conn, _TEAM_RECENT_GAMES, {"team_id": team_id, "last_n_games": last_n_games})
+    return [int(row["id"]) for row in rows]
 
 
 def fetch_efficiency(

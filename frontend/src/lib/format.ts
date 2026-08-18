@@ -26,6 +26,12 @@ export const signed = (value: number | string | null | undefined, digits = 0) =>
 export const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+/** Like shortDate, but with the year -- for any list that can span more than
+ *  one season (head-to-head history, career game logs), where "Jun 17" is
+ *  ambiguous the moment two meetings land on the same date a year apart. */
+export const shortDateWithYear = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
 export const longDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, {
     weekday: "short",
