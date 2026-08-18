@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ShotChart, { ShotChartLegend } from "../charts/ShotChart";
+import PlayerMatchup from "../components/PlayerMatchup";
 import PropLines from "../components/PropLines";
 import {
   Async,
@@ -176,6 +177,15 @@ export default function PlayerDetail() {
                 </div>
               </Panel>
             </Section>
+
+            {teamId && (
+              <PlayerMatchup
+                playerTeamId={teamId}
+                season={season}
+                gameLog={data.game_log}
+                playerZones={shots.data?.zones ?? []}
+              />
+            )}
 
             <div className="grid grid--sidebar">
               <Section title="Shot chart" note={`${season} season.`}>
