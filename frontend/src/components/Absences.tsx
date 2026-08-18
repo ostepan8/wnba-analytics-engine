@@ -26,18 +26,19 @@ import { PlayerCell } from "./ui";
 import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
 
-/** One number, not two. The trailing-window count alone already covers what
- *  the current streak used to add: the streak is always contained inside
- *  this window, so anything a 5+ streak would have flagged already clears
- *  this bar on its own, and a player back for one game after being out
- *  most of the month (streak resets to near 0) still shows up here.
- *  Nothing under 5 -- a short absence still reads as real news on its own. */
+/** "In a row" answers the question this exists for -- is she in the lineup
+ *  right now, or not -- so it leads whenever there's a live streak. A streak
+ *  of 0 means she's back, which is exactly the case the streak alone can't
+ *  say anything else about: the trailing-window count fills in why she's
+ *  still listed here at all (out for most of the month, not just fresh
+ *  news that she played last night). Nothing under 5 either way -- a short
+ *  absence still reads as real news on its own. */
 function longAbsenceLabel(player: AbsentPlayer): string | null {
   if (player.recent_missed < 5 || player.recent_window === 0) return null;
-  if (player.recent_missed >= player.recent_window) {
-    return `missed last ${player.recent_window} games`;
+  if (player.games_missed > 0) {
+    return `${player.games_missed} in a row`;
   }
-  return `missed ${player.recent_missed} of last ${player.recent_window} games`;
+  return `back · missed ${player.recent_missed} of last ${player.recent_window} games`;
 }
 
 function Line({
