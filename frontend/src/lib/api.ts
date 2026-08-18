@@ -163,6 +163,8 @@ export interface RosterRow {
   points: string | null;
   rebounds: string | null;
   assists: string | null;
+  steals: string | null;
+  blocks: string | null;
   minutes: string | null;
 }
 

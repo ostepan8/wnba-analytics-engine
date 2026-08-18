@@ -26,7 +26,14 @@ import { CURRENT_SEASON, avg, num, pct, rate, seasonOptions, shortDate } from ".
 import { teamColor } from "../lib/teamColors";
 import { useSort } from "../lib/useSort";
 
-type RosterSortColumn = "games_played" | "minutes" | "points" | "rebounds" | "assists";
+type RosterSortColumn =
+  | "games_played"
+  | "minutes"
+  | "points"
+  | "rebounds"
+  | "assists"
+  | "steals"
+  | "blocks";
 type ScheduleSortColumn = "start_time" | "spread" | "total";
 
 interface TeamResponse {
@@ -216,6 +223,20 @@ export default function TeamDetail() {
                             direction={roster.direction}
                             onSort={roster.toggleSort}
                           />
+                          <SortTh
+                            label="STL"
+                            column="steals"
+                            active={roster.sortKey === "steals"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
+                          <SortTh
+                            label="BLK"
+                            column="blocks"
+                            active={roster.sortKey === "blocks"}
+                            direction={roster.direction}
+                            onSort={roster.toggleSort}
+                          />
                         </tr>
                       </thead>
                       <tbody>
@@ -230,6 +251,8 @@ export default function TeamDetail() {
                             <td>{avg(player.points)}</td>
                             <td>{avg(player.rebounds)}</td>
                             <td>{avg(player.assists)}</td>
+                            <td>{avg(player.steals)}</td>
+                            <td>{avg(player.blocks)}</td>
                           </tr>
                         ))}
                       </tbody>
