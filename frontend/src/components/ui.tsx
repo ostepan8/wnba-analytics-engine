@@ -19,14 +19,17 @@ export function Panel({
   hint?: string;
   tools?: ReactNode;
   flush?: boolean;
-  /** A team's real colour, as a 4px top edge. Decorative only -- never carries
-   *  text, so an off-brand hex or a low-contrast one against either surface
-   *  still reads fine. */
+  /** Any CSS `background` value -- a team's real colour, or a two-team split
+   *  gradient -- as a 4px strip across the panel's own top edge. Its own
+   *  element rather than a border, so a gradient works exactly like a solid
+   *  colour does. Decorative only -- never carries text, so an off-brand hex
+   *  or a low-contrast one against either surface still reads fine. */
   accent?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="panel" style={accent ? { borderTop: `4px solid ${accent}` } : undefined}>
+    <section className="panel">
+      {accent && <div style={{ height: 4, background: accent }} />}
       {(title || tools) && (
         <header className="panel__head">
           {title && <h3 className="panel__title">{title}</h3>}
