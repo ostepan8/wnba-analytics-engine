@@ -671,7 +671,8 @@ SELECT g.id, g.start_time, g.status, g.home_score, g.away_score,
 _PLAYERS = """
 WITH one_row_per_game AS (
     SELECT DISTINCT ON (s.player_id, s.game_id)
-           s.player_id, s.game_id, s.team_id, s.points, s.minutes
+           s.player_id, s.game_id, s.team_id, s.points, s.minutes,
+           s.rebounds, s.assists, s.steals, s.blocks
       FROM player_game_stats s
       JOIN games g ON g.id = s.game_id
      WHERE g.season = %(season)s
@@ -683,9 +684,13 @@ WITH one_row_per_game AS (
 SELECT p.id AS player_id, p.full_name, p.position,
        (array_agg(t.abbreviation ORDER BY r.game_id DESC))[1] AS team_abbr,
        (array_agg(t.id           ORDER BY r.game_id DESC))[1] AS team_id,
-       count(*)                          AS games_played,
-       round(avg(r.points)::numeric, 1)  AS points,
-       round(avg(r.minutes)::numeric, 1) AS minutes,
+       count(*)                            AS games_played,
+       round(avg(r.points)::numeric, 1)    AS points,
+       round(avg(r.minutes)::numeric, 1)   AS minutes,
+       round(avg(r.rebounds)::numeric, 1)  AS rebounds,
+       round(avg(r.assists)::numeric, 1)   AS assists,
+       round(avg(r.steals)::numeric, 1)    AS steals,
+       round(avg(r.blocks)::numeric, 1)    AS blocks,
        EXISTS (SELECT 1 FROM provider_entity_map m
                 WHERE m.internal_id = p.id AND m.provider = 'espn'
                   AND m.entity_type = 'player') AS has_image
