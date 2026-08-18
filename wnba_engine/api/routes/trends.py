@@ -127,7 +127,14 @@ def game_matchup(
 
         # What is missing, not just who. Three out is the same headline for
         # three bench players as for a 34-minute leading scorer.
-        absences = summarise_absences([dict(row) for row in impact.get(team_id, [])])
+        impact_rows = [dict(row) for row in impact.get(team_id, [])]
+        # How long, not just whether -- a player out 25 games ago is already
+        # priced into this team's recent form; one who just went down is not.
+        player_ids = [int(row["player_id"]) for row in impact_rows]
+        missed = form_repo.fetch_games_missed(conn, team_id, player_ids, season=season)
+        for row in impact_rows:
+            row["games_missed"] = missed.get(int(row["player_id"]), 0)
+        absences = summarise_absences(impact_rows)
         points_for = team_form.get("points_for")
         for name in ("out", "at_risk"):
             absences[name]["share_of_points"] = share_of(
