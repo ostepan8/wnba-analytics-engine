@@ -344,26 +344,41 @@ totals AS (
            count(*) FILTER (WHERE rn <= %(window)s)     AS window_n
       FROM team_games
 ),
-played AS (
-    SELECT DISTINCT s.player_id, tg.rn
+-- Every row -- played OR a recorded DNP -- this player has for THIS team,
+-- not any team. Scoped by team_id on purpose, twice over: an appearance as
+-- the OPPONENT in a game this team also played must not count as "played
+-- for this team" (the bug this replaces let it), and a row's mere presence
+-- for a game -- played or not -- means she was actually on this roster for
+-- it, which is what lets a trade's boundary be detected at all.
+on_roster AS (
+    SELECT s.player_id, tg.rn, (s.did_not_play IS NOT TRUE) AS played
       FROM player_game_stats s
       JOIN team_games tg ON tg.game_id = s.game_id
      WHERE s.player_id = ANY(%(player_ids)s::bigint[])
-       AND s.did_not_play IS NOT TRUE
+       AND s.team_id = %(team_id)s::bigint
 ),
 per_player AS (
     SELECT player_id,
-           min(rn)                                  AS first_played_rn,
-           count(*) FILTER (WHERE rn <= %(window)s)  AS played_in_window
-      FROM played
+           min(rn) FILTER (WHERE played)             AS first_played_rn,
+           -- The oldest game she has ANY row for on this roster -- how far
+           -- back her documented tenure here actually reaches. A game older
+           -- than this happened before she ever suited up for this team.
+           max(rn)                                    AS tenure_start_rn,
+           count(*) FILTER (WHERE played AND rn <= %(window)s) AS played_in_window
+      FROM on_roster
      GROUP BY player_id
 )
 SELECT pid AS player_id,
        -- Never played this season at all: missed every game the team has
        -- final so far, not "no data" -- coalesce to one past the total.
        coalesce(pp.first_played_rn, totals.n + 1) - 1 AS streak,
-       totals.window_n - coalesce(pp.played_in_window, 0) AS window_missed,
-       totals.window_n AS window_size
+       -- The window itself shrinks to whatever of it she was actually on
+       -- this roster for. Traded in nine games ago, on a 20-game window: the
+       -- other eleven were never hers to miss, so they no longer count
+       -- against her in either the numerator or the denominator.
+       LEAST(totals.window_n, coalesce(pp.tenure_start_rn, totals.window_n))
+           - coalesce(pp.played_in_window, 0) AS window_missed,
+       LEAST(totals.window_n, coalesce(pp.tenure_start_rn, totals.window_n)) AS window_size
   FROM unnest(%(player_ids)s::bigint[]) AS pid
   LEFT JOIN per_player pp ON pp.player_id = pid
  CROSS JOIN totals

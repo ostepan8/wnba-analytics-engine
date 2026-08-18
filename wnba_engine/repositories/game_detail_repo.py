@@ -123,6 +123,14 @@ SELECT s.player_id,
     AND g.season_type IN ('regular-season', 'post-season')
    AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
    AND s.team_id IS DISTINCT FROM %(team_id)s::bigint
+   -- IS DISTINCT FROM treats NULL as distinct from everything, so a shot row
+   -- with an unresolved team_id (an unmatched provider identity -- see the
+   -- Kayla Alexander / Megan Gustafson class of bug) passed this filter for
+   -- EVERY team_id queried, including the shooter's own team: querying that
+   -- team's own defense leaked her whole season back in as if she'd gone off
+   -- against herself. An unresolved shooter can't be attributed to either
+   -- side of a matchup, so she's excluded outright rather than risk it again.
+   AND s.team_id IS NOT NULL
    AND s.player_id IS NOT NULL
  GROUP BY s.player_id, p.full_name, t.abbreviation
 HAVING count(*) >= %(min_attempts)s
