@@ -310,8 +310,11 @@ export default function PlayerDetail() {
                           <th>PTS</th>
                           <th>REB</th>
                           <th>AST</th>
+                          <th>STL</th>
+                          <th>BLK</th>
                           <th>FG</th>
                           <th>3P</th>
+                          <th>TO</th>
                           <th>+/-</th>
                         </tr>
                       </thead>
@@ -329,6 +332,8 @@ export default function PlayerDetail() {
                             <td>{row.points ?? "—"}</td>
                             <td>{row.rebounds ?? "—"}</td>
                             <td>{row.assists ?? "—"}</td>
+                            <td>{row.steals ?? "—"}</td>
+                            <td>{row.blocks ?? "—"}</td>
                             <td>
                               {madeAttempted(row.field_goals_made, row.field_goals_attempted)}
                             </td>
@@ -338,6 +343,7 @@ export default function PlayerDetail() {
                                 row.three_pointers_attempted,
                               )}
                             </td>
+                            <td>{row.turnovers ?? "—"}</td>
                             <td>{signed(row.plus_minus)}</td>
                           </tr>
                         ))}
