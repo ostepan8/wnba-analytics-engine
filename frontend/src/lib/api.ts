@@ -762,6 +762,11 @@ export interface AbsentPlayer {
   /** Consecutive games missed counting back from the team's most recent
    *  final game -- the current absence streak, not a season DNP total. */
   games_missed: number;
+  /** How many of the last `recent_window` team games she's missed --
+   *  not necessarily consecutively, so this catches an in-and-out stretch
+   *  a pure streak would understate. */
+  recent_missed: number;
+  recent_window: number;
 }
 
 export interface AbsenceBucket {

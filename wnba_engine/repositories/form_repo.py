@@ -317,6 +317,18 @@ def fetch_injury_impact(
 # number on this page (the team's own recent form most of all), while a
 # player who just went down has not. The stat is not what changes; how long
 # it has been true is.
+# The trailing window "missed N of last W" is measured over. Matches the
+# L20 window already used elsewhere on the site (PropTrends' L5/L10/L20).
+RECENT_WINDOW_GAMES = 20
+
+# Two different questions, both worth asking:
+#
+#   "in a row"      -- the current, unbroken absence streak. A player who
+#                       just went down has a small one; the number IS the news.
+#   "N of last W"    -- how much of the recent stretch she's missed, streak
+#                       or not. Catches the case a pure streak misses: back for
+#                       one game, out again, back-and-forth all month reads as
+#                       "1 in a row" even though she's barely played.
 _PLAYERS_GAMES_MISSED = """
 WITH team_games AS (
     SELECT g.id AS game_id,
@@ -327,37 +339,62 @@ WITH team_games AS (
        AND g.status = 'final'
        AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
 ),
-total AS (
-    SELECT count(*) AS n FROM team_games
+totals AS (
+    SELECT count(*)                                    AS n,
+           count(*) FILTER (WHERE rn <= %(window)s)     AS window_n
+      FROM team_games
 ),
-first_played AS (
-    SELECT s.player_id, min(tg.rn) AS rn
+played AS (
+    SELECT DISTINCT s.player_id, tg.rn
       FROM player_game_stats s
       JOIN team_games tg ON tg.game_id = s.game_id
      WHERE s.player_id = ANY(%(player_ids)s::bigint[])
        AND s.did_not_play IS NOT TRUE
-     GROUP BY s.player_id
+),
+per_player AS (
+    SELECT player_id,
+           min(rn)                                  AS first_played_rn,
+           count(*) FILTER (WHERE rn <= %(window)s)  AS played_in_window
+      FROM played
+     GROUP BY player_id
 )
 SELECT pid AS player_id,
        -- Never played this season at all: missed every game the team has
        -- final so far, not "no data" -- coalesce to one past the total.
-       coalesce(fp.rn, t.n + 1) - 1 AS games_missed
+       coalesce(pp.first_played_rn, totals.n + 1) - 1 AS streak,
+       totals.window_n - coalesce(pp.played_in_window, 0) AS window_missed,
+       totals.window_n AS window_size
   FROM unnest(%(player_ids)s::bigint[]) AS pid
-  LEFT JOIN first_played fp ON fp.player_id = pid
- CROSS JOIN total t
+  LEFT JOIN per_player pp ON pp.player_id = pid
+ CROSS JOIN totals
 """
 
 
 def fetch_games_missed(
     conn: Connection, team_id: int, player_ids: list[int], *, season: int
-) -> dict[int, int]:
-    """Consecutive games missed, counting back from the team's most recent
-    final game -- the current absence streak, not a season-long DNP total."""
+) -> dict[int, dict[str, int]]:
+    """Per player: the current unbroken absence streak, counting back from
+    the team's most recent final game, plus how many of the last
+    RECENT_WINDOW_GAMES she's missed (not necessarily consecutively) --
+    the second catches an in-and-out stretch the streak alone would miss.
+    """
     if not player_ids:
         return {}
     rows = _all(
         conn,
         _PLAYERS_GAMES_MISSED,
-        {"team_id": team_id, "player_ids": player_ids, "season": season},
+        {
+            "team_id": team_id,
+            "player_ids": player_ids,
+            "season": season,
+            "window": RECENT_WINDOW_GAMES,
+        },
     )
-    return {int(row["player_id"]): int(row["games_missed"]) for row in rows}
+    return {
+        int(row["player_id"]): {
+            "streak": int(row["streak"]),
+            "window_missed": int(row["window_missed"]),
+            "window_size": int(row["window_size"]),
+        }
+        for row in rows
+    }
