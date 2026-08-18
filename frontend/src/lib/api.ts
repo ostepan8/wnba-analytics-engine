@@ -759,6 +759,9 @@ export interface AbsentPlayer {
   points: string | null;
   rebounds: string | null;
   assists: string | null;
+  /** Consecutive games missed counting back from the team's most recent
+   *  final game -- the current absence streak, not a season DNP total. */
+  games_missed: number;
 }
 
 export interface AbsenceBucket {

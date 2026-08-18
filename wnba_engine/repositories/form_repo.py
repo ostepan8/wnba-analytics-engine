@@ -307,3 +307,57 @@ def fetch_injury_impact(
     for row in rows:
         by_team.setdefault(int(row["team_id"]), []).append(row)
     return by_team
+
+
+# How many of the team's own most recent games a player has missed, counting
+# back from the newest until the first one she actually played.
+#
+# A season average next to "Out" invites reading it as what tonight loses --
+# but a player out 25 games ago already had her absence baked into every
+# number on this page (the team's own recent form most of all), while a
+# player who just went down has not. The stat is not what changes; how long
+# it has been true is.
+_PLAYERS_GAMES_MISSED = """
+WITH team_games AS (
+    SELECT g.id AS game_id,
+           row_number() OVER (ORDER BY g.start_time DESC) AS rn
+      FROM games g
+     WHERE g.season = %(season)s
+        AND g.season_type IN ('regular-season', 'post-season')
+       AND g.status = 'final'
+       AND %(team_id)s::bigint IN (g.home_team_id, g.away_team_id)
+),
+total AS (
+    SELECT count(*) AS n FROM team_games
+),
+first_played AS (
+    SELECT s.player_id, min(tg.rn) AS rn
+      FROM player_game_stats s
+      JOIN team_games tg ON tg.game_id = s.game_id
+     WHERE s.player_id = ANY(%(player_ids)s::bigint[])
+       AND s.did_not_play IS NOT TRUE
+     GROUP BY s.player_id
+)
+SELECT pid AS player_id,
+       -- Never played this season at all: missed every game the team has
+       -- final so far, not "no data" -- coalesce to one past the total.
+       coalesce(fp.rn, t.n + 1) - 1 AS games_missed
+  FROM unnest(%(player_ids)s::bigint[]) AS pid
+  LEFT JOIN first_played fp ON fp.player_id = pid
+ CROSS JOIN total t
+"""
+
+
+def fetch_games_missed(
+    conn: Connection, team_id: int, player_ids: list[int], *, season: int
+) -> dict[int, int]:
+    """Consecutive games missed, counting back from the team's most recent
+    final game -- the current absence streak, not a season-long DNP total."""
+    if not player_ids:
+        return {}
+    rows = _all(
+        conn,
+        _PLAYERS_GAMES_MISSED,
+        {"team_id": team_id, "player_ids": player_ids, "season": season},
+    )
+    return {int(row["player_id"]): int(row["games_missed"]) for row in rows}

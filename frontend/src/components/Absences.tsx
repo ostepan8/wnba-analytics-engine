@@ -12,12 +12,27 @@
  *
  * Descriptive only: what a missing player averaged is a statement about what
  * has been removed, not a forecast of what her team will now score.
+ *
+ * Duration matters as much as production. A season average next to "Out"
+ * reads the same whether she went down an hour ago or in May -- but a
+ * player out 25 games is already baked into every number on this page,
+ * her team's own recent form most of all, while one who just went down is
+ * not. Long-standing absences get a plain marker instead of quietly
+ * looking as fresh as a new one.
  */
 
-import { Link } from "react-router-dom";
 import type { AbsenceBucket, MatchupSide } from "../lib/api";
+import { PlayerCell } from "./ui";
 import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
+
+/** null under 5 -- a short absence needs no marker, it still reads as news. */
+function longAbsenceLabel(gamesMissed: number): string | null {
+  if (gamesMissed >= 25) return "25+ games out";
+  if (gamesMissed >= 10) return "10+ games out";
+  if (gamesMissed >= 5) return "5+ games out";
+  return null;
+}
 
 function Line({
   label,
@@ -53,27 +68,39 @@ function Line({
           </span>
         )}
       </div>
-      <ul style={{ display: "grid", gap: 2, paddingLeft: "var(--s-2)" }}>
-        {bucket.players.map((player) => (
-          <li
-            key={player.player_id}
-            style={{ display: "flex", gap: "var(--s-2)", fontSize: "var(--t-sm)" }}
-          >
-            <span
-              className={badgeClass(player.status)}
-              style={{ flex: "none" }}
-              title={sourceLabel(player.source) ?? undefined}
+      <ul style={{ display: "grid", gap: "var(--s-2)", paddingLeft: "var(--s-2)" }}>
+        {bucket.players.map((player) => {
+          const longAbsence = longAbsenceLabel(player.games_missed);
+          return (
+            <li
+              key={player.player_id}
+              style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", fontSize: "var(--t-sm)" }}
             >
-              {player.status}
-            </span>
-            <Link to={`/players/${player.player_id}`}>{player.full_name}</Link>
-            <span className="num muted" style={{ marginLeft: "auto", fontSize: "var(--t-xs)" }}>
-              {player.games_played === 0
-                ? "no games"
-                : `${player.minutes ?? "—"} min · ${player.points ?? "—"} pts · ${player.rebounds ?? "—"} reb · ${player.assists ?? "—"} ast`}
-            </span>
-          </li>
-        ))}
+              <span
+                className={badgeClass(player.status)}
+                style={{ flex: "none" }}
+                title={sourceLabel(player.source) ?? undefined}
+              >
+                {player.status}
+              </span>
+              <PlayerCell playerId={player.player_id} name={player.full_name} />
+              {longAbsence && (
+                <span
+                  className="muted"
+                  style={{ fontSize: "var(--t-xs)", flex: "none" }}
+                  title="Consecutive games missed so far -- already reflected in her team's recent form, not fresh news."
+                >
+                  {longAbsence}
+                </span>
+              )}
+              <span className="num muted" style={{ marginLeft: "auto", fontSize: "var(--t-xs)" }}>
+                {player.games_played === 0
+                  ? "no games"
+                  : `${player.minutes ?? "—"} min · ${player.points ?? "—"} pts · ${player.rebounds ?? "—"} reb · ${player.assists ?? "—"} ast`}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
