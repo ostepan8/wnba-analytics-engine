@@ -132,8 +132,12 @@ def game_matchup(
         # priced into this team's recent form; one who just went down is not.
         player_ids = [int(row["player_id"]) for row in impact_rows]
         missed = form_repo.fetch_games_missed(conn, team_id, player_ids, season=season)
+        empty_streak = {"streak": 0, "window_missed": 0, "window_size": 0}
         for row in impact_rows:
-            row["games_missed"] = missed.get(int(row["player_id"]), 0)
+            streak = missed.get(int(row["player_id"]), empty_streak)
+            row["games_missed"] = streak["streak"]
+            row["recent_missed"] = streak["window_missed"]
+            row["recent_window"] = streak["window_size"]
         absences = summarise_absences(impact_rows)
         points_for = team_form.get("points_for")
         for name in ("out", "at_risk"):

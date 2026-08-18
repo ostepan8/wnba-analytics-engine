@@ -21,17 +21,20 @@
  * looking as fresh as a new one.
  */
 
-import type { AbsenceBucket, MatchupSide } from "../lib/api";
+import type { AbsentPlayer, AbsenceBucket, MatchupSide } from "../lib/api";
 import { PlayerCell } from "./ui";
 import { badgeClass, sourceLabel } from "../lib/injury";
 import { pct } from "../lib/format";
 
-/** null under 5 -- a short absence needs no marker, it still reads as news. */
-function longAbsenceLabel(gamesMissed: number): string | null {
-  if (gamesMissed >= 25) return "25+ games out";
-  if (gamesMissed >= 10) return "10+ games out";
-  if (gamesMissed >= 5) return "5+ games out";
-  return null;
+/** null under 5 in a row -- a short absence needs no marker, it still reads
+ *  as news on its own. Above that: the current streak, and separately how
+ *  much of the recent stretch she's missed at all -- a player back for one
+ *  game then out again reads as "1 in a row" and would otherwise look fresh. */
+function longAbsenceLabel(player: AbsentPlayer): string | null {
+  if (player.games_missed < 5) return null;
+  const streak = `${player.games_missed} in a row`;
+  if (player.recent_window === 0) return streak;
+  return `${streak} · missed ${player.recent_missed} of last ${player.recent_window}`;
 }
 
 function Line({
@@ -70,7 +73,7 @@ function Line({
       </div>
       <ul style={{ display: "grid", gap: "var(--s-2)", paddingLeft: "var(--s-2)" }}>
         {bucket.players.map((player) => {
-          const longAbsence = longAbsenceLabel(player.games_missed);
+          const longAbsence = longAbsenceLabel(player);
           return (
             <li
               key={player.player_id}
