@@ -25,7 +25,7 @@ function Side({
   show: boolean;
 }) {
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+    <span style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", minWidth: 0 }}>
       <span
         aria-hidden="true"
         style={{
@@ -36,7 +36,18 @@ function Side({
         }}
       />
       <TeamLogo teamId={teamId} size="sm" />
-      <span style={{ fontWeight: winner ? 640 : 460, minWidth: 0 }}>{name}</span>
+      <span
+        style={{
+          fontWeight: winner ? 640 : 460,
+          flex: "1 1 auto",
+          minWidth: 0,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {name}
+      </span>
       <span
         className="num"
         style={{
@@ -69,7 +80,7 @@ function GameRowLine({ game, line }: { game: GameRow; line?: ClosingLine }) {
         alignItems: "center",
       }}
     >
-      <span style={{ display: "grid", gap: "var(--s-2)" }}>
+      <span style={{ display: "grid", gap: "var(--s-2)", minWidth: 0 }}>
         <Side
           teamId={game.away_team_id}
           abbr={game.away_abbr}

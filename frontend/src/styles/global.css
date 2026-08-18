@@ -79,7 +79,12 @@ button {
 }
 
 .page {
-  padding: var(--s-6) 0 var(--s-8);
+  /* padding-block, not the padding shorthand: .page shares <main> with
+     .container's own horizontal padding (0 var(--s-5)), and a shorthand here
+     would win the cascade outright (later in source, same specificity) and
+     zero out that inset below the 1240px content-max where .container's
+     auto-margin gutter no longer masks it. */
+  padding-block: var(--s-6) var(--s-8);
   display: flex;
   flex-direction: column;
   gap: var(--s-6);
@@ -259,7 +264,18 @@ button {
   border-bottom: 1px solid var(--line);
 }
 .table th:first-child,
-.table td:first-child { text-align: left; }
+.table td:first-child {
+  text-align: left;
+  /* Keeps the identity column in view while .table-wrap scrolls
+     horizontally on narrow viewports -- every table here is wider than a
+     phone screen, and without this the row label scrolls away with the
+     header, leaving unlabeled numbers. */
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  z-index: 1;
+}
 /* Any other column holding a name rather than a number. Without this the
    header sits right-aligned over left-aligned content. */
 .table th.name,
@@ -275,8 +291,10 @@ button {
   letter-spacing: 0.05em;
   z-index: 1;
 }
+.table thead th:first-child { z-index: 2; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr:hover { background: var(--sunken); }
+.table tbody tr:hover td:first-child { background: var(--sunken); }
 .table a:hover { color: var(--accent); }
 
 /* A sortable header cell is still a <th> -- the interactive part is the
