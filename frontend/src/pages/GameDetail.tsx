@@ -11,7 +11,13 @@ import PropTrends from "../components/PropTrends";
 import ZoneMatchups from "../components/ZoneMatchups";
 import { TimeSeries, type Series } from "../charts/primitives";
 import { Async, Panel, PlayerCell, Section, Stat, TeamLogo } from "../components/ui";
-import type { BoxScoreRow, FlowPlay, GameDetail as Game, MarketPrice, OddsRow } from "../lib/api";
+import type {
+  BoxScoreRow,
+  FlowPlay,
+  GameDetail as Game,
+  LineMovementRow,
+  MarketPrice,
+} from "../lib/api";
 import { useQuery } from "../lib/api";
 import { impliedFromAmerican, longDate, madeAttempted, pct, signed } from "../lib/format";
 import { teamColor } from "../lib/teamColors";
@@ -75,7 +81,13 @@ export default function GameDetail() {
   const game = useQuery<Game>(gameId ? `/games/${gameId}` : null);
   const box = useQuery<{ players: BoxScoreRow[] }>(gameId ? `/games/${gameId}/box` : null);
   const flow = useQuery<{ plays: FlowPlay[] }>(gameId ? `/games/${gameId}/flow` : null);
-  const odds = useQuery<{ odds: OddsRow[] }>(gameId ? `/games/${gameId}/odds?limit=500` : null);
+  // Shared with GameLines below rather than a second, separately-fetched
+  // /odds endpoint: /games/{id}/lines already carries every field /odds does
+  // (vendor, captured_at, moneyline_home_odds/away_odds) plus the spread/total
+  // history GameLines needs, so fetching both duplicated ~28KB per page view.
+  const lines = useQuery<{ movement: LineMovementRow[] }>(
+    gameId ? `/games/${gameId}/lines?limit=500` : null,
+  );
   const markets = useQuery<{ prices: MarketPrice[] }>(
     gameId ? `/games/${gameId}/markets?limit=500` : null,
   );
@@ -92,7 +104,7 @@ export default function GameDetail() {
       kalshi: new Map(),
     };
 
-    for (const row of odds.data?.odds ?? []) {
+    for (const row of lines.data?.movement ?? []) {
       const value = impliedFromAmerican(row.moneyline_home_odds);
       if (value != null) buckets.book.set(new Date(row.captured_at).getTime(), [value]);
     }
@@ -117,7 +129,7 @@ export default function GameDetail() {
         v: values.reduce((a, b) => a + b, 0) / values.length,
       })),
     }));
-  }, [odds.data, markets.data]);
+  }, [lines.data, markets.data]);
 
   return (
     <Async query={game}>
@@ -345,6 +357,7 @@ export default function GameDetail() {
                   gameId={data.id}
                   homeAbbr={data.home_abbr}
                   awayAbbr={data.away_abbr}
+                  movement={lines}
                 />
               </div>
             </Section>

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from psycopg import Connection
 
 from wnba_engine.api.deps import get_connection
-from wnba_engine.repositories import betting_repo
+from wnba_engine.repositories import analytics_repo, betting_repo
 
 router = APIRouter(tags=["lines"])
 
@@ -31,6 +31,18 @@ def _season(season: int | None) -> int:
     return season or datetime.now(UTC).year
 
 
+def _max_age_for_game(conn: Connection, game_id: int) -> int:
+    """SETTLED_MAX_AGE once a game is final, else LIVE_MAX_AGE.
+
+    A closing/quote-history endpoint for a finished game is exactly as
+    immutable as the game record itself; doesn't 404 on a missing game_id,
+    matching these endpoints' existing empty-payload behaviour.
+    """
+    game = analytics_repo.fetch_game(conn, game_id)
+    is_final = bool(game and game.get("status") == "final")
+    return SETTLED_MAX_AGE if is_final else LIVE_MAX_AGE
+
+
 @router.get("/lines/closing")
 def closing_lines(
     response: Response,
@@ -43,8 +55,17 @@ def closing_lines(
     and only then averaged, so a book that repriced forty times does not
     outvote one that posted twice.
     """
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_MAX_AGE}"
     ids = [int(value) for value in game_ids.split(",") if value.strip().isdigit()][:500]
+    # A closing line is settled the moment any one of these games is final;
+    # mixed live/finished batches keep the shorter TTL rather than risk
+    # caching a still-moving line under the long one.
+    all_final = bool(ids) and all(
+        (game := analytics_repo.fetch_game(conn, gid)) and game.get("status") == "final"
+        for gid in ids
+    )
+    response.headers["Cache-Control"] = (
+        f"public, max-age={SETTLED_MAX_AGE if all_final else LIVE_MAX_AGE}"
+    )
     return {"lines": betting_repo.fetch_closing_lines(conn, ids)}
 
 
@@ -56,7 +77,7 @@ def line_movement(
     conn: Connection = Depends(get_connection),
 ) -> dict[str, object]:
     """Every quote recorded for one game, per book, oldest first."""
-    response.headers["Cache-Control"] = f"public, max-age={LIVE_MAX_AGE}"
+    response.headers["Cache-Control"] = f"public, max-age={_max_age_for_game(conn, game_id)}"
     movement = betting_repo.fetch_line_movement(conn, game_id, limit=limit)
     return {"game_id": game_id, "movement": movement, "count": len(movement)}
 

@@ -125,7 +125,7 @@ export interface StandingsResponse {
 }
 
 /** One row of the computed standings — the seed here is league-wide, unlike
- *  the provider's conference-relative playoff_seed. */
+ *  the provider's conference-relative conference_seed. */
 export interface StandingRowLite {
   seed: number | null;
   conference_seed: number | null;
@@ -151,7 +151,9 @@ export interface TeamRow {
   games_behind: string | null;
   home_record: string | null;
   away_record: string | null;
-  playoff_seed: number | null;
+  /** The provider's own value: CONFERENCE-relative, not the real league-wide
+   *  seed -- that lives at `standing.seed` once `standing` has loaded. */
+  conference_seed: number | null;
 }
 
 export interface RosterRow {
@@ -362,13 +364,6 @@ export interface MarketPrice {
   implied_probability: string;
   captured_at: string;
   side: "home" | "away";
-}
-
-export interface OddsRow {
-  vendor: string;
-  captured_at: string;
-  moneyline_home_odds: number | null;
-  moneyline_away_odds: number | null;
 }
 
 export interface DivergenceVenue {

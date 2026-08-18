@@ -410,6 +410,7 @@ WITH one_row_per_game AS (
      WHERE g.season = %(season)s
         AND g.season_type IN ('regular-season', 'post-season')
        AND a.minutes ~ '^[0-9]+:[0-9]{2}$'
+       AND (%(player_id)s::bigint IS NULL OR a.player_id = %(player_id)s::bigint)
      ORDER BY a.player_id, a.game_id, a.source
 )
 SELECT p.id AS player_id, p.full_name,
@@ -626,10 +627,17 @@ def fetch_team_recent_game_ids(
 
 
 def fetch_efficiency(
-    conn: Connection, *, season: int, min_games: int, limit: int
+    conn: Connection, *, season: int, min_games: int, limit: int, player_id: int | None = None
 ) -> list[dict[str, Any]]:
     return _all(
-        conn, _EFFICIENCY, {"season": season, "min_games": min_games, "limit": _cap(limit)}
+        conn,
+        _EFFICIENCY,
+        {
+            "season": season,
+            "min_games": min_games,
+            "limit": _cap(limit),
+            "player_id": player_id,
+        },
     )
 
 
@@ -682,7 +690,8 @@ def fetch_team_image_targets(conn: Connection) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------- teams
 _TEAMS = """
 SELECT t.id, t.name, t.abbreviation, t.is_franchise,
-       s.conference, s.wins, s.losses, s.win_percentage, s.playoff_seed
+       s.conference, s.wins, s.losses, s.win_percentage,
+       s.playoff_seed AS conference_seed
   FROM teams t
   LEFT JOIN team_standings s ON s.team_id = t.id AND s.season = %(season)s
  WHERE t.is_franchise
@@ -692,7 +701,7 @@ SELECT t.id, t.name, t.abbreviation, t.is_franchise,
 _TEAM_BY_ID = """
 SELECT t.id, t.name, t.abbreviation, t.is_franchise,
        s.conference, s.wins, s.losses, s.win_percentage, s.games_behind,
-       s.home_record, s.away_record, s.playoff_seed
+       s.home_record, s.away_record, s.playoff_seed AS conference_seed
   FROM teams t
   LEFT JOIN team_standings s ON s.team_id = t.id AND s.season = %(season)s
  WHERE t.id = %(team_id)s
