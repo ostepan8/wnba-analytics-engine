@@ -16,15 +16,18 @@ interface SortState<K extends string> {
 /** Numeric-looking strings sort numerically, not lexicographically. The API
  *  returns most per-game averages as strings (to keep a trailing zero like
  *  "18.0"), and string-sorting would put "9.0" after "10.0". Nulls sort last
- *  in either direction -- "no data" is not the same claim as "zero". */
-function compareValues(a: unknown, b: unknown): number {
+ *  in either direction -- "no data" is not the same claim as "zero". Direction
+ *  is applied here, not by reversing the finished array: reversing a null-last
+ *  ascending sort moves the nulls to the front instead of keeping them last. */
+function compareValues(a: unknown, b: unknown, direction: SortDirection): number {
   if (a == null && b == null) return 0;
   if (a == null) return 1;
   if (b == null) return -1;
   const an = Number(a);
   const bn = Number(b);
-  if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
-  return String(a).localeCompare(String(b));
+  const cmp =
+    !Number.isNaN(an) && !Number.isNaN(bn) ? an - bn : String(a).localeCompare(String(b));
+  return direction === "asc" ? cmp : -cmp;
 }
 
 export function useSort<T, K extends string>(
@@ -37,8 +40,9 @@ export function useSort<T, K extends string>(
   const sorted = useMemo(() => {
     if (!state.key) return rows;
     const key = state.key;
-    const copy = [...rows].sort((a, b) => compareValues(accessor(a, key), accessor(b, key)));
-    return state.direction === "asc" ? copy : copy.reverse();
+    return [...rows].sort((a, b) =>
+      compareValues(accessor(a, key), accessor(b, key), state.direction),
+    );
   }, [rows, state, accessor]);
 
   function toggleSort(key: K) {
