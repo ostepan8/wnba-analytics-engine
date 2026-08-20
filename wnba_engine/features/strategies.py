@@ -220,8 +220,20 @@ def team_style(source: FeatureRowSource) -> Pipeline:
 
     - `style_distance` and the per-dimension `*_gap` columns describe the
       MATCHUP. A stylistic mismatch is invisible in either team's own
-      numbers, and the archetype work found matchup effects large enough
-      to swamp home court -- perimeter teams beat grinders 74% at home.
+      numbers. The motivating claim for this -- an outside observation
+      that stylistic mismatches can swamp home-court advantage, cited
+      elsewhere as "perimeter teams beat grinders ~74% at home" -- is
+      UNVERIFIED: no notebook, script, or MODELING_FINDINGS.md entry in
+      this repo reproduces it, unlike this project's other quantitative
+      claims (which get a retraction section when they don't hold up, see
+      MODELING_FINDINGS.md). Treat it as informal motivation, not a
+      validated finding, until archetype membership itself ships
+      (FEATURE_ROADMAP.md ss4, still `todo`) and the number can be
+      reproduced in-repo. What IS measured here: on the real frame
+      (2,438 rows, as-of 2026-07-01), games between stylistically
+      different teams finish with an 11% larger absolute margin than
+      games between similar ones -- directionally consistent with the
+      claim, not a reproduction of its magnitude (see commit 9bab129).
     - `style_volatility` compares a 5-game window against a 15-game one,
       separating a settled identity from a team mid-reinvention. A single
       rolling average cannot tell those apart.

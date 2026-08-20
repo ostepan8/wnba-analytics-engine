@@ -832,6 +832,28 @@ without being fooled by a five-game hot streak, on a quantity the data
 shows is 95% noise. That is a more specific and more impressive statement
 about prop pricing than "the closing line is efficient".
 
+## Unverified claim flagged: archetype matchup effect (2026-08-20)
+
+`wnba_engine/features/strategies.py`'s `team_style` docstring has cited,
+since 2026-07-31, an outside observation that stylistic mismatches can
+swamp home-court advantage -- "perimeter teams beat grinders ~74% at
+home" -- as the motivation for `style_distance`. Auditing the codebase for
+undocumented gaps turned up that this number has no receipts anywhere in
+this repo: no notebook, script, or entry here reproduces it, and
+archetype clustering itself (the thing that would define "grinder" and
+"perimeter") is still `todo` in `FEATURE_ROADMAP.md` ss4. Flagged here
+rather than silently trusted, per this file's own standard for every
+other quantitative claim.
+
+What IS measured and real: on the 2,438-row feature frame (as-of
+2026-07-01), games between stylistically different teams (by
+`style_distance`) finish with an 11% larger absolute margin than games
+between similar ones (11.76 vs 10.55 points) -- directionally consistent
+with the claim, not a reproduction of its magnitude. Treat the 74% figure
+as unverified until archetype membership ships and it can be tested
+directly; if it turns out not to hold, retract it here the way the props
+finding above was retracted.
+
 ## What would change the answer
 
 None of these is a modeling problem:
