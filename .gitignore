@@ -19,6 +19,10 @@ pgdata/
 # OS
 .DS_Store
 
+# git worktrees created by the required worktree workflow (see AGENTS.md
+# and .claude/skills/parallel-worktree-lifecycle) -- never commit a worktree
+.claude/worktrees/
+
 # Frontend build artefacts. The bundle is compiled in CI/the image build, and
 # wnba_engine/api/static/ is its output directory for local development.
 frontend/node_modules/

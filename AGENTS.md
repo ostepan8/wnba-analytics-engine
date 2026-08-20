@@ -97,14 +97,20 @@ this is exactly why `market_capture/` records JSON rather than rows.
 
 ### Worktree workflow (required)
 
-Every implementation task runs in a git worktree, never directly on `main`:
+Every implementation task runs in a git worktree, never directly on `main`.
+Many agents work in this repo concurrently, so isolation, keeping docs
+current, and careful merge-back are not optional -- see the
+`parallel-worktree-lifecycle` skill (`.claude/skills/`) for the full
+mandatory procedure. Quick reference:
 
 ```bash
-git worktree add -b wt/<kebab-task> ../wnba-analytics-engine--<suffix> main
-cp .env ../wnba-analytics-engine--<suffix>/     # gitignored, needed for integration tests
-# ... work, test, commit ...
-git merge --no-ff wt/<kebab-task> -m "merge: wt/<kebab-task> into main"
-git worktree remove ../wnba-analytics-engine--<suffix> --force
+git worktree add -b wt/<kebab-task> .claude/worktrees/<kebab-task> main
+cp .env .claude/worktrees/<kebab-task>/     # gitignored, needed for integration tests
+# ... work, test, update AGENTS.md/skills for anything that changed, commit ...
+git fetch origin main && git merge origin/main   # catch up before merging back -- other agents may have landed first
+# resolve any conflicts (watch db/migrations/ numbering -- renumber, never share a number)
+git checkout main && git merge --no-ff wt/<kebab-task> -m "merge: wt/<kebab-task> into main"
+git worktree remove .claude/worktrees/<kebab-task> --force
 git branch -d wt/<kebab-task>
 ```
 
