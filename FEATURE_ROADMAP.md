@@ -23,6 +23,13 @@ insight, and Phase 2 rules-based work**, not for an assumed betting edge.
 | `team_style` | 13 | 80 |
 | `player_form` | 9 | 46 |
 | `player_rates` | 17 | 76 |
+| `team_market` | -- | -- |
+| `player_market` | -- | -- |
+| `team_play_shape` | -- | -- |
+
+(Step/column counts not backfilled for the last three -- see
+`wnba_engine/features/strategies.py`; this table previously omitted them
+entirely even though all three are registered in `STRATEGIES`.)
 
 ## The two rules
 
@@ -235,10 +242,10 @@ provider we happened to use, not of the sport.
 
 | Feature | Source | Status | Hazard |
 |---|---|---|---|
-| quarter-by-quarter scoring profile | `game_plays` | **todo** | none |
-| largest run / lead changes | `game_plays` | **todo** | none |
-| clutch performance (last 5 min, within 5) | `game_plays` | **todo** | none |
-| scoring by period, rolling | `game_plays` | **todo** | none |
+| quarter-by-quarter scoring profile | `game_plays` | **done** | `features/steps/play_steps.py::ScoringProfileStep` |
+| largest run / lead changes | `game_plays` | **done** | `features/steps/play_steps.py::GameVolatilityStep` |
+| clutch performance (last 5 min, within 5) | `game_plays` | **done** | `ScoringProfileStep`'s `clutch_share` |
+| scoring by period, rolling | `game_plays` | **done** | rolled via `team_play_shape` (wraps `team_form`'s windowing over the two row steps above) |
 | player-level PBP | `game_plays` (`source='wnba_stats'`) | **unblocked** | resolution is by NAME on first sight, so a misspelling forks an identity -- see `player_aliases.py` |
 | shot location / quality | `shot_locations` | **todo** | `LOC_X`/`LOC_Y` are the row's own game -- targets, roll them |
 | assist and defensive networks | `game_plays` player2/player3 | **todo** | slots are not interchangeable; 2 is the assister/shooter, 3 the third party |

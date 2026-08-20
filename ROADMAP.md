@@ -40,7 +40,16 @@ personal data-hoarding project against the-odds-api.com. Folding this into the
 open engine (or publishing a derived, license-clean subset of it) is a later
 decision, not a blocker for Phase 1.
 
-## Phase 1 — Multi-source data foundation (current focus)
+## Phase 1 — Multi-source data foundation (complete)
+
+Box scores, player-level stats, situational context, the canonical
+schema/crosswalk, and both prediction-market sources are all shipped and
+in production. Phase 2 below is already substantially built too --
+`wnba_engine/analysis/{prop_trends,playoff_race,zone_matchups,divergence}.py`
+and their API routes/frontend pages exist. Don't read "current focus" as
+license to keep polishing Phase 1; the open gaps are in `FEATURE_ROADMAP.md`
+(roster composition, projected minutes/lineup news) and Phase 2's
+remaining unbuilt items below, not here.
 
 The actual gap: odds + final score tells you who won, not *why*, and isn't
 enough to build real insights on. This phase adds box scores, player-level
@@ -75,7 +84,7 @@ Deliverable: a Postgres schema + adapter pipeline that produces one queryable
 dataset — odds, line movement, prediction-market prices, outcomes, and box
 scores — per game, per player, sourced from multiple independent providers.
 
-## Phase 2 — Insights engine
+## Phase 2 — Insights engine (substantially built)
 
 Rules-based first, not ML: situational splits, player prop hit-rate trends,
 line-movement-vs-outcome patterns, matchup history, and — enabled by Phase 1's

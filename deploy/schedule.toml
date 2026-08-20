@@ -23,11 +23,13 @@
 # seven more. Capture and ingest now share a filesystem, so there is no hop to
 # fail.
 #
-# Note: this exits non-zero if ANY provider fails, and ESPN's injuries endpoint
-# has been returning 403 since at least 2026-08-16. Kalshi and Polymarket still
-# capture correctly on those runs -- each provider is attempted independently.
-# The job reads as 'failed' until the ESPN feed is fixed, which is the honest
-# reading and not something to paper over with `|| true`.
+# Note: this exits non-zero if ANY provider fails. ESPN's injuries endpoint
+# returned 403 intermittently starting 2026-08-16 and resolved on its own by
+# 2026-08-20 (no code change) -- Kalshi and Polymarket captured correctly
+# throughout, since each provider is attempted independently. If this job
+# reads as 'failed' again, check espn-injuries specifically before assuming
+# it's the same issue; the job intentionally does not paper over a real
+# provider failure with `|| true`.
 [[jobs]]
 name = "market-capture"
 description = "Record raw Kalshi + Polymarket + ESPN injury payloads to disk"
