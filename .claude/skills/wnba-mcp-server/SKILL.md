@@ -117,11 +117,34 @@ For nephos specifically: `nephos models` / `nephos llm ls` lists the real
 current aliases -- **"fast"/"big" are the alias contract, not real model
 ids**, and whatever's actually loaded can be a completely different
 family than the harness's branding suggests (confirmed live: nephos
-currently serves Qwen3-4B and Qwen3.8-27B behind those aliases, zero
-DeepSeek models). `nephos llm up <alias>` before testing if `nephos llm
-ls` shows it `down`. Mint a scoped key with `nephos keys new
-<app-name>` (omit `--models` for access to every alias) -- it's shown
-once, store it in the harness's `.env`, not here.
+currently serves Qwen3-4B, Qwen3.8-27B, and an "uncensored" Qwen3.8-27B
+variant behind those aliases, zero DeepSeek models). `nephos llm up
+<alias>` before testing if `nephos llm ls` shows it `down`. Mint a scoped
+key with `nephos keys new <app-name>` (omit `--models` for access to
+every alias) -- it's shown once, store it in the harness's `.env`, not
+here.
+
+**`nephos llm ls`/`up`/`down` read a LOCAL `gateway-config.yaml` on
+whichever machine runs the command -- not the control plane's live config
+over the network.** Adding a tier only on the control-plane node (its own
+`~/.config/nephos/gateway-config.yaml` + `systemctl --user restart
+nephos-control`) makes the gateway actually route to it correctly, but
+`nephos llm ls` run from the machine hosting the backend will silently
+omit the new tier -- no error, it just won't show up, which reads as
+"didn't work" when it actually did. Add the same tier to *that* machine's
+own local copy too (macOS: `~/Library/Application Support/nephos/
+gateway-config.yaml`, note the different path from Linux's `~/.config/
+nephos/` -- `os.UserConfigDir()` differs by OS) with `start`/`stop`
+commands appropriate to the engine (`launchctl kickstart -k
+gui/<uid>/com.nephos.llm.<alias>` for an mlx tier's own launchd service;
+for an ollama-backed tier, ollama's own server is already a persistent
+daemon, so `start: "ollama run <model> ''"` / `stop: "ollama stop
+<model>"` load/unload the specific model instead of starting a process).
+Confirmed this exact failure mode adding an `uncensored` ollama tier:
+the control-plane log said `gateway mounted with aliases: [fast big
+uncensored]` and real chat completions against it worked immediately,
+while `nephos llm ls` run locally kept showing only `fast`/`big` until
+the local file was updated too.
 
 The model then sees tools named `mcp__wnba__games_list`,
 `mcp__wnba__games_matchup`, etc. -- one per function in `wnba_mcp/tools/`.
