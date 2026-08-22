@@ -55,12 +55,44 @@ asyncio.run(main())
 
 ## Wiring into deepseek-harness (or any MCP host with a stdio client plugin)
 
-deepseek-harness's `@deepseek-ai/dsh-mcp-client` mounts stdio MCP servers
-as `mcp__<serverName>__<tool>`. Config shape (adapt to whatever
-patch/config mechanism the host uses):
+**Confirmed working end-to-end** (2026-08-22): a real headless `dsh` run
+called `health_status` and `games_matchup` through this mount against the
+live production API and produced a correct answer, using a nephos-hosted
+model instead of DeepSeek's own API. The deepseek-harness checkout lives
+at `~/Desktop/Projects/deepseek-harness` (sibling project, not in this
+repo -- see [[codebase-map]]); its config lives *outside* both git repos
+at `~/.dsh/profiles/<profile>/cordis.patch.yml`, so it won't show up in
+either repo's diff. This section is that recipe.
+
+`@deepseek-ai/dsh-mcp-client` mounts stdio MCP servers as
+`mcp__<serverName>__<tool>`. One id-targeted patch inserts the mount; two
+more are required alongside it to actually reach a self-hosted
+OpenAI-compatible endpoint (nephos) instead of DeepSeek's public API --
+skipping either produces a real runtime error, not a silent fallback:
+
 ```yaml
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+- id: llm-deepseek
+  config:
+    baseURL: https://llm.onephos.com/v1   # or any OpenAI-compatible endpoint
+    # llm-deepseek's default reasoningEffort ("high") isn't necessarily in
+    # your backend's accepted vocabulary -- nephos's Qwen backend only
+    # understands xhigh/medium/low and 400s on "high" with
+    # INVALID_REQUEST: could not apply chat template. Confirm your
+    # backend's actual vocabulary rather than assuming DeepSeek's.
+    reasoningEffort: low
+    models:                                # ADVISORY ONLY (picker UI) -- see below
+      - id: fast
+        name: "nephos: fast (Qwen3-4B)"
+      - id: big
+        name: "nephos: big (Qwen3.8-27B)"
+- id: agent-default-model                  # THE actual default -- separate entry,
+  config:                                  # easy to miss. Omitting this still
+    provider: deepseek-official            # requests "deepseek-v4-flash" and 400s
+    model: fast                            # with "unknown model" against an
+                                            # alias-only backend like nephos.
 - insert:
-    - id: wnba-mcp-server
+    - id: mcp-wnba
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         serverName: wnba
@@ -68,10 +100,34 @@ patch/config mechanism the host uses):
         command: uv
         args: ["run", "wnba-mcp-server"]
         env: {}
-        cwd: <absolute path to this repo>
+        cwd: /absolute/path/to/wnba-analytics-engine   # NOT !!js process.cwd() --
+                                                         # dsh launches from the
+                                                         # harness's own directory,
+                                                         # not from this repo
 ```
+
+The actual DeepSeek API key/secret goes in the harness project's own
+`.env` (`DEEPSEEK_API_KEY=...`) -- but **`DEEPSEEK_BASE_URL` is refused
+from `.env` entirely** ("only the launching environment may set it,"
+since it decides where the process reaches over the network); set
+`baseURL` in the config patch above instead, or `export` the env var in
+the real shell if you need it outside a patched path.
+
+For nephos specifically: `nephos models` / `nephos llm ls` lists the real
+current aliases -- **"fast"/"big" are the alias contract, not real model
+ids**, and whatever's actually loaded can be a completely different
+family than the harness's branding suggests (confirmed live: nephos
+currently serves Qwen3-4B and Qwen3.8-27B behind those aliases, zero
+DeepSeek models). `nephos llm up <alias>` before testing if `nephos llm
+ls` shows it `down`. Mint a scoped key with `nephos keys new
+<app-name>` (omit `--models` for access to every alias) -- it's shown
+once, store it in the harness's `.env`, not here.
+
 The model then sees tools named `mcp__wnba__games_list`,
 `mcp__wnba__games_matchup`, etc. -- one per function in `wnba_mcp/tools/`.
+Verify with `dsh --profile headless --dump-config` (prints the fully
+composed/patched config, confirms no patch silently no-op'd on a typo'd
+`id`) before running a real prompt.
 
 ## Tool inventory
 
