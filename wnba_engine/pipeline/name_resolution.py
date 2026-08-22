@@ -45,10 +45,21 @@ def resolve_player_name(
     source: str,
     context: str = "",
     llm: LlmClient | None = None,
+    league: str = "wnba",
 ) -> int | None:
-    """The player this name refers to, or None if it cannot be established."""
+    """The player this name refers to, or None if it cannot be established.
+
+    `league` only scopes the deterministic lookup below. The similarity/
+    LLM fallback path (resolution_repo.find_similar_players, cached
+    decisions) is not yet league-scoped -- known gap, flagged in
+    NBA_EXPANSION.md's follow-up list rather than patched here, since it
+    needs its own review of resolution_repo.py's SQL, not a mechanical
+    parameter thread.
+    """
     # 1. Deterministic. Always first, never second-guessed.
-    player_id = entity_repo.find_player_by_name(conn, raw_name, allow_reversed=True)
+    player_id = entity_repo.find_player_by_name(
+        conn, raw_name, allow_reversed=True, league=league
+    )
     if player_id is not None:
         return player_id
 

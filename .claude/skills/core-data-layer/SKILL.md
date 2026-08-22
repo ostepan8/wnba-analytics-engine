@@ -23,7 +23,7 @@ before editing anything here.
 | `wnba_engine/validation/` | `wnba-engine validate`'s ~18 checks (crosswalk, consistency, bounds, franchise, market-history). `acknowledged.py` holds individually-keyed, evidence-backed exceptions |
 | `wnba_engine/features/` | Composable, point-in-time-guarded feature extraction -- **not** a model pipeline. Has its own `README.md`; read it before adding feature extraction anywhere else |
 | `wnba_engine/db/` | Infra only: `pool.py` (psycopg_pool wrapper) and `migrate.py` (migration runner). No business SQL here |
-| `db/migrations/` | 37 numbered, append-only, heavily commented SQL files (`0001_canonical_entities.sql` → `0037_headshot_unavailable.sql`), applied in filename order, tracked in a `schema_versions` table |
+| `db/migrations/` | 38 numbered, append-only, heavily commented SQL files (`0001_canonical_entities.sql` → `0038_league_column.sql`), applied in filename order, tracked in a `schema_versions` table |
 
 ## Canonical identity
 
@@ -36,6 +36,23 @@ locally; see `market_capture/` in [[runtime-services]]).
 (`ON CONFLICT (provider, entity_type, external_id) DO NOTHING`), plus
 best-effort matchers (`find_player_by_name` with diacritic folding and an
 opt-in `allow_reversed` for bovada's "Last First" quirk).
+
+**Multi-league (NBA_EXPANSION.md, since 0038)**: `teams`/`players`/`games`
+each carry a `league TEXT NOT NULL DEFAULT 'wnba' CHECK (league IN
+('wnba','nba'))` column. Every name/abbreviation lookup in `entity_repo.py`
+(`find_team_by_abbreviation`, `find_team_by_name`,
+`find_team_by_name_fragment`, `find_player_by_name`,
+`find_game_id_by_teams`, `list_games_in_range`, `list_team_names`) takes an
+explicit `league` kwarg, defaulting to `"wnba"` so no pre-expansion caller
+changed behavior. `provider_entity_map` itself was NOT given a `league`
+column -- instead, any provider whose external ids turn out to NOT be
+globally unique across leagues gets a **separate provider string per
+league** (`wnba_stats`/`nba_stats`, `espn`/`espn_nba`) so its crosswalk
+rows never collide. This was not a design choice made in the abstract --
+`espn`/`espn_nba` exists because a live test caught ESPN reusing team id
+`"8"` for both the WNBA's Minnesota Lynx and the NBA's Detroit Pistons.
+**Before adding any new cross-league provider, verify id uniqueness live
+first** (see [[data-providers]]'s NBA gotcha) rather than assuming it.
 
 ## Idempotency convention
 

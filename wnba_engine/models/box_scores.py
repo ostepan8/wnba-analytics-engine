@@ -40,6 +40,9 @@ class PlayerRef:
     external_id: str
     full_name: str
     position: str | None
+    # Defaults to "wnba" so every existing single-league call site keeps
+    # working unchanged; NBA ingest passes league="nba" explicitly.
+    league: str = "wnba"
 
 
 @dataclass(frozen=True, slots=True)

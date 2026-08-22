@@ -36,6 +36,9 @@ class TeamRef:
     external_id: str
     name: str
     abbreviation: str
+    # Defaults to "wnba" so every existing single-league call site keeps
+    # working unchanged; NBA ingest passes league="nba" explicitly.
+    league: str = "wnba"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +54,7 @@ class ScoreboardGame:
     away_team: TeamRef
     home_score: int | None
     away_score: int | None
+    league: str = "wnba"
 
     @property
     def is_final(self) -> bool:

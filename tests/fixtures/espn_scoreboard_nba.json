@@ -1,0 +1,72 @@
+{
+    "events": [
+        {
+            "id": "401909088",
+            "date": "2026-10-20T19:00Z",
+            "name": "Boston Celtics at Detroit Pistons",
+            "season": {
+                "year": 2027,
+                "type": 2,
+                "slug": "regular-season"
+            },
+            "status": {
+                "clock": 0.0,
+                "displayClock": "0.0",
+                "period": 0,
+                "type": {
+                    "id": "1",
+                    "name": "STATUS_SCHEDULED",
+                    "state": "pre",
+                    "completed": false,
+                    "description": "Scheduled",
+                    "detail": "Tue, October 20th at 3:00 PM EDT",
+                    "shortDetail": "10/20 - 3:00 PM EDT"
+                }
+            },
+            "competitions": [
+                {
+                    "id": "401909088",
+                    "date": "2026-10-20T19:00Z",
+                    "competitors": [
+                        {
+                            "id": "8",
+                            "homeAway": "home",
+                            "score": "0",
+                            "winner": false,
+                            "team": {
+                                "id": "8",
+                                "displayName": "Detroit Pistons",
+                                "abbreviation": "DET"
+                            }
+                        },
+                        {
+                            "id": "2",
+                            "homeAway": "away",
+                            "score": "0",
+                            "winner": false,
+                            "team": {
+                                "id": "2",
+                                "displayName": "Boston Celtics",
+                                "abbreviation": "BOS"
+                            }
+                        }
+                    ],
+                    "status": {
+                        "clock": 0.0,
+                        "displayClock": "0.0",
+                        "period": 0,
+                        "type": {
+                            "id": "1",
+                            "name": "STATUS_SCHEDULED",
+                            "state": "pre",
+                            "completed": false,
+                            "description": "Scheduled",
+                            "detail": "Tue, October 20th at 3:00 PM EDT",
+                            "shortDetail": "10/20 - 3:00 PM EDT"
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

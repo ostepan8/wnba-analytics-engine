@@ -86,3 +86,19 @@ def test_the_2025_title_shapes_from_the_historical_tier_resolve() -> None:
     assert parse_matchup(
         "KXWNBAGAME-25OCT10LVAPHX", "Las Vegas vs Phoenix (Game 4) Winner?"
     ) == (date(2025, 10, 10), "Las Vegas", "Phoenix")
+
+
+def test_the_nba_series_and_its_bare_title_shape_resolve() -> None:
+    """A FIFTH shape, and a different series prefix: NBA's KXNBAGAME.
+
+    Confirmed live 2026-08-22 via KXNBAGAME-26OCT20OKCSAS -- its real event
+    title is exactly "Oklahoma City vs San Antonio", with NO trailing
+    "winner?"/"wins?" clause at all, unlike every WNBA shape above. Kalshi
+    already rewrote the WNBA title format once without changing the ticker
+    (see test_the_2026_title_format_with_the_sport_clause_still_resolves),
+    so this bare shape is not assumed permanent -- it is simply what was
+    verified live when the NBA expansion added this series.
+    """
+    assert parse_matchup(
+        "KXNBAGAME-26OCT20OKCSAS", "Oklahoma City vs San Antonio"
+    ) == (date(2026, 10, 20), "Oklahoma City", "San Antonio")

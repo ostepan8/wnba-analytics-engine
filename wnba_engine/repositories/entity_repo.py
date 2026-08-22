@@ -67,8 +67,8 @@ def resolve_or_create_team(conn: Connection, provider: str, team: TeamRef) -> in
         )
         return existing
     row = conn.execute(
-        "INSERT INTO teams (name, abbreviation) VALUES (%s, %s) RETURNING id",
-        (team.name, team.abbreviation),
+        "INSERT INTO teams (name, abbreviation, league) VALUES (%s, %s, %s) RETURNING id",
+        (team.name, team.abbreviation, team.league),
     ).fetchone()
     assert row is not None  # RETURNING always yields a row
     team_id = int(row[0])
@@ -86,8 +86,8 @@ def resolve_or_create_player(conn: Connection, provider: str, player: PlayerRef)
         )
         return existing
     row = conn.execute(
-        "INSERT INTO players (full_name, position) VALUES (%s, %s) RETURNING id",
-        (player.full_name, player.position),
+        "INSERT INTO players (full_name, position, league) VALUES (%s, %s, %s) RETURNING id",
+        (player.full_name, player.position, player.league),
     ).fetchone()
     assert row is not None
     player_id = int(row[0])
@@ -141,7 +141,8 @@ def upsert_game(
         return existing
     row = conn.execute(
         "INSERT INTO games (season, season_type, start_time, home_team_id, away_team_id, "
-        "status, home_score, away_score) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "status, home_score, away_score, league) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (
             game.season,
             game.season_type.value,
@@ -151,6 +152,7 @@ def upsert_game(
             game.status.value,
             game.home_score,
             game.away_score,
+            game.league,
         ),
     ).fetchone()
     assert row is not None
@@ -200,6 +202,7 @@ WHERE (
     (th.name ILIKE %s AND ta.name ILIKE %s)
     OR (th.name ILIKE %s AND ta.name ILIKE %s)
 )
+AND g.league = %s AND th.league = %s AND ta.league = %s
 AND g.start_time BETWEEN %s AND %s
 ORDER BY ABS(EXTRACT(EPOCH FROM (g.start_time - %s)))
 LIMIT 1
@@ -213,6 +216,7 @@ def find_game_id_by_teams(
     near: datetime,
     *,
     window: timedelta,
+    league: str = "wnba",
 ) -> int | None:
     """Best-effort match: two teams (matched as a case-insensitive substring
     against the canonical team name, e.g. 'Phoenix' matches 'Phoenix
@@ -226,6 +230,10 @@ def find_game_id_by_teams(
     full_name comes back as just "Tempo" or "Fire" instead of "Toronto
     Tempo" / "Portland Fire" -- a prefix match against our canonical name
     misses that entirely, since "Toronto Tempo" doesn't start with "Tempo".
+
+    `league` scopes both the game and its teams -- name substrings are only
+    unique WITHIN a league now (e.g. "Washington" matches both the WNBA
+    Mystics and the NBA Wizards).
     """
     pattern_a, pattern_b = f"%{team_a_name}%", f"%{team_b_name}%"
     row = conn.execute(
@@ -235,6 +243,9 @@ def find_game_id_by_teams(
             pattern_b,
             pattern_b,
             pattern_a,
+            league,
+            league,
+            league,
             near - window,
             near + window,
             near,
@@ -243,8 +254,12 @@ def find_game_id_by_teams(
     return int(row[0]) if row else None
 
 
-def find_team_by_abbreviation(conn: Connection, abbreviation: str) -> int | None:
-    """Read-only lookup by the canonical teams.abbreviation column.
+def find_team_by_abbreviation(
+    conn: Connection, abbreviation: str, *, league: str = "wnba"
+) -> int | None:
+    """Read-only lookup by the canonical teams.abbreviation column, scoped
+    to one league (abbreviations collide across leagues, e.g. WNBA "GS" for
+    Golden State Valkyries vs NBA "GS" for the Warriors).
 
     Used where a source identifies teams by abbreviation only (no id, no
     full name) -- e.g. archived Wayback injury-report pages, which encode
@@ -252,18 +267,23 @@ def find_team_by_abbreviation(conn: Connection, abbreviation: str) -> int | None
     too thin to safely originate a new canonical row, so an unresolved
     abbreviation is the caller's problem to log and skip.
     """
-    row = conn.execute("SELECT id FROM teams WHERE abbreviation = %s", (abbreviation,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM teams WHERE abbreviation = %s AND league = %s", (abbreviation, league)
+    ).fetchone()
     return int(row[0]) if row else None
 
 
-def find_team_by_name(conn: Connection, name: str) -> int | None:
+def find_team_by_name(conn: Connection, name: str, *, league: str = "wnba") -> int | None:
     """Read-only lookup by the canonical teams.name column (case-insensitive
-    exact match). Fallback for when a source's logo-derived abbreviation
-    couldn't be extracted at all (see wayback_injuries_parser) but the full
-    display name is present -- e.g. "Atlanta Dream". Never creates a team,
-    same reasoning as find_team_by_abbreviation.
+    exact match), scoped to one league. Fallback for when a source's
+    logo-derived abbreviation couldn't be extracted at all (see
+    wayback_injuries_parser) but the full display name is present -- e.g.
+    "Atlanta Dream". Never creates a team, same reasoning as
+    find_team_by_abbreviation.
     """
-    row = conn.execute("SELECT id FROM teams WHERE name ILIKE %s", (name,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM teams WHERE name ILIKE %s AND league = %s", (name, league)
+    ).fetchone()
     return int(row[0]) if row else None
 
 
@@ -271,23 +291,36 @@ def _fold_diacritics(value: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
 
 
-def find_team_by_name_fragment(conn: Connection, fragment: str) -> int | None:
+def find_team_by_name_fragment(
+    conn: Connection, fragment: str, *, league: str = "wnba"
+) -> int | None:
     """Read-only substring lookup by the canonical teams.name column
-    (case-insensitive). Used when a source names a team by a short/partial
-    city name rather than the full team name -- e.g. Kalshi's team-level
-    derivative-market titles say "Atlanta" not "Atlanta Dream" (see
-    kalshi/team_market_matching.py). Separate from find_team_by_name
-    (exact match) rather than loosening that function's contract, since
-    its existing caller (wayback_injuries_parser) relies on exact
-    matching against full display names. Never creates a team, same
+    (case-insensitive), scoped to one league. Used when a source names a
+    team by a short/partial city name rather than the full team name --
+    e.g. Kalshi's team-level derivative-market titles say "Atlanta" not
+    "Atlanta Dream" (see kalshi/team_market_matching.py). Separate from
+    find_team_by_name (exact match) rather than loosening that function's
+    contract, since its existing caller (wayback_injuries_parser) relies on
+    exact matching against full display names. Never creates a team, same
     reasoning as find_team_by_abbreviation.
+
+    League-scoping matters even more here than on the exact-match lookups:
+    "Washington", "New York", "Indiana", "Portland", and "Golden State" are
+    all real cross-league city-name collision candidates once both leagues
+    share this table.
     """
-    row = conn.execute("SELECT id FROM teams WHERE name ILIKE %s", (f"%{fragment}%",)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM teams WHERE name ILIKE %s AND league = %s", (f"%{fragment}%", league)
+    ).fetchone()
     return int(row[0]) if row else None
 
 
 def find_player_by_name(
-    conn: Connection, full_name: str, *, allow_reversed: bool = False
+    conn: Connection,
+    full_name: str,
+    *,
+    allow_reversed: bool = False,
+    league: str = "wnba",
 ) -> int | None:
     """Read-only lookup by the canonical players.full_name column
     (case-insensitive exact match). Used to resolve a second provider's own
@@ -324,11 +357,15 @@ def find_player_by_name(
     do emit " Ezi Magbegor" and "Satou Sabally ".
     """
     full_name = full_name.strip()
-    row = conn.execute("SELECT id FROM players WHERE full_name ILIKE %s", (full_name,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM players WHERE full_name ILIKE %s AND league = %s", (full_name, league)
+    ).fetchone()
     if row is not None:
         return int(row[0])
 
-    candidates = conn.execute("SELECT id, full_name FROM players").fetchall()
+    candidates = conn.execute(
+        "SELECT id, full_name FROM players WHERE league = %s", (league,)
+    ).fetchall()
     attempts: list[str | None] = [full_name]
     # Curated aliases are exact, individually-verified mappings, so unlike
     # the reversed heuristic below they're safe for every caller.
@@ -461,22 +498,23 @@ def _update_player_bio(
 
 _LIST_GAMES_IN_RANGE_SQL = """
 SELECT id, start_time FROM games
-WHERE start_time BETWEEN %s AND %s
+WHERE start_time BETWEEN %s AND %s AND league = %s
 ORDER BY start_time
 """
 
 
 def list_games_in_range(
-    conn: Connection, since: datetime, until: datetime
+    conn: Connection, since: datetime, until: datetime, *, league: str = "wnba"
 ) -> tuple[tuple[int, datetime], ...]:
-    """Every canonical game whose start_time falls in [since, until]
-    (inclusive both ends). Used by backfill sweeps anchored on OUR games
-    table rather than a provider's own schedule -- e.g. the-odds-api
-    historical-odds checkpoint backfill, which computes T-7d/T-24h/T-1h/
-    closing checkpoints per game from games.start_time (see
-    wnba_engine/pipeline/odds_api_ingest.py).
+    """Every canonical game of one league whose start_time falls in
+    [since, until] (inclusive both ends). Used by backfill sweeps anchored
+    on OUR games table rather than a provider's own schedule -- e.g. the-
+    odds-api historical-odds checkpoint backfill, which computes T-7d/
+    T-24h/T-1h/closing checkpoints per game from games.start_time (see
+    wnba_engine/pipeline/odds_api_ingest.py). Defaults to "wnba" so every
+    existing caller keeps its current (single-league) behavior unchanged.
     """
-    rows = conn.execute(_LIST_GAMES_IN_RANGE_SQL, (since, until)).fetchall()
+    rows = conn.execute(_LIST_GAMES_IN_RANGE_SQL, (since, until, league)).fetchall()
     return tuple((int(row[0]), row[1]) for row in rows)
 
 
@@ -517,6 +555,7 @@ def resolve_or_create_player_by_name(
     jersey_number: str | None,
     college: str | None,
     age: int | None,
+    league: str = "wnba",
 ) -> int:
     """Crosswalk contract for a provider whose player rarely has a
     reliable external id shared with ESPN (e.g. balldontlie's numeric ids
@@ -549,7 +588,7 @@ def resolve_or_create_player_by_name(
         )
         return existing
 
-    by_name = find_player_by_name(conn, full_name)
+    by_name = find_player_by_name(conn, full_name, league=league)
     if by_name is not None:
         _insert_mapping(conn, provider, ENTITY_PLAYER, external_id, by_name)
         _update_player_bio(
@@ -565,8 +604,8 @@ def resolve_or_create_player_by_name(
 
     row = conn.execute(
         "INSERT INTO players (full_name, position, height, weight, jersey_number, "
-        "college, age) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (full_name, position, height, weight, jersey_number, college, age),
+        "college, age, league) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (full_name, position, height, weight, jersey_number, college, age, league),
     ).fetchone()
     assert row is not None
     player_id = int(row[0])
@@ -574,16 +613,18 @@ def resolve_or_create_player_by_name(
     return player_id
 
 
-def list_team_names(conn: Connection) -> list[tuple[int, str]]:
-    """Every known team as (id, full name).
+def list_team_names(conn: Connection, *, league: str = "wnba") -> list[tuple[int, str]]:
+    """Every known team of one league as (id, full name).
 
     The official injury report identifies a team only by its printed name, and
     the parser needs the real list rather than a regex for "a capitalised
     phrase that might be a team" -- that pattern cannot be told apart from a
     capitalised injury reason, and a wrong match reassigns a player to the
-    opposing side.
+    opposing side. Defaults to "wnba" so the existing caller's behavior is
+    unchanged; the NBA injury-report ingest passes league="nba".
     """
     rows = conn.execute(
-        "SELECT id, name FROM teams WHERE name IS NOT NULL ORDER BY name"
+        "SELECT id, name FROM teams WHERE name IS NOT NULL AND league = %s ORDER BY name",
+        (league,),
     ).fetchall()
     return [(int(row[0]), str(row[1])) for row in rows]

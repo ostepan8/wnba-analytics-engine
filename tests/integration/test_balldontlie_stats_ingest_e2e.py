@@ -51,6 +51,8 @@ class FakeEspnClient:
     """Same NY vs SEA, 2025-07-06 fixture game used across
     tests/integration/test_ingestion_e2e.py."""
 
+    provider = "espn"
+
     def fetch_scoreboard(self, day: date) -> object:
         payload = load_fixture("espn_scoreboard.json")
         return {"events": [e for e in payload["events"] if e["id"] == "401736228"]}
