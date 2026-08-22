@@ -40,9 +40,22 @@ call that writes -- this gives each subagent its own worktree automatically
 and avoids two agents racing on the same files. Don't skip this for
 concurrent file-writing agents just because it's "only" a small edit.
 
-Branch from up-to-date `main` every time, not from whatever `main` was when
-you started thinking about the task -- other agents merge into it while you
-work.
+**A background fork/subagent's working directory is pinned to wherever
+your session's `cwd` was at the moment you launched it -- not wherever the
+prompt tells it to work.** If you spawn a long-running background fork
+while your own session is inside a worktree (even if its prompt says
+"work in the main repo, not a worktree"), its file writes still land in
+that worktree, because cwd is a launch-time property the prompt can't
+override. This already cost a near-loss: a fork was launched from inside
+`.claude/worktrees/add-mcp-server`, ran for 7+ minutes producing a real
+research doc, and that worktree was removed (`git worktree remove
+--force`, work already merged) before the fork finished -- its final
+`Write` silently recreated the directory as an untracked orphan instead of
+failing, and the doc almost got lost with the next cleanup pass. Two
+mitigations: exit the worktree (`ExitWorktree`) or launch from the main
+checkout *before* spawning a background agent that will outlive your own
+worktree's lifecycle; and before removing any worktree, check
+`ListAgents` for still-running children that might be writing into it.
 
 ## Phase 2 -- Update docs and skills as part of the change, not after
 
