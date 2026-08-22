@@ -83,6 +83,10 @@ uv run wnba-cli health jobs
   what `/health/jobs` summarizes) -- see the deploy-pipeline reference for
   that path.
 
+**Wiring an external agent host (not this session) up to this data?** See
+[[wnba-mcp-server]] instead -- same routes, exposed as MCP tools over
+stdio rather than a shell command.
+
 ## Extending it
 
 New API route → new command in `wnba_cli/commands/<group>.py` (create the
