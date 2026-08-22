@@ -37,11 +37,19 @@ uv run pytest -q                     # full suite (integration tests skip withou
 uv run ruff check .                  # lint
 uv run wnba-engine validate          # data-quality gate; exits non-zero on real problems
 uv run wnba-engine --help            # every ingest command
+uv run wnba-cli --help               # query the LIVE API (games, players, odds, job health) -- no DB needed
 ```
 
 `.env` (gitignored) holds `WNBA_ENGINE_BALLDONTLIE_API_KEY` and
 `WNBA_ENGINE_ODDS_API_KEY`. Kalshi, Polymarket, and ESPN need no
 credentials.
+
+`wnba-cli` and `wnba-engine` are two different tools: `wnba-cli` only
+speaks HTTP to the public read-only API (`wnba_cli/`, no DB access, works
+without `.env` or Postgres) and is the fast path for an agent that just
+needs current data; `wnba-engine` (`wnba_engine/cli/`) is the ingest/ops
+CLI with direct DB access. See the `wnba-cli` skill (`.claude/skills/`)
+for the full command reference.
 
 ---
 

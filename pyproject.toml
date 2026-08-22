@@ -29,13 +29,17 @@ assets = ["boto3>=1.35"]
 
 [project.scripts]
 wnba-engine = "wnba_engine.cli.main:cli"
+# Agent-facing wrapper around the read-only wnba-api (wnba_cli/), separate
+# from wnba-engine above: this one only ever speaks HTTP to the public API,
+# no DB access, no ingest -- see wnba_cli/__init__.py for the split.
+wnba-cli = "wnba_cli.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["wnba_engine"]
+packages = ["wnba_engine", "wnba_cli"]
 
 [dependency-groups]
 dev = [
