@@ -25,14 +25,16 @@ def captured_window(monkeypatch) -> dict[str, date]:
     """Record the (since, until) the command asks the backfill for."""
     seen: dict[str, date] = {}
 
-    def _fake_backfill(db, client, since, until):
-        del db, client
+    def _fake_backfill(db, client, since, until, *, league="wnba"):
+        del db, client, league
         seen["since"], seen["until"] = since, until
         return "backfill: 0 game(s)"
 
     monkeypatch.setattr("wnba_engine.cli.main.backfill", _fake_backfill)
     monkeypatch.setattr("wnba_engine.cli.main.Database", lambda url: _NullDb())
-    monkeypatch.setattr("wnba_engine.cli.main.EspnClient", lambda settings: _NullClient())
+    monkeypatch.setattr(
+        "wnba_engine.cli.main.EspnClient", lambda settings, **kwargs: _NullClient()
+    )
     return seen
 
 

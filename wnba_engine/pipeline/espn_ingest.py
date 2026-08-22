@@ -20,6 +20,13 @@ from wnba_engine.repositories import entity_repo, stats_repo
 
 logger = logging.getLogger(__name__)
 
+# Stats-table lineage label only ("this data came from ESPN's site API") --
+# NOT the provider_entity_map crosswalk key. Kept constant across leagues
+# on purpose: box-score tables are keyed by OUR OWN internal game/team/
+# player ids, not external ones, so there is no cross-league collision
+# risk here the way there was in the crosswalk (see espn/client.py's
+# provider split). Crosswalk calls below use `client.provider` instead,
+# which IS league-scoped ("espn" / "espn_nba").
 SOURCE = "espn"
 
 
@@ -39,13 +46,20 @@ class EspnIngestResult:
         )
 
 
-def sync_date(db: Database, client: EspnClient, day: date) -> EspnIngestResult:
-    """Ingest all games (and box scores for finished games) for one date."""
-    games = parse_scoreboard(client.fetch_scoreboard(day))
+def sync_date(
+    db: Database, client: EspnClient, day: date, *, league: str = "wnba"
+) -> EspnIngestResult:
+    """Ingest all games (and box scores for finished games) for one date.
+
+    `client` must already be constructed for the same `league` (its base
+    URL determines which sport's scoreboard is fetched) -- `league` here
+    only tags the canonical rows this run writes.
+    """
+    games = parse_scoreboard(client.fetch_scoreboard(day), league=league)
     result = EspnIngestResult(games_seen=len(games))
     for game in games:
         try:
-            ingested_box = _ingest_game(db, client, game)
+            ingested_box = _ingest_game(db, client, game, league=league)
         except WnbaEngineError:
             logger.exception(
                 "failed to ingest game provider=espn external_id=%s date=%s",
@@ -62,7 +76,9 @@ def sync_date(db: Database, client: EspnClient, day: date) -> EspnIngestResult:
     return result
 
 
-def backfill(db: Database, client: EspnClient, since: date, until: date) -> EspnIngestResult:
+def backfill(
+    db: Database, client: EspnClient, since: date, until: date, *, league: str = "wnba"
+) -> EspnIngestResult:
     """Ingest every date in [since, until], inclusive."""
     if since > until:
         raise ValueError(f"since ({since}) must not be after until ({until})")
@@ -70,7 +86,7 @@ def backfill(db: Database, client: EspnClient, since: date, until: date) -> Espn
     day = since
     while day <= until:
         try:
-            result = result.merged_with(sync_date(db, client, day))
+            result = result.merged_with(sync_date(db, client, day, league=league))
         except WnbaEngineError:
             # A whole-date failure (scoreboard fetch/parse) is one failure unit.
             logger.exception("failed to ingest scoreboard date=%s", day.isoformat())
@@ -79,14 +95,21 @@ def backfill(db: Database, client: EspnClient, since: date, until: date) -> Espn
     return result
 
 
-def _ingest_game(db: Database, client: EspnClient, game: ScoreboardGame) -> bool:
+def _ingest_game(
+    db: Database, client: EspnClient, game: ScoreboardGame, *, league: str = "wnba"
+) -> bool:
     """Upsert one game (+ box score when final). Returns True if box ingested."""
-    summary = parse_summary(client.fetch_summary(game.external_id)) if game.is_final else None
+    summary = (
+        parse_summary(client.fetch_summary(game.external_id), league=league)
+        if game.is_final
+        else None
+    )
+    provider = client.provider
     with db.connection() as conn:
-        home_id = entity_repo.resolve_or_create_team(conn, SOURCE, game.home_team)
-        away_id = entity_repo.resolve_or_create_team(conn, SOURCE, game.away_team)
+        home_id = entity_repo.resolve_or_create_team(conn, provider, game.home_team)
+        away_id = entity_repo.resolve_or_create_team(conn, provider, game.away_team)
         game_id = entity_repo.upsert_game(
-            conn, SOURCE, game, home_team_id=home_id, away_team_id=away_id
+            conn, provider, game, home_team_id=home_id, away_team_id=away_id
         )
         if summary is None:
             conn.commit()
@@ -100,16 +123,16 @@ def _ingest_game(db: Database, client: EspnClient, game: ScoreboardGame) -> bool
         team_ids = {game.home_team.external_id: home_id, game.away_team.external_id: away_id}
         for team_box in summary.teams:
             team_id = team_ids.get(team_box.team.external_id) or entity_repo.resolve_or_create_team(
-                conn, SOURCE, team_box.team
+                conn, provider, team_box.team
             )
             stats_repo.upsert_team_game_stats(
                 conn, game_id=game_id, team_id=team_id, source=SOURCE, box=team_box
             )
         for line in summary.players:
             team_id = team_ids.get(line.team.external_id) or entity_repo.resolve_or_create_team(
-                conn, SOURCE, line.team
+                conn, provider, line.team
             )
-            player_id = entity_repo.resolve_or_create_player(conn, SOURCE, line.player)
+            player_id = entity_repo.resolve_or_create_player(conn, provider, line.player)
             stats_repo.upsert_player_game_stats(
                 conn,
                 game_id=game_id,

@@ -22,12 +22,12 @@ one, and [[parallel-worktree-lifecycle]] before editing.
 | Package | Source | Why it exists |
 |---|---|---|
 | `balldontlie` | balldontlie.com (paid, `WNBA_ENGINE_BALLDONTLIE_API_KEY`, no free tier) | Advanced per-player/team-per-game stats (offensive rating, PIE, four factors) unavailable elsewhere; also a 2nd independent box-score source vs ESPN, plays/pbp, shot-zone efficiency, standings, odds, prop odds, injuries, full player bios |
-| `espn` | site.api.espn.com + web.archive.org | Scoreboard/boxscore/summary, current-state injuries, free-text transactions. Wayback snapshots of the injuries page are the **only** source of point-in-time historical injury status |
+| `espn` | site.api.espn.com + web.archive.org | Scoreboard/boxscore/summary, current-state injuries, free-text transactions. Wayback snapshots of the injuries page are the **only** source of point-in-time historical injury status. `EspnClient(settings, league="nba")` also serves the NBA (confirmed live 2026-08-22, identical response shape) -- see NBA gotcha below |
 | `kalshi` | api.elections.kalshi.com/trade-api/v2 (free, no key needed today) | Prediction-market snapshots, historical trades, OHLC candlesticks. Read-only, no trading endpoints |
 | `odds_api` | the-odds-api.com (paid, metered, `WNBA_ENGINE_ODDS_API_KEY`) | Sportsbook moneyline/spread/total odds (current + historical), player prop odds, final scores |
 | `polymarket` | gamma-api.polymarket.com (metadata/quote) + data-api.polymarket.com (fills) | Read-only prediction-market prices; two hosts with different mutability semantics |
-| `wnba_official` | NBA CDN hourly injury-report PDF | The only source with real Probable/Questionable/Doubtful/Out granularity |
-| `wnba_stats` | stats.wnba.com (free, bot-detection-gated) | Same host family as stats.nba.com; `LeagueID=10` selects WNBA |
+| `wnba_official` | NBA CDN hourly injury-report PDF | The only source with real Probable/Questionable/Doubtful/Out granularity. `WnbaOfficialClient(league="nba")` reads `.../referee/nba_injury/...` instead -- confirmed reachable live 2026-08-22 (returns this CDN's real "no such file" 403 since the NBA season hasn't started, not a real error) |
+| `wnba_stats` | stats.wnba.com (free, bot-detection-gated) | Same host family as stats.nba.com; `LeagueID=10` selects WNBA. `WnbaStatsClient(settings, league="nba")` selects `LeagueID=00`/stats.nba.com -- **not live-tested**, stats.nba.com was sandbox-network-blocked in every session so far (WNBA control failed identically) |
 
 ## Per-provider gotchas (pulled from code docstrings)
 
@@ -73,6 +73,18 @@ one, and [[parallel-worktree-lifecycle]] before editing.
   silently returns NBA data. 5-team abbreviation crosswalk is hardcoded,
   deliberately not fuzzy-matched.
 
+- **NBA (multi-league, NBA_EXPANSION.md)**: `espn`, `wnba_stats`, and
+  `wnba_official` each take a `league` param. **Never assume a provider's
+  external ids are globally unique across leagues without a live test.**
+  ESPN's own site API reuses small per-sport integers -- WNBA's Minnesota
+  Lynx and NBA's Detroit Pistons both carry ESPN team id `"8"`, confirmed
+  live 2026-08-22. `espn`'s `provider_entity_map` string is therefore
+  league-scoped too (`"espn"` / `"espn_nba"`), same pattern as
+  `wnba_stats`/`nba_stats`. A first pass that shared one `"espn"` string
+  silently merged an NBA team onto an existing WNBA crosswalk row and
+  overwrote its name -- caught by `tests/integration/
+  test_nba_league_scoping_e2e.py`, not by inspection.
+
 Also see `AGENTS.md`'s "Providers are inconsistent in specific, documented
 ways" and "Vendor archive boundaries" sections -- bovada's reversed
 "Last First" player names, `player_aliases.py` for curated name drift, and
@@ -103,3 +115,11 @@ matching split above, add a `pipeline/<provider>_*_ingest.py`, a CLI
 subcommand in `wnba_engine/cli/main.py`, and if it's recurring, a job in
 `deploy/schedule.toml` (see [[runtime-services]]). Update this skill's
 table when you do.
+
+If a provider serves more than one league (as `espn`/`wnba_stats`/
+`wnba_official` now do), verify live whether its external ids are actually
+unique across leagues before reusing one `provider_entity_map` string for
+both -- do not trust "this API looks globally namespaced" without testing
+it (see the NBA gotcha above). If they collide, give each league its own
+provider string exactly like `wnba_stats`/`nba_stats` and `espn`/
+`espn_nba` do.

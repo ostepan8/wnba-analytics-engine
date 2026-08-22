@@ -62,6 +62,8 @@ def load_text_fixture(name: str) -> str:
 class FakeEspnClient:
     """Replays fixture payloads; only knows the game the summary fixture covers."""
 
+    provider = "espn"
+
     def fetch_scoreboard(self, day: date) -> object:
         payload = load_fixture("espn_scoreboard.json")
         return {"events": [e for e in payload["events"] if e["id"] == "401736228"]}
@@ -76,6 +78,8 @@ class FakeEspnClientWithGameInfo:
     attendance) -- the plain FakeEspnClient's espn_summary.json fixture
     predates this feature and has no gameInfo key at all.
     """
+
+    provider = "espn"
 
     def fetch_scoreboard(self, day: date) -> object:
         payload = load_fixture("espn_scoreboard.json")

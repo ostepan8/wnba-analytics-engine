@@ -1,4 +1,21 @@
-"""ESPN HTTP client. Endpoint calls only — parsing lives in parser.py."""
+"""ESPN HTTP client. Endpoint calls only — parsing lives in parser.py.
+
+ESPN's site API is uniform across every sport it covers -- confirmed live
+2026-08-22 for the NBA (identical response shape to the WNBA scoreboard
+endpoint).
+
+PROVIDER STRINGS ARE LEAGUE-SCOPED ("espn" / "espn_nba"), NOT SHARED --
+this was verified wrong once already. Confirmed live 2026-08-22: WNBA's
+Minnesota Lynx and NBA's Detroit Pistons both carry ESPN team id "8".
+ESPN's ids are small per-sport integers, not a single global space, so a
+shared "espn" provider string caused a real cross-league identity
+collision in this project's provider_entity_map during this expansion's
+own testing -- an NBA team's crosswalk row matched an existing WNBA team's
+row and overwrote its name. Never reuse one provider string for both
+leagues here; see wnba_stats/client.py's wnba_stats/nba_stats split for
+the same fix applied earlier by inference (this one was caught by testing,
+not foreseen).
+"""
 
 from __future__ import annotations
 
@@ -7,14 +24,23 @@ from datetime import date
 from wnba_engine.config import Settings
 from wnba_engine.http_client import JsonHttpClient
 
-PROVIDER = "espn"
+# Not a Literal: callers pass this through from CLI options (click.Choice
+# yields plain str) and config, so the type stays str at this boundary.
+League = str
+
+_PROVIDERS = {"wnba": "espn", "nba": "espn_nba"}
 
 
 class EspnClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, league: League = "wnba") -> None:
+        if league not in _PROVIDERS:
+            raise ValueError(f"unsupported league: {league!r}")
+        self.league = league
+        self.provider = _PROVIDERS[league]
+        base_url = settings.espn_base_url if league == "wnba" else settings.espn_nba_base_url
         self._http = JsonHttpClient(
-            provider=PROVIDER,
-            base_url=settings.espn_base_url,
+            provider=self.provider,
+            base_url=base_url,
             timeout_seconds=settings.request_timeout_seconds,
             min_request_interval_seconds=settings.min_request_interval_seconds,
         )

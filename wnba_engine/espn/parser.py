@@ -82,17 +82,22 @@ _TEAM_STAT_NAMES = {
 }
 
 
-def parse_scoreboard(payload: object) -> tuple[ScoreboardGame, ...]:
-    """Parse a scoreboard response into normalized games."""
+def parse_scoreboard(payload: object, *, league: str = "wnba") -> tuple[ScoreboardGame, ...]:
+    """Parse a scoreboard response into normalized games. `league` tags every
+    resulting game/team ("wnba" or "nba") -- ESPN's response shape is
+    identical for both, so the caller (which already picked the league's
+    base URL) is the only place that knows which one this payload is."""
     if not isinstance(payload, Mapping):
         raise ProviderValidationError(
             PROVIDER, f"scoreboard payload must be an object, got {type(payload).__name__}"
         )
     events = require_sequence(payload, "events", PROVIDER, "scoreboard")
-    return tuple(_parse_event(event, f"events[{i}]") for i, event in enumerate(events))
+    return tuple(
+        _parse_event(event, f"events[{i}]", league=league) for i, event in enumerate(events)
+    )
 
 
-def _parse_event(event: object, context: str) -> ScoreboardGame:
+def _parse_event(event: object, context: str, *, league: str = "wnba") -> ScoreboardGame:
     if not isinstance(event, Mapping):
         raise ProviderValidationError(PROVIDER, "event must be an object", context=context)
     event_id = require_str(event, "id", PROVIDER, context)
@@ -135,7 +140,7 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
                 PROVIDER, "competitor must be an object", context=comp_context
             )
         home_away = require_str(competitor, "homeAway", PROVIDER, comp_context)
-        team = _parse_team(competitor, comp_context)
+        team = _parse_team(competitor, comp_context, league=league)
         raw_score = competitor.get("score")
         score = (
             None
@@ -163,6 +168,7 @@ def _parse_event(event: object, context: str) -> ScoreboardGame:
         away_team=away_team,
         home_score=home_score,
         away_score=away_score,
+        league=league,
     )
 
 
@@ -187,16 +193,17 @@ def _parse_status(event: Mapping[str, object], context: str) -> GameStatus:
     return _STATUS_MAP.get(name, GameStatus.OTHER)
 
 
-def _parse_team(container: Mapping[str, object], context: str) -> TeamRef:
+def _parse_team(container: Mapping[str, object], context: str, *, league: str = "wnba") -> TeamRef:
     team = require_mapping(container, "team", PROVIDER, context)
     return TeamRef(
         external_id=require_str(team, "id", PROVIDER, f"{context}.team"),
         name=require_str(team, "displayName", PROVIDER, f"{context}.team"),
         abbreviation=require_str(team, "abbreviation", PROVIDER, f"{context}.team"),
+        league=league,
     )
 
 
-def parse_summary(payload: object) -> GameBoxScore:
+def parse_summary(payload: object, *, league: str = "wnba") -> GameBoxScore:
     """Parse a summary response into a full game box score."""
     if not isinstance(payload, Mapping):
         raise ProviderValidationError(
@@ -208,13 +215,14 @@ def parse_summary(payload: object) -> GameBoxScore:
 
     raw_teams = require_sequence(boxscore, "teams", PROVIDER, "summary.boxscore")
     teams = tuple(
-        _parse_team_box(entry, f"boxscore.teams[{i}]") for i, entry in enumerate(raw_teams)
+        _parse_team_box(entry, f"boxscore.teams[{i}]", league=league)
+        for i, entry in enumerate(raw_teams)
     )
 
     raw_players = require_sequence(boxscore, "players", PROVIDER, "summary.boxscore")
     players: list[PlayerBoxLine] = []
     for i, entry in enumerate(raw_players):
-        players.extend(_parse_team_players(entry, f"boxscore.players[{i}]"))
+        players.extend(_parse_team_players(entry, f"boxscore.players[{i}]", league=league))
 
     venue_name, attendance, officials = _parse_game_info(payload.get("gameInfo"))
 
@@ -295,10 +303,10 @@ def _parse_officials(raw_officials: object) -> tuple[OfficialRef, ...]:
     return tuple(officials)
 
 
-def _parse_team_box(entry: object, context: str) -> TeamBoxScore:
+def _parse_team_box(entry: object, context: str, *, league: str = "wnba") -> TeamBoxScore:
     if not isinstance(entry, Mapping):
         raise ProviderValidationError(PROVIDER, "team entry must be an object", context=context)
-    team = _parse_team(entry, context)
+    team = _parse_team(entry, context, league=league)
     statistics = require_sequence(entry, "statistics", PROVIDER, context)
     by_name: dict[str, str] = {}
     for stat in statistics:
@@ -332,10 +340,12 @@ def _parse_team_box(entry: object, context: str) -> TeamBoxScore:
     )
 
 
-def _parse_team_players(entry: object, context: str) -> tuple[PlayerBoxLine, ...]:
+def _parse_team_players(
+    entry: object, context: str, *, league: str = "wnba"
+) -> tuple[PlayerBoxLine, ...]:
     if not isinstance(entry, Mapping):
         raise ProviderValidationError(PROVIDER, "players entry must be an object", context=context)
-    team = _parse_team(entry, context)
+    team = _parse_team(entry, context, league=league)
     statistics = require_sequence(entry, "statistics", PROVIDER, context)
     if not statistics:
         return ()
@@ -366,6 +376,10 @@ def _parse_athlete(entry: object, team: TeamRef, context: str) -> PlayerBoxLine:
         external_id=require_str(athlete, "id", PROVIDER, f"{context}.athlete"),
         full_name=require_str(athlete, "displayName", PROVIDER, f"{context}.athlete"),
         position=position_abbr if isinstance(position_abbr, str) else None,
+        # Derived from the team's own league rather than a separate
+        # parameter -- a player's box-score line always belongs to the
+        # same league as the team it's filed under.
+        league=team.league,
     )
     starter = bool(entry.get("starter", False))
     did_not_play = bool(entry.get("didNotPlay", False))

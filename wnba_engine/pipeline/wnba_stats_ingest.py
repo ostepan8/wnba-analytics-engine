@@ -37,7 +37,7 @@ from wnba_engine.db.pool import Database
 from wnba_engine.errors import ProviderRequestError, ProviderValidationError
 from wnba_engine.repositories import entity_repo, stats_play_repo
 from wnba_engine.wnba_stats import parser
-from wnba_engine.wnba_stats.client import PROVIDER, WnbaStatsClient
+from wnba_engine.wnba_stats.client import WnbaStatsClient
 from wnba_engine.wnba_stats.team_matching import parse_matchup
 
 logger = logging.getLogger(__name__)
@@ -69,15 +69,21 @@ def ingest_season(
     include_shots: bool = True,
     game_limit: int | None = None,
 ) -> WnbaStatsIngestResult:
-    """Ingest one season's plays and shots."""
+    """Ingest one season's plays and shots. `client` determines both the
+    provider string (see wnba_stats.client's wnba_stats/nba_stats split)
+    and the league every resolved/created team, player, and game is
+    scoped to.
+    """
+    provider = client.provider
+    league = client.league
     refs = parser.parse_game_log(client.fetch_game_log(season), season=season)
     by_game: dict[str, list] = {}
     for ref in refs:
         by_game.setdefault(ref.game_id, []).append(ref)
 
     with db.connection() as conn:
-        done_plays = stats_play_repo.games_with_source(conn, PROVIDER) if resume else frozenset()
-        done_shots = stats_play_repo.games_with_shots(conn, PROVIDER) if resume else frozenset()
+        done_plays = stats_play_repo.games_with_source(conn, provider) if resume else frozenset()
+        done_shots = stats_play_repo.games_with_shots(conn, provider) if resume else frozenset()
 
     seen = resolved = skipped = plays = shots = unresolved = failed = 0
     # provider player id -> canonical id, for the whole run.
@@ -90,7 +96,7 @@ def ingest_season(
     for stats_game_id, group in items:
         seen += 1
         with db.connection() as conn:
-            game_id = _resolve_game(conn, group)
+            game_id = _resolve_game(conn, group, league=league)
         if game_id is None:
             unresolved += 1
             continue
@@ -112,7 +118,9 @@ def ingest_season(
                 logger.warning("wnba_stats plays failed for %s: %s", stats_game_id, exc)
                 events = ()
             with db.connection() as conn:
-                rows, touched = _play_rows(conn, game_id, events, player_cache)
+                rows, touched = _play_rows(
+                    conn, game_id, events, player_cache, provider=provider, league=league
+                )
                 plays += stats_play_repo.insert_plays(conn, rows)
                 players |= touched
                 conn.commit()
@@ -126,7 +134,9 @@ def ingest_season(
                 logger.warning("wnba_stats shots failed for %s: %s", stats_game_id, exc)
                 attempts = ()
             with db.connection() as conn:
-                rows, touched = _shot_rows(conn, game_id, attempts, player_cache)
+                rows, touched = _shot_rows(
+                    conn, game_id, attempts, player_cache, provider=provider, league=league
+                )
                 shots += stats_play_repo.insert_shots(conn, rows)
                 players |= touched
                 conn.commit()
@@ -141,7 +151,9 @@ def ingest_season(
     )
 
 
-def _resolve_game(conn: Connection, group: Sequence[parser.StatsGameRef]) -> int | None:
+def _resolve_game(
+    conn: Connection, group: Sequence[parser.StatsGameRef], *, league: str = "wnba"
+) -> int | None:
     """Canonical game id from the feed's own date and matchup.
 
     Needs both team rows, which is why the caller groups by GAME_ID first --
@@ -153,8 +165,8 @@ def _resolve_game(conn: Connection, group: Sequence[parser.StatsGameRef]) -> int
         return None
     home, away = teams
     near = datetime.combine(ref.game_date, time(12, 0), tzinfo=UTC)
-    home_id = entity_repo.find_team_by_abbreviation(conn, home)
-    away_id = entity_repo.find_team_by_abbreviation(conn, away)
+    home_id = entity_repo.find_team_by_abbreviation(conn, home, league=league)
+    away_id = entity_repo.find_team_by_abbreviation(conn, away, league=league)
     if home_id is None or away_id is None:
         return None
     return entity_repo.find_game_id_by_teams(
@@ -163,6 +175,7 @@ def _resolve_game(conn: Connection, group: Sequence[parser.StatsGameRef]) -> int
         _team_name(conn, away_id),
         near,
         window=GAME_DATE_WINDOW,
+        league=league,
     )
 
 
@@ -176,6 +189,9 @@ def _player_id(
     external_id: str | None,
     name: str | None,
     cache: dict[str, int | None],
+    *,
+    provider: str,
+    league: str = "wnba",
 ) -> int | None:
     """Resolve one participant, or None when the slot was empty.
 
@@ -195,9 +211,10 @@ def _player_id(
     if external_id in cache:
         return cache[external_id]
     resolved = entity_repo.resolve_or_create_player_by_name(
-        conn, PROVIDER, external_id, name,
+        conn, provider, external_id, name,
         position=None, height=None, weight=None,
         jersey_number=None, college=None, age=None,
+        league=league,
     )
     cache[external_id] = resolved
     return resolved
@@ -206,6 +223,9 @@ def _player_id(
 def _play_rows(
     conn: Connection, game_id: int, events: Sequence[parser.StatsPlay],
     cache: dict[str, int | None],
+    *,
+    provider: str,
+    league: str = "wnba",
 ) -> tuple[list[tuple], set[int]]:
     rows: list[tuple] = []
     touched: set[int] = set()
@@ -216,9 +236,18 @@ def _play_rows(
     # play, which is what a mid-game query wants.
     home_running, away_running = 0, 0
     for event in events:
-        p1 = _player_id(conn, event.player1_external_id, event.player1_name, cache)
-        p2 = _player_id(conn, event.player2_external_id, event.player2_name, cache)
-        p3 = _player_id(conn, event.player3_external_id, event.player3_name, cache)
+        p1 = _player_id(
+            conn, event.player1_external_id, event.player1_name, cache,
+            provider=provider, league=league,
+        )
+        p2 = _player_id(
+            conn, event.player2_external_id, event.player2_name, cache,
+            provider=provider, league=league,
+        )
+        p3 = _player_id(
+            conn, event.player3_external_id, event.player3_name, cache,
+            provider=provider, league=league,
+        )
         touched |= {p for p in (p1, p2, p3) if p is not None}
         home, away = _split_score(event.score)
         scored = home is not None and away is not None
@@ -230,7 +259,7 @@ def _play_rows(
             home_running, away_running = home, away
         rows.append(
             (
-                game_id, None, PROVIDER, event.event_num, event.period, event.clock,
+                game_id, None, provider, event.event_num, event.period, event.clock,
                 parser.event_label(event.event_type), event.description,
                 home_running, away_running,
                 # SCORE appearing at all is the provider's own signal that
@@ -248,6 +277,9 @@ def _play_rows(
 def _shot_rows(
     conn: Connection, game_id: int, attempts: Sequence[parser.StatsShot],
     cache: dict[str, int | None],
+    *,
+    provider: str,
+    league: str = "wnba",
 ) -> tuple[list[tuple], set[int]]:
     rows: list[tuple] = []
     touched: set[int] = set()
@@ -260,13 +292,16 @@ def _shot_rows(
     # returned nothing (db/migrations/0032).
     teams = _team_by_player(conn, game_id)
     for shot in attempts:
-        player = _player_id(conn, shot.player_external_id, shot.player_name, cache)
+        player = _player_id(
+            conn, shot.player_external_id, shot.player_name, cache,
+            provider=provider, league=league,
+        )
         if player is not None:
             touched.add(player)
         rows.append(
             (
                 game_id, player, teams.get(player) if player is not None else None,
-                PROVIDER, shot.game_event_id, shot.period,
+                provider, shot.game_event_id, shot.period,
                 shot.seconds_remaining, shot.action_type, shot.shot_type,
                 shot.shot_zone_basic, shot.shot_zone_area, shot.shot_zone_range,
                 shot.shot_distance, shot.loc_x, shot.loc_y, shot.made,

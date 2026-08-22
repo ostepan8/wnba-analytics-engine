@@ -15,6 +15,13 @@ Same host family as stats.nba.com and it inherits that API's two quirks:
 No API key. Pacing is deliberately slower than this project's other
 providers: it is an unauthenticated public endpoint with no published
 quota, and a full historical sweep is thousands of requests.
+
+This same class also serves the NBA (`league="nba"`): same host family,
+same headers, same endpoints, only `LeagueID` and the base host differ.
+It is registered under a *different* provider string (`nba_stats`, not
+`wnba_stats`) so its numeric team/player/game ids never collide with
+stats.wnba.com's in `provider_entity_map` -- see db/migrations/
+0038_league_column.sql.
 """
 
 from __future__ import annotations
@@ -22,31 +29,47 @@ from __future__ import annotations
 from wnba_engine.config import Settings
 from wnba_engine.http_client import JsonHttpClient
 
-PROVIDER = "wnba_stats"
-LEAGUE_ID = "10"
+# Not a Literal: callers pass this through from CLI options (click.Choice
+# yields plain str) and config, so the type stays str at this boundary.
+# __init__ validates against _LEAGUE_IDS's real keys at runtime.
+League = str
 
-_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-    ),
-    "Referer": "https://www.wnba.com/",
-    "Origin": "https://www.wnba.com",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "x-nba-stats-origin": "stats",
-    "x-nba-stats-token": "true",
-}
+_LEAGUE_IDS: dict[str, str] = {"wnba": "10", "nba": "00"}
+_PROVIDERS: dict[str, str] = {"wnba": "wnba_stats", "nba": "nba_stats"}
+
+_SITE_HOSTS: dict[str, str] = {"wnba": "www.wnba.com", "nba": "www.nba.com"}
+
+
+def _browser_headers(league: League) -> dict[str, str]:
+    site = _SITE_HOSTS[league]
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        ),
+        "Referer": f"https://{site}/",
+        "Origin": f"https://{site}",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "x-nba-stats-origin": "stats",
+        "x-nba-stats-token": "true",
+    }
 
 
 class WnbaStatsClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, league: League = "wnba") -> None:
+        if league not in _LEAGUE_IDS:
+            raise ValueError(f"unsupported league: {league!r}")
+        self.league = league
+        self._league_id = _LEAGUE_IDS[league]
+        self.provider = _PROVIDERS[league]
+        base_url = settings.wnba_stats_base_url if league == "wnba" else settings.nba_stats_base_url
         self._http = JsonHttpClient(
-            provider=PROVIDER,
-            base_url=settings.wnba_stats_base_url,
+            provider=self.provider,
+            base_url=base_url,
             timeout_seconds=max(settings.request_timeout_seconds, 30.0),
             min_request_interval_seconds=settings.wnba_stats_min_request_interval_seconds,
-            headers=_BROWSER_HEADERS,
+            headers=_browser_headers(league),
         )
 
     def fetch_game_log(self, season: int, *, season_type: str = "Regular Season") -> object:
@@ -61,7 +84,7 @@ class WnbaStatsClient:
             params={
                 "Counter": 0,
                 "Direction": "ASC",
-                "LeagueID": LEAGUE_ID,
+                "LeagueID": self._league_id,
                 "PlayerOrTeam": "T",
                 "Season": season,
                 "SeasonType": season_type,
@@ -99,7 +122,7 @@ class WnbaStatsClient:
             "shotchartdetail",
             params={
                 "ContextMeasure": "FGA",
-                "LeagueID": LEAGUE_ID,
+                "LeagueID": self._league_id,
                 "Season": season,
                 "SeasonType": "Regular Season",
                 "GameID": game_id,

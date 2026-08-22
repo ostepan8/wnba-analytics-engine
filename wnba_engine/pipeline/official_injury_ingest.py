@@ -63,8 +63,12 @@ def ingest_official_injury_report(
     *,
     captured_at: datetime | None = None,
     llm: LlmClient | None = None,
+    league: str = "wnba",
 ) -> OfficialInjuryIngestResult:
-    """Fetch, parse and store the league's current injury report."""
+    """Fetch, parse and store one league's current injury report.
+
+    `client` must already be constructed for the same `league`.
+    """
     document = client.fetch_latest()
     if document is None:
         return OfficialInjuryIngestResult()
@@ -72,7 +76,7 @@ def ingest_official_injury_report(
     text = extract_text(document.content)
 
     with db.connection() as conn:
-        teams = entity_repo.list_team_names(conn)
+        teams = entity_repo.list_team_names(conn, league=league)
         team_id_by_name = {name: team_id for team_id, name in teams}
         entries = parse_injury_report(
             text, team_names=list(team_id_by_name), captured_at=captured_at
@@ -89,6 +93,7 @@ def ingest_official_injury_report(
                 source=SOURCE,
                 context=entry.team_name,
                 llm=llm,
+                league=league,
             )
             if team_id is None or player_id is None:
                 # NULL beats wrong: an unmatched name is reported, not attached

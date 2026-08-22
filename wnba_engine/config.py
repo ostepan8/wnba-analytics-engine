@@ -11,6 +11,9 @@ load_dotenv()  # no-op if .env doesn't exist; never overrides a real env var
 
 DEFAULT_DATABASE_URL = "postgresql://wnba:wnba@localhost:5434/wnba_engine"
 DEFAULT_ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba"
+# ESPN's site API is uniform across every sport it covers -- confirmed live
+# 2026-08-22, identical response shape to the WNBA scoreboard endpoint.
+DEFAULT_ESPN_NBA_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 DEFAULT_KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 DEFAULT_POLYMARKET_GAMMA_BASE_URL = "https://gamma-api.polymarket.com"
 # A SECOND Polymarket host, and the distinction matters. Gamma serves market
@@ -21,9 +24,17 @@ DEFAULT_POLYMARKET_GAMMA_BASE_URL = "https://gamma-api.polymarket.com"
 DEFAULT_POLYMARKET_DATA_BASE_URL = "https://data-api.polymarket.com"
 DEFAULT_WAYBACK_BASE_URL = "https://web.archive.org"
 DEFAULT_WNBA_STATS_BASE_URL = "https://stats.wnba.com/stats"
+# Same platform, different host and LeagueID (00 vs 10) -- see
+# wnba_engine/wnba_stats/client.py's league handling. Live-verification of
+# this exact host was blocked by this sandbox's network (stats.wnba.com
+# failed identically as a control), so treat this as high-confidence by
+# documented pattern (this repo's own client already documents
+# "00 is the NBA"), not independently confirmed live.
+DEFAULT_NBA_STATS_BASE_URL = "https://stats.nba.com/stats"
 # Unauthenticated public endpoint with no published quota, and a full
 # historical sweep is thousands of requests. Slower than every other
-# provider here on purpose.
+# provider here on purpose. Shared by the NBA client too -- no reason for
+# different courtesy pacing on the same underlying platform.
 DEFAULT_WNBA_STATS_MIN_REQUEST_INTERVAL_SECONDS = 0.6
 DEFAULT_BALLDONTLIE_BASE_URL = "https://api.balldontlie.io"
 DEFAULT_ODDS_API_BASE_URL = "https://api.the-odds-api.com"
@@ -46,11 +57,13 @@ DEFAULT_ODDS_API_MIN_REQUEST_INTERVAL_SECONDS = 0.25
 class Settings:
     database_url: str
     espn_base_url: str
+    espn_nba_base_url: str
     kalshi_base_url: str
     polymarket_gamma_base_url: str
     polymarket_data_base_url: str
     wayback_base_url: str
     wnba_stats_base_url: str
+    nba_stats_base_url: str
     wnba_stats_min_request_interval_seconds: float
     balldontlie_base_url: str
     odds_api_base_url: str
@@ -80,6 +93,9 @@ def load_settings() -> Settings:
     return Settings(
         database_url=os.environ.get("WNBA_ENGINE_DATABASE_URL", DEFAULT_DATABASE_URL),
         espn_base_url=os.environ.get("WNBA_ENGINE_ESPN_BASE_URL", DEFAULT_ESPN_BASE_URL),
+        espn_nba_base_url=os.environ.get(
+            "WNBA_ENGINE_ESPN_NBA_BASE_URL", DEFAULT_ESPN_NBA_BASE_URL
+        ),
         kalshi_base_url=os.environ.get("WNBA_ENGINE_KALSHI_BASE_URL", DEFAULT_KALSHI_BASE_URL),
         polymarket_gamma_base_url=os.environ.get(
             "WNBA_ENGINE_POLYMARKET_GAMMA_BASE_URL", DEFAULT_POLYMARKET_GAMMA_BASE_URL
@@ -90,6 +106,9 @@ def load_settings() -> Settings:
         wayback_base_url=os.environ.get("WNBA_ENGINE_WAYBACK_BASE_URL", DEFAULT_WAYBACK_BASE_URL),
         wnba_stats_base_url=os.environ.get(
             "WNBA_ENGINE_WNBA_STATS_BASE_URL", DEFAULT_WNBA_STATS_BASE_URL
+        ),
+        nba_stats_base_url=os.environ.get(
+            "WNBA_ENGINE_NBA_STATS_BASE_URL", DEFAULT_NBA_STATS_BASE_URL
         ),
         wnba_stats_min_request_interval_seconds=float(
             os.environ.get(

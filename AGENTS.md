@@ -93,6 +93,17 @@ carries ids that mean something different here. Any cross-machine data
 movement must transfer *raw provider payloads* and re-resolve locally --
 this is exactly why `market_capture/` records JSON rather than rows.
 
+**Multi-league since 0038_league_column.sql (NBA_EXPANSION.md).**
+`teams`/`players`/`games` carry a `league` column (`'wnba'`/`'nba'`);
+name/abbreviation lookups in `entity_repo.py` are league-scoped. Never
+assume a provider's external ids are globally unique across leagues
+without testing it live first -- ESPN's site API reuses small per-sport
+team ids (WNBA's Minnesota Lynx and NBA's Detroit Pistons both carry ESPN
+team id `"8"`, confirmed live 2026-08-22), which is why `espn`/`espn_nba`
+and `wnba_stats`/`nba_stats` are separate `provider_entity_map` strings
+rather than one shared string per provider. See the `core-data-layer` and
+`data-providers` skills under `.claude/skills/` for the full detail.
+
 ---
 
 ## Conventions

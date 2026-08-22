@@ -1,10 +1,18 @@
-# NBA expansion — research and plan
+# NBA expansion — research, plan, and implementation status
 
 Researched 2026-08-22. WNBA and NBA seasons are close to back-to-back
 (confirmed below), so adding the NBA closes the WNBA off-season dead zone
-almost completely. This doc is research + a recommendation, not a decision
-already made -- nothing here has been implemented. No migrations were
-written, no production code was touched, no money was spent.
+almost completely.
+
+**Implementation status as of 2026-08-22 (same day, follow-up session):**
+Option A (the `league` column approach recommended below) was implemented
+and proven against real live data -- this is no longer just a plan. See
+`## Implementation status` near the end of this doc for exactly what
+landed, what's still open, and a real bug this pass caught and fixed (a
+cross-league ESPN team-id collision that a shared `provider="espn"`
+crosswalk string would have silently merged). The research below is left
+intact as-written since it's still the accurate record of what was
+verified and how; only the status section at the end is new.
 
 **A tooling constraint on this research pass, stated up front so nothing
 below is over-trusted:** this session had no working shell (`Bash` was
@@ -179,3 +187,145 @@ ESPN + an expanded `wnba_stats`-style NBA client, both free. Everything
 else in this doc -- stats.nba.com, Kalshi, Polymarket, ESPN, the NBA CDN
 injury PDF, and the-odds-api's NBA sport key on the account already paying
 for WNBA -- is free or already paid for.
+
+## Implementation status (2026-08-22, worktree `nba-expansion`)
+
+Option A landed. Verified against a real (throwaway, local) Postgres
+instance running this repo's actual migrations, and against real live data
+pulled from ESPN's NBA site API and Kalshi's `KXNBAGAME` series -- not just
+unit-tested in isolation.
+
+**Done and proven live:**
+
+- **Schema**: `db/migrations/0038_league_column.sql` adds `league TEXT NOT
+  NULL DEFAULT 'wnba' CHECK (league IN ('wnba','nba'))` to `teams`,
+  `players`, `games`, plus `games_league_season_idx` replacing the old
+  single-column season index. `provider_entity_map` was deliberately left
+  alone -- see the collision finding below for why that almost went wrong.
+- **`wnba_engine/repositories/entity_repo.py`**: every team/player/game
+  lookup that assumed single-league uniqueness now takes an explicit
+  `league` parameter (default `"wnba"`, so no existing caller changes
+  behavior): `find_team_by_abbreviation`, `find_team_by_name`,
+  `find_team_by_name_fragment`, `find_player_by_name`,
+  `find_game_id_by_teams`, `list_games_in_range`, `list_team_names`,
+  `resolve_or_create_player_by_name`. `resolve_or_create_team`/
+  `resolve_or_create_player`/`upsert_game` write `league` from the
+  `TeamRef`/`PlayerRef`/`ScoreboardGame` DTOs (`wnba_engine/models/`),
+  which now carry a `league: str = "wnba"` field each.
+- **ESPN** (`wnba_engine/espn/`): `EspnClient(settings, league=...)`
+  switches base URL (`espn_nba_base_url`, confirmed live identical
+  response shape to WNBA) and, critically, its `provider_entity_map`
+  string -- `"espn"` for WNBA, `"espn_nba"` for NBA. `parser.py`'s
+  `parse_scoreboard`/`parse_summary` thread `league` down into every
+  `TeamRef`/`ScoreboardGame`/`PlayerRef` they build.
+  `wnba_engine/pipeline/espn_ingest.py`'s `sync_date`/`backfill` take a
+  `league` param; the `wnba-engine sync-espn`/`backfill-espn`/
+  `sync-recent` CLI commands got a `--league {wnba,nba}` option
+  (default `wnba`).
+- **stats.wnba.com / stats.nba.com** (`wnba_engine/wnba_stats/`):
+  `WnbaStatsClient(settings, league=...)` switches `LeagueID` (00/10),
+  base host, Referer/Origin headers, and provider string (`wnba_stats` /
+  `nba_stats`). `wnba_engine/pipeline/wnba_stats_ingest.py` threads
+  `client.provider`/`client.league` through `_resolve_game`, `_player_id`,
+  `_play_rows`, `_shot_rows`. The `wnba-engine ingest-wnba-stats` CLI
+  command got `--league {wnba,nba}`. **Not live-tested**: stats.nba.com
+  was sandbox-network-blocked in every session that touched this repo so
+  far (the exact WNBA host failed identically as a control both times) --
+  a real HTTP client outside this sandbox needs to confirm it before
+  relying on it.
+- **NBA CDN injury report** (`wnba_engine/wnba_official/`):
+  `WnbaOfficialClient(league=...)` switches the CDN path segment
+  (`wnba_injury` / `nba_injury`). Confirmed live: the NBA path is
+  reachable and returns this CDN's real "no such file" response (403,
+  verified identical to a deliberately-wrong WNBA filename), which is
+  correct since the NBA season hasn't started and no report has been
+  filed yet -- the path works, there's just nothing on it. CLI:
+  `snapshot-official-injuries --league {wnba,nba}`.
+- **Kalshi** (`wnba_engine/kalshi/game_matching.py`): ticker regex now
+  matches `KXNBAGAME` alongside `KXWNBAGAME`. Title regex extended for a
+  FIFTH shape found live: NBA event titles are bare (`"Oklahoma City vs
+  San Antonio"`, no trailing "winner?"/"wins?" clause) -- confirmed via
+  `KXNBAGAME-26OCT20OKCSAS`, a real scheduled Oct 20 2026 game.
+- **Polymarket** (`wnba_engine/polymarket/game_matching.py`): needed no
+  change -- its "X vs Y" matcher was already league-agnostic; league
+  discrimination happens via `tag_slug` at the client/fetch layer.
+- **Live data actually pulled and stored**: NBA preseason (2026-10-03,
+  Toronto vs Miami) and regular-season (2026-10-20, three games including
+  the Detroit/Boston collision-test game) schedules were ingested through
+  the real CLI into a real Postgres instance, alongside a WNBA date
+  (2026-06-15), proving both leagues coexist in one database with correct
+  `league` tagging and no cross-league identity bleed.
+- **Tests**: `tests/integration/test_nba_league_scoping_e2e.py` (new) and
+  an extension to `tests/unit/kalshi/test_kalshi_game_matching.py` cover
+  the two real bugs this pass found (see below) as regression tests, using
+  fixtures trimmed from real live-captured payloads, not hand-written
+  data. Existing `FakeEspnClient` test doubles across
+  `tests/integration/test_ingestion_e2e.py` and
+  `test_balldontlie_stats_ingest_e2e.py` needed a `.provider = "espn"`
+  attribute added. Full suite (`uv run pytest tests/`) passes: 1055 tests.
+
+**A real bug this pass found and fixed, not foreseen by the research
+above:** this doc originally assumed "ESPN's ids are unique across the
+whole site API, not just within one sport" (the reasoning for reusing one
+`provider="espn"` crosswalk string across both leagues). That assumption
+was WRONG, and live ingestion caught it immediately: ESPN's WNBA
+Minnesota Lynx and NBA Detroit Pistons both carry ESPN team id `"8"` --
+ESPN assigns small per-sport integers, not a globally unique id space. A
+first implementation pass that shared `provider="espn"` silently matched
+the NBA Pistons onto the existing WNBA Lynx crosswalk row and overwrote
+its name. Fixed by giving ESPN the same per-league provider-string split
+`wnba_stats`/`nba_stats` already had for the analogous reason (see
+`wnba_engine/espn/client.py`'s docstring). The lesson generalizes: do not
+trust "provider ids look globally unique" for ANY provider without a live
+cross-league collision test like the one now in
+`test_nba_league_scoping_e2e.py` -- balldontlie and the-odds-api were
+never checked this way (moot for balldontlie, since it's not planned for
+NBA; a real open question if the-odds-api NBA is ever turned on).
+
+**Deliberately NOT done in this pass (still matches this doc's own
+gates):**
+
+- **balldontlie NBA tier**: skipped, per the recommendation above ($39.99/mo
+  second subscription; ESPN + stats.nba.com covers the same ground free).
+- **the-odds-api NBA (`basketball_nba`)**: not enabled. This doc's own
+  Phase 5 gate says not to without checking remaining credit budget first
+  (`x-requests-remaining`), and this pass had no way to check that. The
+  client code (`wnba_engine/odds_api/client.py`) still hardcodes
+  `SPORT_KEY = "basketball_wnba"` -- untouched.
+- **Other repositories with single-league-implicit queries**:
+  `analytics_repo.py`, `betting_repo.py`, `form_repo.py`,
+  `game_detail_repo.py`, `feature_repo.py` (the point-in-time feature
+  layer -- deserves its own careful pass, not a mechanical grep-and-patch,
+  given how leakage-sensitive it is), `resolution_repo.py`, `style_repo.py`,
+  `clv_repo.py`, `divergence_repo.py`. Most of these inherit correct
+  scoping for free once a query's root table is filtered by `league`
+  (a game's home/away teams and box-score players can't span leagues), but
+  a handful of no-WHERE-at-all aggregates (e.g. `analytics_repo.py`'s
+  `SELECT count(*) FROM games`) need an explicit `league` filter added.
+  Not touched here -- flagged for a follow-up pass.
+- **`wnba_engine/validation/franchise_checks.py`**: hardcodes WNBA season
+  lengths (`SCHEDULED_GAMES: dict[int, int]`, 36/40/44 games) and its SQL
+  has no league filter. An NBA season is 82 games; this cannot be shared
+  as-is. Needs its own `NBA_SCHEDULED_GAMES` table (or a
+  `dict[tuple[int, str], int]` key) plus `AND league = %(league)s` on its
+  two queries. Not touched here.
+- **`wnba_engine/pipeline/name_resolution.py`**: only the deterministic
+  `find_player_by_name` lookup was made league-aware. The
+  similarity/LLM fallback path (`resolution_repo.find_similar_players`,
+  cached decisions) is not yet league-scoped -- needs its own review of
+  `resolution_repo.py`'s SQL, not a mechanical parameter thread.
+- **`wnba_engine/wnba_stats/team_matching.py`**: the WNBA side has 5 of 13
+  team abbreviations hand-verified against real stats.wnba.com payloads
+  because they disagree with ESPN's abbreviations. The NBA side has ZERO
+  such entries -- not guessed, since stats.nba.com was unreachable from
+  every sandbox this expansion touched. `--league nba` on
+  `ingest-wnba-stats` will silently under-resolve games until someone with
+  real network access captures actual stats.nba.com payloads and fills
+  this in the same way the WNBA side was built.
+- **Frontend/API league selector**: no changes to `frontend/` or
+  `wnba_engine/api/`. Per this doc's original phased plan, this is last on
+  purpose -- there isn't yet enough NBA data flowing through the pipeline
+  to justify a UI for it.
+- **Production deploy**: none of this shipped to `wnba.onephos.com`. It
+  was proven against a throwaway local Postgres instance in this worktree,
+  not the production database or the docker-compose dev stack.

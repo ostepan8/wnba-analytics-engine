@@ -1,0 +1,72 @@
+{
+    "events": [
+        {
+            "id": "401857171",
+            "date": "2026-08-25T00:00Z",
+            "name": "Golden State Valkyries at Minnesota Lynx",
+            "season": {
+                "year": 2026,
+                "type": 2,
+                "slug": "regular-season"
+            },
+            "status": {
+                "clock": 0.0,
+                "displayClock": "0.0",
+                "period": 0,
+                "type": {
+                    "id": "1",
+                    "name": "STATUS_SCHEDULED",
+                    "state": "pre",
+                    "completed": false,
+                    "description": "Scheduled",
+                    "detail": "Mon, August 24th at 8:00 PM EDT",
+                    "shortDetail": "8/24 - 8:00 PM EDT"
+                }
+            },
+            "competitions": [
+                {
+                    "id": "401857171",
+                    "date": "2026-08-25T00:00Z",
+                    "competitors": [
+                        {
+                            "id": "8",
+                            "homeAway": "home",
+                            "score": "0",
+                            "winner": false,
+                            "team": {
+                                "id": "8",
+                                "displayName": "Minnesota Lynx",
+                                "abbreviation": "MIN"
+                            }
+                        },
+                        {
+                            "id": "129689",
+                            "homeAway": "away",
+                            "score": "0",
+                            "winner": false,
+                            "team": {
+                                "id": "129689",
+                                "displayName": "Golden State Valkyries",
+                                "abbreviation": "GS"
+                            }
+                        }
+                    ],
+                    "status": {
+                        "clock": 0.0,
+                        "displayClock": "0.0",
+                        "period": 0,
+                        "type": {
+                            "id": "1",
+                            "name": "STATUS_SCHEDULED",
+                            "state": "pre",
+                            "completed": false,
+                            "description": "Scheduled",
+                            "detail": "Mon, August 24th at 8:00 PM EDT",
+                            "shortDetail": "8/24 - 8:00 PM EDT"
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

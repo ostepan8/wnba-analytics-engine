@@ -126,13 +126,16 @@ def migrate() -> None:
 
 @cli.command("sync-espn")
 @click.option("--date", "day", type=click.DateTime(["%Y-%m-%d"]), required=True)
-def sync_espn(day) -> None:
+@click.option(
+    "--league", type=click.Choice(["wnba", "nba"]), default="wnba", show_default=True
+)
+def sync_espn(day, league: str) -> None:
     """Ingest ESPN scoreboard + box scores for one date."""
     settings = load_settings()
     db = Database(settings.database_url)
     try:
-        with EspnClient(settings) as client:
-            click.echo(sync_date(db, client, day.date()))
+        with EspnClient(settings, league=league) as client:
+            click.echo(sync_date(db, client, day.date(), league=league))
     finally:
         db.close()
 
@@ -140,13 +143,16 @@ def sync_espn(day) -> None:
 @cli.command("backfill-espn")
 @click.option("--since", type=click.DateTime(["%Y-%m-%d"]), required=True)
 @click.option("--until", type=click.DateTime(["%Y-%m-%d"]), default=str(date.today()))
-def backfill_espn(since, until) -> None:
+@click.option(
+    "--league", type=click.Choice(["wnba", "nba"]), default="wnba", show_default=True
+)
+def backfill_espn(since, until, league: str) -> None:
     """Ingest ESPN data for every date in [since, until]."""
     settings = load_settings()
     db = Database(settings.database_url)
     try:
-        with EspnClient(settings) as client:
-            click.echo(backfill(db, client, since.date(), until.date()))
+        with EspnClient(settings, league=league) as client:
+            click.echo(backfill(db, client, since.date(), until.date(), league=league))
     finally:
         db.close()
 
@@ -164,7 +170,10 @@ def backfill_espn(since, until) -> None:
     show_default=True,
     help="Also ingest scheduled games this many days into the future.",
 )
-def sync_recent(days: int, days_ahead: int) -> None:
+@click.option(
+    "--league", type=click.Choice(["wnba", "nba"]), default="wnba", show_default=True
+)
+def sync_recent(days: int, days_ahead: int, league: str) -> None:
     """Ingest ESPN data for a window around today.
 
     Meant for a recurring schedule (cron, launchd, ...): a short trailing
@@ -185,8 +194,8 @@ def sync_recent(days: int, days_ahead: int) -> None:
     settings = load_settings()
     db = Database(settings.database_url)
     try:
-        with EspnClient(settings) as client:
-            click.echo(backfill(db, client, since, until))
+        with EspnClient(settings, league=league) as client:
+            click.echo(backfill(db, client, since, until, league=league))
     finally:
         db.close()
 
@@ -224,8 +233,11 @@ def snapshot_injuries() -> None:
 
 
 @cli.command("snapshot-official-injuries")
-def snapshot_official_injuries() -> None:
-    """Snapshot the league's OWN injury report (the PDF teams file into).
+@click.option(
+    "--league", type=click.Choice(["wnba", "nba"]), default="wnba", show_default=True
+)
+def snapshot_official_injuries(league: str) -> None:
+    """Snapshot one league's OWN injury report (the PDF teams file into).
 
     The only source carrying real game-status designations -- Probable,
     Questionable, Doubtful, Out. ESPN's feed publishes just Out/Day-To-Day for
@@ -244,8 +256,8 @@ def snapshot_official_injuries() -> None:
             settings.llm_base_url, settings.llm_api_key, model=settings.llm_model
         )
     try:
-        with WnbaOfficialClient() as client:
-            click.echo(str(ingest_official_injury_report(db, client, llm=llm)))
+        with WnbaOfficialClient(league=league) as client:
+            click.echo(str(ingest_official_injury_report(db, client, llm=llm, league=league)))
     finally:
         if llm is not None:
             llm.close()
@@ -838,21 +850,31 @@ def backfill_kalshi_trades_cmd(series_tickers, before, no_resume, market_limit) 
 @click.option("--no-shots", is_flag=True, help="Plays only, skip the shot chart.")
 @click.option("--no-resume", is_flag=True, help="Re-fetch games already ingested.")
 @click.option("--limit", "game_limit", type=int, default=None, help="Cap games per season.")
-def ingest_wnba_stats(seasons, no_shots, no_resume, game_limit) -> None:
-    """Ingest player-attributed plays and shot locations from stats.wnba.com.
+@click.option(
+    "--league", type=click.Choice(["wnba", "nba"]), default="wnba", show_default=True
+)
+def ingest_wnba_stats(seasons, no_shots, no_resume, game_limit, league: str) -> None:
+    """Ingest player-attributed plays and shot locations from stats.wnba.com
+    (or stats.nba.com with --league nba).
 
     The league's own feed, and the only source here that puts a PLAYER on a
     play -- FEATURE_ROADMAP.md ss9 lists player-level play-by-play as
     blocked because balldontlie publishes none. It also carries shot
     coordinates, and it goes back to 1997.
 
-    Plays land in game_plays under source='wnba_stats', beside the
-    balldontlie rows rather than replacing them.
+    Plays land in game_plays under source='wnba_stats' (or 'nba_stats'),
+    beside the balldontlie rows rather than replacing them.
+
+    NBA note: --league nba requires wnba_engine/wnba_stats/team_matching.py
+    to have NBA abbreviation-mismatch entries (the WNBA side needed 5 of 13
+    hand-verified against real payloads; the NBA side has none yet -- this
+    was left unguessed rather than faked, since stats.nba.com was
+    unreachable from the sandbox this expansion was built in).
     """
     settings = load_settings()
     db = Database(settings.database_url)
     try:
-        with WnbaStatsClient(settings) as client:
+        with WnbaStatsClient(settings, league=league) as client:
             for season in seasons:
                 click.echo(
                     ingest_wnba_stats_season(

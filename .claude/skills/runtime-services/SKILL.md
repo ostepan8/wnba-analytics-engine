@@ -80,6 +80,14 @@ are exactly the steps `schedule.toml` invokes, and also the human-run
 one-off tool for backfills/ingests. Add a new provider or ingest path
 here; see [[data-providers]] for that layer.
 
+**Multi-league (NBA_EXPANSION.md)**: `sync-espn`, `backfill-espn`,
+`sync-recent`, `ingest-wnba-stats`, and `snapshot-official-injuries` all
+take `--league {wnba,nba}` (default `wnba`, so existing behavior/schedule
+entries are unchanged). `deploy/schedule.toml` has **no NBA jobs yet** --
+this was implemented and proven against a local throwaway database only,
+never wired into the actual schedule or deployed. Adding a recurring NBA
+job here is still open work.
+
 ## `wnba_engine/market_capture/`, `backup/`, `analysis/`, `llm/`
 
 - **`market_capture/capture.py`** is deliberately **stdlib-only** and
