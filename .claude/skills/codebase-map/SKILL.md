@@ -12,7 +12,7 @@ selected only by which command each service's manifest passes. Read
 `AGENTS.md` at the repo root first; it is the canonical "how to work here"
 doc. This skill and its siblings are a faster map into specific areas.
 
-## The six areas, and their skills
+## The seven areas, and their skills
 
 | Area | Skill | What's there |
 |---|---|---|
@@ -22,6 +22,7 @@ doc. This skill and its siblings are a faster map into specific areas.
 | Frontend | [[frontend-app]] | `frontend/` -- Vite + React 19 + TypeScript SPA, hand-rolled data fetching, no state library |
 | Ops & tooling | [[ops-and-tooling]] | `scripts/` (launchd agents on two machines), `tests/`, `docker-compose.yml`, `pyproject.toml` |
 | Agent CLI | [[wnba-cli]] | `wnba_cli/` -- `uv run wnba-cli ...`, a query-only CLI wrapper around the live API, built for agents to reach for instead of WebFetch/curl |
+| Agent MCP server | [[wnba-mcp-server]] | `wnba_mcp/` -- `uv run wnba-mcp-server`, the same routes as wnba-cli exposed as MCP tools over stdio, for mounting into an external agent host (e.g. deepseek-harness) |
 
 Every task-lifecycle rule (worktrees, keeping docs current, merging) lives
 in [[parallel-worktree-lifecycle]] -- load it before editing anything.

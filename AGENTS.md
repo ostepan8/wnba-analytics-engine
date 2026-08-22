@@ -38,6 +38,7 @@ uv run ruff check .                  # lint
 uv run wnba-engine validate          # data-quality gate; exits non-zero on real problems
 uv run wnba-engine --help            # every ingest command
 uv run wnba-cli --help               # query the LIVE API (games, players, odds, job health) -- no DB needed
+uv run wnba-mcp-server                # same routes as wnba-cli, as MCP tools over stdio -- for an external agent host
 ```
 
 `.env` (gitignored) holds `WNBA_ENGINE_BALLDONTLIE_API_KEY` and
