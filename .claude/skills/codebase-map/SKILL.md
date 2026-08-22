@@ -12,7 +12,7 @@ selected only by which command each service's manifest passes. Read
 `AGENTS.md` at the repo root first; it is the canonical "how to work here"
 doc. This skill and its siblings are a faster map into specific areas.
 
-## The five areas, and their skills
+## The six areas, and their skills
 
 | Area | Skill | What's there |
 |---|---|---|
@@ -21,9 +21,13 @@ doc. This skill and its siblings are a faster map into specific areas.
 | Runtime services | [[runtime-services]] | `api/`, `scheduler/`, `cli/`, `market_capture/`, `backup/`, `analysis/`, `llm/`, plus `deploy/` (nephos manifests, Dockerfile, schedule.toml) |
 | Frontend | [[frontend-app]] | `frontend/` -- Vite + React 19 + TypeScript SPA, hand-rolled data fetching, no state library |
 | Ops & tooling | [[ops-and-tooling]] | `scripts/` (launchd agents on two machines), `tests/`, `docker-compose.yml`, `pyproject.toml` |
+| Agent CLI | [[wnba-cli]] | `wnba_cli/` -- `uv run wnba-cli ...`, a query-only CLI wrapper around the live API, built for agents to reach for instead of WebFetch/curl |
 
 Every task-lifecycle rule (worktrees, keeping docs current, merging) lives
 in [[parallel-worktree-lifecycle]] -- load it before editing anything.
+**Need live data (a game, a player, standings, job health) rather than
+codebase structure?** Reach for [[wnba-cli]] instead of reading further --
+it's faster than deriving the right endpoint from [[runtime-services]].
 
 ## One-paragraph architecture
 

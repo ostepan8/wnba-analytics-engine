@@ -25,6 +25,11 @@ loopback). The image is built **on the target node** via `deploy/build.sh`
 `systemctl --user restart nephos-wnba-<svc>.service` is required after
 `nephos up` to actually pick up a new image on an already-running service.
 
+**Querying this API for live data (a game, standings, job health)?** Use
+[[wnba-cli]] (`uv run wnba-cli ...`) instead of hitting these routes with
+WebFetch/curl directly -- one subcommand per route below, already handles
+the base URL and error formatting.
+
 ## `wnba_engine/api/`
 
 `app.py`'s `create_app()` includes every router in `api/routes/` under
