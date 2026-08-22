@@ -16,6 +16,11 @@ prediction-market prices, outcomes, box scores, and play-by-play joined
 into one queryable dataset. Phase 1 (multi-source data foundation) is
 essentially complete; Phase 2 is a rules-based insights layer.
 
+NBA expansion is researched but **not decided or implemented** --
+`NBA_EXPANSION.md` covers free-source coverage and an architecture
+recommendation. Nothing in this file reflects it happening yet; the
+engine is still WNBA-only until that changes.
+
 Scope discipline matters here. Two non-goals in `ROADMAP.md` are load-
 bearing and should not be quietly eroded:
 
